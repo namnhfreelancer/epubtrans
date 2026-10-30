@@ -1,0 +1,38 @@
+import { strToU8, zipSync } from 'fflate';
+import { describe, expect, it } from 'vitest';
+import { detectLanguage, exportEpub, importBook, loadProjectFile, saveProjectFile, validateProjectState } from '../src';
+import { env, readFixture } from './test-helpers';
+
+describe('project file', () => {
+  it('round-trips state and source package, and the loaded project still exports', async () => {
+    const project = await importBook(readFixture('aesop-fables.fb2'), 'aesop-fables.fb2', env);
+    const first = project.chapters[1]?.segments[0];
+    if (!first) throw new Error('fixture changed');
+    first.status = 'translated';
+    first.translationHtml = 'Ba truyện ngụ ngôn<br/>Bản dịch';
+    project.settings.glossary = [{ term: 'fox', translation: 'cáo', note: 'animal' }];
+    project.settings.priceInPerM = 1.5;
+
+    const bytes = await saveProjectFile(project);
+    const loaded = await loadProjectFile(bytes);
+    expect(loaded).toEqual(project);
+    expect(loaded.sourceEpub).toEqual(project.sourceEpub);
+    const out = await exportEpub(loaded, 'bilingual', env);
+    expect(out.byteLength).toBeGreaterThan(1000);
+  });
+
+  it('rejects files that are not projects or have an invalid schema', async () => {
+    await expect(loadProjectFile(strToU8('nope'))).rejects.toThrow(/zip/);
+    await expect(loadProjectFile(zipSync({ 'other.txt': strToU8('x') }))).rejects.toThrow(/project file/);
+    const bad = zipSync({ 'project.json': strToU8('{"schemaVersion":2}'), 'source.epub': new Uint8Array([1]) });
+    await expect(loadProjectFile(bad)).rejects.toThrow(/schema version/);
+    expect(() => validateProjectState({ schemaVersion: 1, id: 1 })).toThrow(/project.id must be a string/);
+  });
+});
+
+describe('detectLanguage', () => {
+  it('detects English from book text', async () => {
+    const project = await importBook(readFixture('a-modest-proposal.epub'), 'a.epub', env);
+    expect(detectLanguage(project)).toBe('en');
+  });
+});
