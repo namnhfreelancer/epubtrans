@@ -12,8 +12,9 @@ API key
   Set EPUBTRANS_API_KEY (or OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY,
   DEEPSEEK_API_KEY), or pass --api-key-file <path> (use - for stdin). The key is never accepted as an
   argument and never printed. It is only sent to the provider's own endpoint.
-  When the provider comes from a project file (no --provider on this run), EPUBTRANS_API_KEY is not used:
-  set that provider's own variable, pass --api-key-file, or pass --provider <id> explicitly.
+  When a non-default provider (default: openai) comes only from a project file (no --provider on this run),
+  EPUBTRANS_API_KEY is not used: set that provider's own variable, pass --api-key-file, or pass
+  --provider <id> explicitly.
 
 Run "epubtrans <command> --help" for the options of a command.
 `;

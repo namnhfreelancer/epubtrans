@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import { rmSync } from 'node:fs';
-import { importBook } from '@epubtrans/core';
+import { readFileSync, rmSync } from 'node:fs';
+import { importBook, loadProjectFile } from '@epubtrans/core';
 import { domEnv } from '../src/dom-env';
 import { writeProjectFile } from '../src/project-store';
 import { run } from '../src/run';
@@ -116,5 +116,83 @@ describe('the generic EPUBTRANS_API_KEY is not given to a provider chosen by a p
     );
     expect(code).toBe(0);
     expect(mock.calls.every((c) => c.authorization === `Bearer ${GENERIC}`)).toBe(true);
+  });
+});
+
+describe('the default provider keeps working with EPUBTRANS_API_KEY after a project file exists', () => {
+  let mock: MockProvider;
+  let outgoing: string[];
+  let interrupt: AbortController;
+  beforeEach(() => {
+    interrupt = new AbortController();
+    // Interrupt during the third request so the project file is left partly translated.
+    mock = startMockProvider((call) => {
+      if (call === 3) interrupt.abort();
+      return undefined;
+    });
+    cleanup.push(() => mock.stop());
+    outgoing = [];
+    // Requests to the real OpenAI endpoint are recorded and served by the local mock instead.
+    const realFetch = globalThis.fetch;
+    const spy = spyOn(globalThis, 'fetch').mockImplementation((async (input: Request | string | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      outgoing.push(url);
+      return realFetch(url.replace('https://api.openai.com', mock.url), init);
+    }) as unknown as typeof fetch);
+    cleanup.push(() => spy.mockRestore());
+  });
+
+  async function remainingIds(path: string): Promise<string[]> {
+    const project = await loadProjectFile(new Uint8Array(readFileSync(path)));
+    return project.chapters.flatMap((c) => c.segments.filter((s) => s.status !== 'translated').map((s) => s.id));
+  }
+
+  test('re-running the identical translate command (no --provider) resumes with only the remaining segments', async () => {
+    const { dir, input } = workDirWithFixture();
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const args = ['translate', input, '--to', 'vi', '--model', 'gpt-x', '--yes', '--concurrency', '1', '--out', `${dir}/o.epub`];
+
+    const first = createTestIo({ env: { EPUBTRANS_API_KEY: GENERIC }, signal: interrupt.signal });
+    expect(await run(args, first)).toBe(130);
+    const remaining = await remainingIds(`${input}.epubtrans`);
+    expect(remaining.length).toBeGreaterThan(0);
+    const callsInFirstRun = mock.calls.length;
+
+    const second = createTestIo({ env: { EPUBTRANS_API_KEY: GENERIC } });
+    expect(await run(args, second)).toBe(0);
+    expect(second.stderr).toContain('Using API key from env EPUBTRANS_API_KEY');
+    const resent = mock.calls.slice(callsInFirstRun);
+    expect(resent.flatMap((c) => c.segmentIds).sort()).toEqual([...remaining].sort());
+    expect(resent.every((c) => c.authorization === `Bearer ${GENERIC}`)).toBe(true);
+    expect(outgoing.every((u) => u.startsWith('https://api.openai.com'))).toBe(true);
+    expect(await remainingIds(`${input}.epubtrans`)).toEqual([]);
+  });
+
+  test('resume <project> for a default-provider project works with only EPUBTRANS_API_KEY', async () => {
+    const { dir, input } = workDirWithFixture();
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const first = createTestIo({ env: { EPUBTRANS_API_KEY: GENERIC }, signal: interrupt.signal });
+    expect(await run(['translate', input, '--to', 'vi', '--model', 'gpt-x', '--yes', '--concurrency', '1', '--out', `${dir}/o.epub`], first)).toBe(130);
+    const remaining = await remainingIds(`${input}.epubtrans`);
+    const callsInFirstRun = mock.calls.length;
+
+    const io = createTestIo({ env: { EPUBTRANS_API_KEY: GENERIC } });
+    expect(await run(['resume', `${input}.epubtrans`, '--yes', '--concurrency', '1', '--out', `${dir}/r.epub`], io)).toBe(0);
+    expect(io.stderr).toContain('Using API key from env EPUBTRANS_API_KEY');
+    expect(
+      mock.calls
+        .slice(callsInFirstRun)
+        .flatMap((c) => c.segmentIds)
+        .sort(),
+    ).toEqual([...remaining].sort());
+    expect(outgoing.every((u) => u.startsWith('https://api.openai.com'))).toBe(true);
+  });
+
+  test('a deepseek project with only EPUBTRANS_API_KEY still exits 2 and sends nothing', async () => {
+    const t = await deepseekProject();
+    const io = createTestIo({ env: { EPUBTRANS_API_KEY: GENERIC } });
+    expect(await run(['resume', t.path, '--yes', '--out', t.out], io)).toBe(2);
+    expect(outgoing).toEqual([]);
+    expect(mock.calls).toEqual([]);
   });
 });
