@@ -49,6 +49,8 @@ export const vi: Record<MessageKey, string> = {
   'settings.remember': 'Ghi nhớ khóa trên thiết bị này',
   'settings.rememberOn': 'Được lưu trong bộ nhớ cục bộ của trình duyệt cho tới khi bạn xóa.',
   'settings.rememberOff': 'Chỉ giữ trong bộ nhớ tạm: bạn sẽ phải nhập lại sau khi tải lại trang.',
+  'settings.rememberShared':
+    'Cảnh báo: ứng dụng này dùng chung địa chỉ web với các trang khác của cùng chủ sở hữu (GitHub Pages), nên mã chạy trên các trang đó có thể đọc được khóa đã ghi nhớ. Chỉ ghi nhớ khóa trên thiết bị bạn tin cậy và nên dùng khóa có giới hạn chi tiêu.',
   'settings.rememberFailed': 'Trình duyệt không cho phép lưu khóa; khóa chỉ được giữ trong bộ nhớ tạm.',
   'settings.clearKey': 'Xóa khóa',
   'settings.keyNote': 'Khóa của bạn chỉ được gửi tới {host}. Không bao giờ được gửi cho epubtrans hay bất kỳ ai khác.',
