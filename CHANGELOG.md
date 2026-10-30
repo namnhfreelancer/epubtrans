@@ -1,5 +1,81 @@
 # Changelog
 
+## [3.0.0](https://github.com/namnhfreelancer/epubtrans/compare/v2.12.0...v3.0.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* rewrite epubtrans v3 as browser BYOK web app and CLI
+* rewrite epubtrans v3 as browser BYOK web app and CLI ([#2](https://github.com/namnhfreelancer/epubtrans/issues/2))
+* remove legacy Go v2 implementation
+* fix unpack command
+
+### Features
+
+* add file utility functions ([1cf204a](https://github.com/namnhfreelancer/epubtrans/commit/1cf204a844cea0bae9059d4425894259d201ae92))
+* add Gemini AI integration for generating translation guidelines ([a835d91](https://github.com/namnhfreelancer/epubtrans/commit/a835d918e36ad65b2f20e38ae7bf08d24dabcc84))
+* add prepare command to automate EPUB preprocessing ([52d52a8](https://github.com/namnhfreelancer/epubtrans/commit/52d52a8fc50edc3acb50117bd68e65c8a9502962))
+* add v3 rewrite plan ([ca0fa39](https://github.com/namnhfreelancer/epubtrans/commit/ca0fa3946cd4a8cd3e8de1df42e0a1bfd625a2ff))
+* allow slyting command ([fd3c35b](https://github.com/namnhfreelancer/epubtrans/commit/fd3c35b9a5f1def00edc5b6a56abd94461a4a95f))
+* **cli:** add Bun single-binary CLI with translate, resume, export, models and presets ([879b5f3](https://github.com/namnhfreelancer/epubtrans/commit/879b5f3a6dea9405d6bf51b27ad0dc4a597bf58e))
+* **cmd:** add self-upgrade functionality and refactor version handling ([70d91c0](https://github.com/namnhfreelancer/epubtrans/commit/70d91c07a4696b87d210579fba29b6e99e763efa))
+* **core:** add environment-agnostic book translation engine ([626868b](https://github.com/namnhfreelancer/epubtrans/commit/626868b28ca1e9a726c3675e2d6b69ec4053a2ff))
+* enhance translation instruction handling ([c6673e2](https://github.com/namnhfreelancer/epubtrans/commit/c6673e26e17b2057340c054a969ade266db1aee7))
+* enhance translation system with guidelines persistence and prompt presets ([2019f24](https://github.com/namnhfreelancer/epubtrans/commit/2019f2465e789bec003d39102689836437769ee5))
+* impelement batch ([87142e9](https://github.com/namnhfreelancer/epubtrans/commit/87142e9c1245e04c552deedb0ba60244b21ebad9))
+* improve ([32e8543](https://github.com/namnhfreelancer/epubtrans/commit/32e8543f70961cad5b245e76de77fd9ff92f1950))
+* improve by batch translate ([aee876d](https://github.com/namnhfreelancer/epubtrans/commit/aee876d0cde10ca25f19ffee947cdfe393e954ec))
+* improve command docs and example ([ddacd2e](https://github.com/namnhfreelancer/epubtrans/commit/ddacd2e11f2faf068c5bc01cc08a6a7777f633b3))
+* improve the eidtor ([b949086](https://github.com/namnhfreelancer/epubtrans/commit/b949086fe86c8ee46193ee69e3b0992dad09d06e))
+* improve translation prompts for psychology and technical content ([1e0ecc2](https://github.com/namnhfreelancer/epubtrans/commit/1e0ecc293f6c4e8b56582eeab6e639421bfdb334))
+* install CLI binaries from GitHub releases with checksum verification ([3fa194f](https://github.com/namnhfreelancer/epubtrans/commit/3fa194f9d829754250cd12694a063313a20111b1))
+* **install:** add installation guide and scripts ([fb4fd3f](https://github.com/namnhfreelancer/epubtrans/commit/fb4fd3f90701d8db78161eada3e3d87f6b091003))
+* remove numWorkers flag from translate command ([d4012db](https://github.com/namnhfreelancer/epubtrans/commit/d4012dbc0be804cfdcb0e0710030cb15af0d2a15))
+* rewrite epubtrans v3 as browser BYOK web app and CLI ([8256fd4](https://github.com/namnhfreelancer/epubtrans/commit/8256fd4e4415a6b8c929dc877e68e725d8d37427))
+* rewrite epubtrans v3 as browser BYOK web app and CLI ([#2](https://github.com/namnhfreelancer/epubtrans/issues/2)) ([8256fd4](https://github.com/namnhfreelancer/epubtrans/commit/8256fd4e4415a6b8c929dc877e68e725d8d37427))
+* **scripts:** remove unused imports in epub-translator-colab.ipynb ([a9bedf0](https://github.com/namnhfreelancer/epubtrans/commit/a9bedf0309df869008e614a47b566fc1e2355c16))
+* **scripts:** update colab notebook ([e6301b2](https://github.com/namnhfreelancer/epubtrans/commit/e6301b21db0e8307a0d15cbb15bf0b21c9a24b2e))
+* support colab ([7e1ad2e](https://github.com/namnhfreelancer/epubtrans/commit/7e1ad2ee10de7c7124077a402f5e4e5155893ee7))
+* support language config ([8f2c740](https://github.com/namnhfreelancer/epubtrans/commit/8f2c740d442773bb3c9efe121a62410e200beea6))
+* support multiple prompt ([1b25986](https://github.com/namnhfreelancer/epubtrans/commit/1b25986daeb88813ea9c42d8dc095c0caa8337bf))
+* support serve command ([57e3414](https://github.com/namnhfreelancer/epubtrans/commit/57e34141dbddd63a6aab67bf97bd99fc72e91bcd))
+* **toc:** open table of contents links in new tab ([7108fa2](https://github.com/namnhfreelancer/epubtrans/commit/7108fa2be9acc1013e328691944db6c4d844b9e0))
+* **translation:** enhance translation system and add metadata tracking ([e6a22b4](https://github.com/namnhfreelancer/epubtrans/commit/e6a22b41f3d45e03d23b7d9680da7ad90e9ca1fb))
+* **translator:** improve translation process and error handling ([3f0fd66](https://github.com/namnhfreelancer/epubtrans/commit/3f0fd66fcc5f1f1a8c8ab83939935aad935fdf6a))
+* update build config ([f82e39f](https://github.com/namnhfreelancer/epubtrans/commit/f82e39f1b212b0cb143fc5b35b8c399cfd8231f3))
+* update build config ([1d110ef](https://github.com/namnhfreelancer/epubtrans/commit/1d110efbcc33c15e22e80589ba5e92584a5d864f))
+* Update translation logic and metadata tracking ([e4342e4](https://github.com/namnhfreelancer/epubtrans/commit/e4342e41e0b29408579b5c58cde11aa387ba859e))
+* **upgrade:** improve checksum verification and binary installation ([0210aca](https://github.com/namnhfreelancer/epubtrans/commit/0210acab019cabf1f729fd7a642b7edb48c32701))
+* **web:** add static BYOK web app for translating books in the browser ([0714c90](https://github.com/namnhfreelancer/epubtrans/commit/0714c9021fc4f7a3353f840a5263f503ebfed816))
+
+
+### Bug Fixes
+
+* **ci:** publish the release only after the CLI binaries are attached ([2cd0504](https://github.com/namnhfreelancer/epubtrans/commit/2cd0504d62f7ecf103eb10ed96bb7052e7e17fc7))
+* **cli:** exit with 130 on Ctrl-C at the confirmation prompt ([827d90e](https://github.com/namnhfreelancer/epubtrans/commit/827d90e972b1346579acf3c4ca88ee77d7d16f61))
+* **cli:** keep EPUBTRANS_API_KEY working for default-provider projects ([b200c65](https://github.com/namnhfreelancer/epubtrans/commit/b200c65779a485d04595638003c4e94aaec5c793))
+* **cli:** never send EPUBTRANS_API_KEY to a provider chosen only by a project file ([21305cb](https://github.com/namnhfreelancer/epubtrans/commit/21305cb307649992985fc9eb300b085d7db01c85))
+* **cli:** never send the API key to an endpoint taken from a project file ([c4b1787](https://github.com/namnhfreelancer/epubtrans/commit/c4b178780d44e5e1eaef1db16660a0cf59804d4c))
+* **core:** close remaining source-book script vectors in exported packages ([24f3389](https://github.com/namnhfreelancer/epubtrans/commit/24f3389dbce4797a8498b1adf6856ae557cadf1a))
+* **core:** drop aria-label on nav so exports pass epubcheck ([781e64d](https://github.com/namnhfreelancer/epubtrans/commit/781e64d7d0c9a539eaa6ffd879b4bb0dd4d25e41))
+* **core:** keep script vectors out of exported EPUBs ([a3bd368](https://github.com/namnhfreelancer/epubtrans/commit/a3bd3681128d095508d6928e453b1099e8a7ff9a))
+* **core:** never overwrite a segment edited during a translation run ([d04abc8](https://github.com/namnhfreelancer/epubtrans/commit/d04abc863cc93aed85da3ce03fae2f45acbc1e3d))
+* **core:** sanitize every markup file of exported packages ([b63457e](https://github.com/namnhfreelancer/epubtrans/commit/b63457eaf6eea4020f06e32848e68900ae1b11c6))
+* correct serve assest ([768735e](https://github.com/namnhfreelancer/epubtrans/commit/768735e1ad5fba47dde882b804f257289fc9f306))
+* fix unpack command ([8a30cf7](https://github.com/namnhfreelancer/epubtrans/commit/8a30cf72a46b19314e26093ae8c8f4fc77ed11ce))
+* remove unused folder ([cf12268](https://github.com/namnhfreelancer/epubtrans/commit/cf1226834bc5a38d22ef2ef6ab3716582e227017))
+* **translator:** improve error handling and logging ([8cb3a00](https://github.com/namnhfreelancer/epubtrans/commit/8cb3a005566310b28c0e8c9ee2ba61bcf2b455a3))
+* update error message ([0a292f9](https://github.com/namnhfreelancer/epubtrans/commit/0a292f985763eff2f759521f7b55082fb290e6d4))
+* update originalContent on blur in enableContentEditable function ([8241aad](https://github.com/namnhfreelancer/epubtrans/commit/8241aada33da27f41fc9480f0ccce8c9c8b7ada8))
+* **util:** improve error handling and add tests for GetUnzipDestination ([e9690ba](https://github.com/namnhfreelancer/epubtrans/commit/e9690ba0eb95885789ddac2208c08fb901441902))
+* **web:** lock reader edit and retranslate while a job runs ([9260688](https://github.com/namnhfreelancer/epubtrans/commit/9260688eb1debced416d2724926b9f9608c154dc))
+* **web:** warn that a remembered key is exposed to the shared Pages origin ([a28b8ce](https://github.com/namnhfreelancer/epubtrans/commit/a28b8ce7be237c1468f96969509cc59c5e7c566a))
+
+
+### Miscellaneous Chores
+
+* remove legacy Go v2 implementation ([5c3e659](https://github.com/namnhfreelancer/epubtrans/commit/5c3e65935c6a8f916f1c828753ae44095a05f44c))
+
 ## [2.12.0](https://github.com/nguyenvanduocit/epubtrans/compare/v2.11.0...v2.12.0) (2025-03-06)
 
 
