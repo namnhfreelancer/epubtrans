@@ -1,0 +1,20 @@
+{
+  "name": "epubtrans",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "bun run --filter '*' test",
+    "build": "bun run --filter '*' build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.4",
+    "typescript": "^7.0.2"
+  }
+}
