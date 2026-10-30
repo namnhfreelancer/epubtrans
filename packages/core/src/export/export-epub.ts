@@ -50,10 +50,24 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
     files.set(chapter.href, encodeUtf8(serializeXhtmlDocument(env, doc, extractDoctype(markup))));
   }
 
+  if (pkg.nav && files.has(pkg.nav.path)) repairNavDocument(files, pkg.nav.path, env);
   if (pkg.ncx && files.has(pkg.ncx.path)) updateNcx(files, pkg, project, mode, env);
   if (bilingual) files.set(cssPath, encodeUtf8(STYLESHEET));
   files.set(pkg.opfPath, encodeUtf8(serializeXmlDocument(env, updateOpf(pkg, project, mode, bilingual ? cssPath : undefined))));
   return writeEpubZip(files);
+}
+
+/**
+ * epubcheck rejects `aria-label` on `<nav>` in EPUB navigation documents (common in Gutenberg
+ * books); the nav's heading or `epub:type` already labels it, so the attribute is dropped.
+ */
+function repairNavDocument(files: FileMap, path: string, env: DomEnv): void {
+  const markup = readText(files, path);
+  const doc = parseXhtmlDocument(env, markup);
+  const labelled = byLocalName(doc, 'nav').filter((nav) => nav.hasAttribute('aria-label'));
+  if (labelled.length === 0) return;
+  for (const nav of labelled) nav.removeAttribute('aria-label');
+  files.set(path, encodeUtf8(serializeXhtmlDocument(env, doc, extractDoctype(markup))));
 }
 
 /** NCX labels are text only: segment markers are applied directly, or labels are matched by source text. */

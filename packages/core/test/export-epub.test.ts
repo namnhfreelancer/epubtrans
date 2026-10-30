@@ -65,6 +65,8 @@ describe('exportEpub', () => {
       }
       // TOC is translated in the nav document and in the NCX fallback.
       expect(unzipText(out, 'OEBPS/toc.ncx')).toContain('[vi] A Modest Proposal');
+      // epubcheck rejects aria-label on <nav>; the source book has one.
+      expect(unzipText(out, 'OEBPS/toc.xhtml')).not.toMatch(/<nav[^>]*aria-label/);
       const reimported = await importBook(out, 'out.epub', env);
       expect(reimported.chapters.flatMap((c) => c.segments).length).toBeGreaterThan(0);
     });
