@@ -15,7 +15,6 @@ const DROP = new Set([
   'script',
   'noscript',
   'iframe',
-  'object',
   'embed',
   'form',
   'input',
@@ -88,6 +87,8 @@ function convertNode(node: Node, target: Document, opts: ConvertOptions, ns: str
   if (raw.includes(':')) return childrenOf(ns);
   let name = nameOf(src);
   if (DROP.has(name)) return [];
+  // The embedded resource is dropped, its fallback content kept.
+  if (name === 'object') return childrenOf(ns).filter((n) => nameOf(n) !== 'param');
   let childNs = ns;
   if (name === 'svg') childNs = NS.SVG;
   if (childNs === NS.XHTML && opts.strict) {

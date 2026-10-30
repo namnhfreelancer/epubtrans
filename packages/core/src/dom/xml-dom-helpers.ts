@@ -17,6 +17,7 @@ export const NS = {
 export const ELEMENT_NODE = 1;
 export const TEXT_NODE = 3;
 export const CDATA_SECTION_NODE = 4;
+export const PROCESSING_INSTRUCTION_NODE = 7;
 
 /** Lower-cased local name without namespace prefix. */
 export function nameOf(node: Node): string {

@@ -6,6 +6,7 @@ import type { DomEnv, ExportMode, Project, Segment } from '../types';
 import { encodeUtf8 } from '../util/text-encoding';
 import { type FileMap, readZip, writeEpubZip } from '../util/zip-archive';
 import { dirname, relativeHref } from '../util/zip-path';
+import { prunePackageFiles } from './prune-package-files';
 import { type PlacementContext, placeTranslation, SOURCE_CLASS, setLang, textLabel } from './segment-placement';
 import { stripActiveContent, stripActiveContentFromPackage, unmarkScripted } from './strip-active-content';
 
@@ -20,13 +21,15 @@ const isDone = (s: Segment | undefined): s is Segment & { translationHtml: strin
 /**
  * Builds the output EPUB. Untranslated segments keep their source text. Segment markers are
  * removed, translated blocks get `lang`/`xml:lang`, and bilingual modes link a small stylesheet
- * that fades the source text. Scripts, event handlers and script URLs are stripped from every
- * markup file of the package. `mimetype` is written first and stored.
+ * that fades the source text. Files the OPF does not reference and XSLT stylesheets are dropped,
+ * and scripts, event handlers and script URLs are stripped from every remaining markup file.
+ * `mimetype` is written first and stored.
  */
 export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv): Promise<Uint8Array> {
   if (!EXPORT_MODES.includes(mode)) throw new Error(`Unknown export mode: ${mode}`);
   const files = readZip(project.sourceEpub);
   const pkg = parsePackage(files, env);
+  prunePackageFiles(files, pkg);
   const xmlLangOnly = (pkg.opf.documentElement.getAttribute('version') ?? '3').startsWith('2');
   const segments = new Map(project.chapters.flatMap((c) => c.segments).map((s) => [s.id, s]));
   const cssPath = `${dirname(pkg.opfPath) ? `${dirname(pkg.opfPath)}/` : ''}${STYLESHEET_NAME}`;
