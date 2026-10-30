@@ -10,12 +10,17 @@ import {
 import { UsageError } from './args';
 import type { ProviderFlagValues, RunFlagValues } from './flag-specs';
 
+/** Provider a fresh `translate` uses when neither `--provider` nor `--base-url` is given. */
+export const DEFAULT_PROVIDER_ID = 'openai';
+
 export interface ProviderSelection {
   preset: ProviderPreset;
   baseURL: string;
   /**
-   * False when the provider id came only from the project file (no --provider or --base-url on this run):
-   * a shared file must not decide which provider receives the generic EPUBTRANS_API_KEY.
+   * False when a provider other than the default came only from the project file (no --provider or
+   * --base-url on this run): a shared file must not decide which provider receives the generic
+   * EPUBTRANS_API_KEY. The default provider is exempt: a fresh import already sends the generic key there,
+   * so re-running a command or resuming such a project adds no new recipient.
    */
   genericKeyAllowed: boolean;
 }
@@ -25,17 +30,19 @@ export interface ProviderSelection {
  * is given, else `openai`. The endpoint is never taken from a project file: project files are shared
  * (web app, other people), so a stored base URL could redirect the API key. Built-in presets use their
  * own endpoint unless `--base-url` is passed on this run; `custom` requires `--base-url` on every run.
- * Likewise `EPUBTRANS_API_KEY` is only used for a provider the user named on this run (or a fresh import).
+ * Likewise `EPUBTRANS_API_KEY` is only used for a provider the user named on this run, for the default provider,
+ * or for a fresh import.
  */
 export function selectProvider(flags: ProviderFlagValues, current?: Pick<ProjectSettings, 'providerId'>): ProviderSelection {
-  const id = flags.provider ?? current?.providerId ?? (flags['base-url'] ? 'custom' : 'openai');
+  const id = flags.provider ?? current?.providerId ?? (flags['base-url'] ? 'custom' : DEFAULT_PROVIDER_ID);
   const preset = PROVIDER_PRESETS.find((p) => p.id === id);
   if (!preset) throw new UsageError(`Unknown provider "${id}". Available: ${PROVIDER_PRESETS.map((p) => p.id).join(', ')}`);
   const baseURL = (flags['base-url'] ?? preset.baseURL).trim();
   if (!baseURL) {
     throw new UsageError(`Provider "${preset.id}" needs --base-url on every run (an endpoint stored in a project file is never trusted with your API key)`);
   }
-  const fromProjectOnly = flags.provider === undefined && flags['base-url'] === undefined && current?.providerId !== undefined;
+  const fromProjectOnly =
+    flags.provider === undefined && flags['base-url'] === undefined && current?.providerId !== undefined && current.providerId !== DEFAULT_PROVIDER_ID;
   return { preset: getProviderPreset(preset.id), baseURL, genericKeyAllowed: !fromProjectOnly };
 }
 
