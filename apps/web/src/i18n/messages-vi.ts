@@ -146,6 +146,7 @@ export const vi: Record<MessageKey, string> = {
   'reader.editHint': 'Giữ nguyên các thẻ HTML. Tự lưu khi bạn rời khỏi ô.',
   'reader.retranslate': 'Dịch lại',
   'reader.retranslating': 'Đang dịch lại…',
+  'reader.lockedDuringJob': 'Không thể sửa hoặc dịch lại trong khi sách đang được dịch. Hãy tạm dừng bản dịch để chỉnh sửa.',
   'reader.retranslateFailed': 'Dịch lại thất bại: {message}',
   'reader.notTranslated': 'Chưa dịch',
   'reader.emptyChapter': 'Chương này không có nội dung.',

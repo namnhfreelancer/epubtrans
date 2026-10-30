@@ -144,6 +144,7 @@ export const en = {
   'reader.editHint': 'Keep the HTML tags. Saved when you leave the field.',
   'reader.retranslate': 'Retranslate',
   'reader.retranslating': 'Retranslating…',
+  'reader.lockedDuringJob': 'Editing and retranslating are paused while this book is being translated. Pause the translation to make changes.',
   'reader.retranslateFailed': 'Retranslation failed: {message}',
   'reader.notTranslated': 'Not translated yet',
   'reader.emptyChapter': 'This chapter has no text.',
