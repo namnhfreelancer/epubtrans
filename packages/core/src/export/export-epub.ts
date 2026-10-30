@@ -21,7 +21,7 @@ const isDone = (s: Segment | undefined): s is Segment & { translationHtml: strin
  * Builds the output EPUB. Untranslated segments keep their source text. Segment markers are
  * removed, translated blocks get `lang`/`xml:lang`, and bilingual modes link a small stylesheet
  * that fades the source text. Scripts, event handlers and script URLs are stripped from every
- * content document. `mimetype` is written first and stored.
+ * markup file of the package. `mimetype` is written first and stored.
  */
 export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv): Promise<Uint8Array> {
   if (!EXPORT_MODES.includes(mode)) throw new Error(`Unknown export mode: ${mode}`);
