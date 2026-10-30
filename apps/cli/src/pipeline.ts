@@ -3,6 +3,7 @@ import {
   type ExportMode,
   estimateCost,
   exportEpub,
+  generateGuide,
   type Project,
   type ProjectSettings,
   type TokenUsage,
@@ -23,11 +24,16 @@ export interface PipelineOptions {
   provider: ChatProvider;
   outPath: string;
   mode: ExportMode;
+  /** Ask the model for a book-specific guideline and glossary, after the user confirmed the run. */
+  generateGuide?: boolean;
   yes: boolean;
   io: Io;
 }
 
-/** OpenRouter publishes per-model prices; use them when the user did not pass `--price-in/--price-out`. */
+/**
+ * OpenRouter publishes per-model prices; use them when the user did not pass `--price-in/--price-out`.
+ * Runs only after the user confirmed, because it sends the API key to the provider.
+ */
 async function prefillPrices(settings: ProjectSettings, provider: ChatProvider, io: Io): Promise<ProjectSettings> {
   if (settings.providerId !== 'openrouter' || !provider.listModelInfo) return settings;
   if (settings.priceInPerM !== undefined || settings.priceOutPerM !== undefined) return settings;
@@ -47,12 +53,17 @@ async function confirmRun(io: Io, yes: boolean): Promise<boolean> {
   return /^y(es)?$/i.test((await io.prompt('Proceed? [y/N] ')).trim());
 }
 
-function describeEstimate(project: Project, settings: ProjectSettings, todo: number): string {
+function describeEstimate(project: Project, settings: ProjectSettings, todo: number, withGuide: boolean): string {
   const estimate = estimateCost(project, settings);
   const cost =
-    estimate.usd !== undefined ? `about ${formatUsd(estimate.usd)}` : 'cost unknown (pass --price-in and --price-out, USD per 1M tokens, for a cost estimate)';
+    estimate.usd !== undefined
+      ? `about ${formatUsd(estimate.usd)}`
+      : `cost unknown (pass --price-in and --price-out, USD per 1M tokens, for a cost estimate${
+          settings.providerId === 'openrouter' ? '; OpenRouter prices are looked up after you confirm' : ''
+        })`;
   return [
     `Segments to translate: ${todo}${settings.twoPass ? ' (+ review pass)' : ''}`,
+    ...(withGuide ? ['Plus one extra request to generate the style guideline and glossary (not included in the estimate)'] : []),
     `Model: ${settings.model} via ${settings.baseURL}`,
     `Estimated usage: ~${formatTokens(estimate.inputTokens)} input / ~${formatTokens(estimate.outputTokens)} output tokens, ${cost}`,
   ].join('\n');
@@ -64,18 +75,27 @@ function describeEstimate(project: Project, settings: ProjectSettings, todo: num
  */
 export async function translateAndExport(opts: PipelineOptions): Promise<number> {
   const { project, projectPath, provider, outPath, mode, io } = opts;
-  const settings = await prefillPrices(opts.settings, provider, io);
-  project.settings = settings;
+  project.settings = opts.settings;
   await writeProjectFile(project, projectPath);
 
   const before = countStatuses(project);
   const todo = before.pending + before.error;
   if (todo > 0) {
-    io.err(`${describeEstimate(project, settings, todo)}\n`);
+    io.err(`${describeEstimate(project, opts.settings, todo, opts.generateGuide === true)}\n`);
     if (!(await confirmRun(io, opts.yes))) {
-      io.err(`Cancelled. Project saved to ${projectPath}; nothing was sent to the provider.\n`);
+      io.err(`Cancelled. Project saved to ${projectPath}; no translation request was made.\n`);
       return EXIT.failure;
     }
+    // Everything that contacts the provider happens after the confirmation above.
+    let settings = await prefillPrices(opts.settings, provider, io);
+    if (opts.generateGuide) {
+      io.err('Generating style guideline and glossary ...\n');
+      const guide = await generateGuide(project, provider, settings, io.signal);
+      settings = { ...settings, guideline: guide.guideline, glossary: guide.glossary };
+      io.err(`Guide ready: ${guide.glossary.length} glossary entries\n`);
+    }
+    project.settings = settings;
+    await writeProjectFile(project, projectPath);
     const interrupted = await runTranslation(opts, settings);
     if (interrupted) return EXIT.interrupted;
   } else {

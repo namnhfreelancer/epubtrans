@@ -18,7 +18,8 @@ Run "epubtrans <command> --help" for the options of a command.
 
 const PROVIDER_OPTIONS = `  --provider <id>          Provider preset (see: epubtrans presets). Default: the project's, else openai,
                            or custom when only --base-url is given
-  --base-url <url>         Override the provider endpoint (OpenAI-compatible, or Anthropic for the anthropic preset)
+  --base-url <url>         Override the provider endpoint (OpenAI-compatible, or Anthropic for the anthropic preset).
+                           Required on every run for custom; a project file's endpoint is never used
   --model <id>             Model id (list them with: epubtrans models)
   --api-key-file <path>    Read the API key from a file (- for stdin)`;
 
@@ -45,7 +46,7 @@ ${PROVIDER_OPTIONS}
 ${RUN_OPTIONS}
   --guideline-preset <id>  general (default) | fiction | technical | psychology
   --guideline-file <path>  Use your own style guideline text
-  --generate-guide         Ask the model for a book-specific guideline and glossary first
+  --generate-guide         After you confirm, ask the model for a book-specific guideline and glossary first
 
 Exit codes: 0 done, 1 error or cancelled, 2 usage error, 3 finished with untranslated segments, 130 interrupted.
 `,

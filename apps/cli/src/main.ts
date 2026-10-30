@@ -14,6 +14,9 @@ const onSignal = () => {
 process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);
 
-process.exitCode = await run(process.argv.slice(2), createProcessIo(interrupt.signal));
+process.exitCode = await run(
+  process.argv.slice(2),
+  createProcessIo(interrupt.signal, () => interrupt.abort()),
+);
 // stdin may still be open after a confirmation prompt; do not keep the process alive for it.
 process.exit();
