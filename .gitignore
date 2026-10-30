@@ -1,2 +1,10 @@
-testdata
-.envrc
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.env*
+.DS_Store
+test-output
+.claude/

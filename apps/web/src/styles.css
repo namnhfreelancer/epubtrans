@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Book text: serif and generous line height for comfortable reading. */
+.reading-text {
+  font-family: ui-serif, Georgia, Cambria, "Noto Serif", "Times New Roman", serif;
+  line-height: 1.65;
+}
+
+.reading-text code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}

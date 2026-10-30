@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+  <description>
+    <title-info>
+      <genre>fable</genre>
+      <author><first-name>Aesop</first-name></author>
+      <book-title>Three Fables of Aesop</book-title>
+      <annotation><p>Three fables from the public-domain translation by George Fyler Townsend (1867).</p></annotation>
+      <coverpage><image l:href="#cover.png"/></coverpage>
+      <lang>en</lang>
+    </title-info>
+    <document-info>
+      <author><nickname>epubtrans</nickname></author>
+      <id>epubtrans-fixture-aesop-0001</id>
+      <version>1.0</version>
+    </document-info>
+  </description>
+  <body>
+    <title><p>Three Fables of Aesop</p><p>Translated by George Fyler Townsend</p></title>
+    <epigraph><p>Appearances are deceptive.</p><text-author>Aesop</text-author></epigraph>
+    <section id="fox">
+      <title><p>The Fox and the Grapes</p></title>
+      <p>A famished fox saw some clusters of ripe black grapes hanging from a trellised vine. She resorted to all her tricks to get at them, but wearied herself in vain, for she could not reach them.</p>
+      <p>At last she turned away, hiding her disappointment and saying: <emphasis>"The Grapes are sour, and not ripe as I thought."</emphasis><a l:href="#note1" type="note">[1]</a></p>
+    </section>
+    <section id="lion">
+      <title><p>The Lion and the Mouse</p></title>
+      <p>A lion was awakened from sleep by a mouse running over his face. Rising up angrily, he caught him and was about to kill him, when the mouse piteously entreated, saying: "If you would only spare my life, I would be sure to repay your kindness."</p>
+      <p>The lion laughed and let him go. <strong>Little friends may prove great friends.</strong></p>
+      <section id="lion-moral">
+        <title><p>Moral</p></title>
+        <p>No act of kindness, no matter how small, is ever wasted.</p>
+      </section>
+    </section>
+    <section id="tortoise">
+      <title><p>The Hare and the Tortoise</p></title>
+      <p>A hare one day ridiculed the short feet and slow pace of the tortoise, who replied, laughing: "Though you be swift as the wind, I will beat you in a race."</p>
+      <p>Slow but steady wins the race.</p>
+      <p><code>print("not prose")</code></p>
+    </section>
+  </body>
+  <body name="notes">
+    <section id="note1">
+      <title><p>1</p></title>
+      <p>The origin of the phrase "sour grapes".</p>
+    </section>
+  </body>
+  <binary id="cover.png" content-type="image/png">iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==</binary>
+</FictionBook>
