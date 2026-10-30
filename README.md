@@ -1,177 +1,130 @@
-# Epub Translator
+# epubtrans
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nguyenvanduocit/epubtrans/blob/main/scripts/epub-translator-colab.ipynb)
+[![CI](https://github.com/namnhfreelancer/epubtrans/actions/workflows/ci.yml/badge.svg)](https://github.com/namnhfreelancer/epubtrans/actions/workflows/ci.yml)
 
-This project aims to quickly translate epub books into bilingual book. It's designed to maintain the original text format while providing a rough translation.
+Translate DRM-free books into **bilingual EPUB** with the AI model of your choice, in the browser or from the command line.
 
-[Watch the tutorial video (Vietnamese)](https://youtu.be/9MspqDLPaxQ)
+- **Web app (no install, no server):** <https://namnhfreelancer.github.io/epubtrans/>
+- **CLI (single binary):** Linux, macOS and Windows, see [Command line](#command-line)
+- Input: EPUB, MOBI, AZW3 and FB2 (DRM-free). Output: valid EPUB 3 (checked with [epubcheck](https://www.w3.org/publishing/epubcheck/)).
+- Any language pair, source language auto-detected. Inline formatting (bold, italics, links, ...) survives translation.
 
-## Table of Contents
-- [Quick Start](#quick-start)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Web Serving](#web-serving)
-- [Editing Translations](#editing-translations)
-- [Contributing](#contributing)
-- [Limitations and Known Issues](#limitations-and-known-issues)
+Tiếng Việt: xem [phần tiếng Việt](#tiếng-việt) ở cuối trang.
 
-## Quick Start
+## Privacy
 
-1. Install Epub Translator (see [Installation](#installation))
-2. Set up your ANTHROPIC_KEY:
-   ```bash
-   export ANTHROPIC_KEY=your_anthropic_key
-   ```
-3. Translate a book:
-   ```bash
-   epubtrans unpack /path/to/book.epub
-   epubtrans clean /path/to/unpacked-epub
-   epubtrans mark /path/to/unpacked-epub
-   epubtrans translate /path/to/unpacked-epub --source English --target Vietnamese
-   epubtrans pack /path/to/unpacked
-   ```
+There is no backend. The web app runs entirely in your browser:
 
-## Installation
+- Your book never leaves your device. Books and translation progress are stored in your browser (IndexedDB).
+- Your API key is stored only in your browser and is sent **only** to the provider endpoint you selected (an automated browser test records the network log to enforce this). It is never sent to this project, to GitHub, or to any analytics service.
+- The CLI reads the key from an environment variable or a file, never from a command-line argument, and never prints it.
 
-### Prerequisites
-- Windows: PowerShell 5.1 or later
-- Linux/macOS: Bash shell
-- All systems: Internet connection
+## Providers
 
-### Windows
+You bring your own API key (BYOK). Presets:
 
-1. Open PowerShell as Administrator and run:
+| Preset | Endpoint | Key variable (CLI) |
+|--------|----------|--------------------|
+| Anthropic | `https://api.anthropic.com` (native Messages API) | `ANTHROPIC_API_KEY` |
+| OpenAI | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+| DeepSeek | `https://api.deepseek.com` | `DEEPSEEK_API_KEY` |
+| Custom | any OpenAI-compatible URL (Ollama, LM Studio, proxies, ...) | `EPUBTRANS_API_KEY` |
+
+Models are listed from the provider's `/models` endpoint; you can always type a model id by hand. Cost is estimated before translating from token counts and the prices you enter (USD per 1M tokens; OpenRouter prices are filled in automatically). No price table is bundled.
+
+## Web app
+
+1. Open the app and add your provider, API key and model (the key stays in the browser).
+2. Drop in a book. The source language is detected automatically; pick the target language.
+3. Optionally let the model draft a **style guideline and glossary** for the book, then edit them; start from a preset (general, fiction, technical, psychology) if you prefer. Turn on the **2-pass review** for higher quality.
+4. Check the token and cost estimate, then translate. Progress is saved continuously: reload or close the tab and it resumes without redoing finished segments.
+5. Read side by side, edit any segment, or re-translate a single segment.
+6. Export the EPUB as **bilingual** (original, then translation, original faded), **bilingual-translation-first**, or **translation-only**.
+
+The library keeps several books. Each book can be exported to, and imported from, a `.epubtrans` project file. The interface is available in English and Vietnamese and the app is an installable PWA.
+
+## Command line
+
+### Install
+
+Linux and macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/namnhfreelancer/epubtrans/main/scripts/install_unix.sh | bash
+```
+
+Options: `bash -s -- --system` (install to `/usr/local/bin`), `--dir DIR`, `--version v3.0.0`. Installs to `~/.local/bin` by default.
+
+Windows (PowerShell):
 
 ```powershell
-$ErrorActionPreference = "Stop"
-$version = (Invoke-RestMethod "https://api.github.com/repos/nguyenvanduocit/epubtrans/releases/latest").tag_name
-$arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "386" }
-$url = "https://github.com/nguyenvanduocit/epubtrans/releases/download/${version}/epubtrans_${version.Substring(1)}_windows_${arch}.tar.gz"
-Invoke-WebRequest -Uri $url -OutFile "epubtrans.tar.gz"
-tar -xzf epubtrans.tar.gz
-Move-Item -Force epubtrans.exe "C:\Windows\System32\"
-Remove-Item epubtrans.tar.gz
-Write-Host "epubtrans $version has been installed successfully!"
+irm https://raw.githubusercontent.com/namnhfreelancer/epubtrans/main/scripts/install_windows.ps1 | iex
 ```
 
-### Linux and macOS
+Both installers download the binary from the latest [GitHub release](https://github.com/namnhfreelancer/epubtrans/releases/latest) and verify it against the release's `SHA256SUMS`. You can also download `epubtrans-<os>-<arch>` (`linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`, `windows-x64.exe`) manually. Check with `epubtrans --version`.
 
-Open a terminal and run:
+### Use
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/nguyenvanduocit/epubtrans/main/scripts/install_unix.sh)"
+export EPUBTRANS_API_KEY=...          # or OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, ...
+
+epubtrans models --provider openrouter
+epubtrans translate book.epub --to vi --provider openrouter --model <model-id>
 ```
 
-### Verify Installation
+`translate` imports the book, prints a token and cost estimate, asks for confirmation (skip with `--yes`), translates with a progress display and writes `book.vi.epub`. The key can also come from `--api-key-file <path>` (`-` reads stdin). **The key is never accepted as a plain argument**, because it would leak into shell history and process lists.
 
-After installation, verify by running:
+Progress is saved continuously to `book.epub.epubtrans`. After Ctrl-C or a crash, run the same command again and finished segments are not translated twice.
 
-```
-epubtrans --version
-```
+| Command | Purpose |
+|---------|---------|
+| `epubtrans translate <input> --to <lang> [options]` | Import, estimate, translate, export |
+| `epubtrans resume <file.epubtrans> [options]` | Continue a project from the web app or an earlier run, then export |
+| `epubtrans export <file.epubtrans> --mode <mode> --out <file>` | Write the EPUB from a project (no key needed) |
+| `epubtrans models [--provider <id>] [--base-url <url>]` | List models from `/models` |
+| `epubtrans presets` | List providers, guideline presets and export modes |
 
-## Usage
+Common options: `--from <lang>` (default auto), `--provider <preset id>`, `--base-url <url>`, `--model <id>`, `--concurrency <1-16>`, `--two-pass`, `--guideline-preset general|fiction|technical|psychology`, `--guideline-file <path>`, `--generate-guide`, `--mode bilingual|bilingual-translation-first|translation-only`, `--out <file.epub>`, `--project <file>`, `--price-in/--price-out <USD per 1M tokens>`, `--yes`. Run `epubtrans <command> --help` for details.
 
-### Available Commands
+Exit codes: `0` success, `1` error, `2` usage error, `3` finished with untranslated segments (EPUB still written), `130` interrupted (progress saved).
 
-```
-Usage:
-  epubtrans [flags]
-  epubtrans [command]
+## Project files
 
-Available Commands:
-  clean       Clean the html files
-  completion  Generate the autocompletion script for the specified shell
-  help        Help about any command
-  mark        Mark content in EPUB files
-  pack        Zip files in a directory
-  serve       Serve the content of an unpacked EPUB as a web server
-  styling     Style the content of an unpacked EPUB
-  translate   Translate the content of an unpacked EPUB
-  unpack      Unpack a book
-  upgrade     Self update the tool
+A `.epubtrans` file is a zip containing `project.json` (schema-versioned settings, glossary and per-segment state) and `source.epub` (the normalized book). It holds no API key. The web app and the CLI read and write the same format, so you can start in the browser and finish on a server (or the reverse). Details: [docs/system-architecture.md](docs/system-architecture.md).
 
-Flags:
-  -h, --help      help for epubtrans
-  -v, --version   version for epubtrans
-```
+## Development
 
-### Step-by-step Guide
-
-0. Configure environment:
-   ```bash
-   export ANTHROPIC_KEY=your_anthropic_key
-   ```
-   Note: You need to obtain an ANTHROPIC_KEY from Anthropic's website to use their translation API.
-
-1. Unpack the epub file:
-   ```bash
-   epubtrans unpack /path/to/file.epub
-   ```
-
-2. Clean up HTML files:
-   ```bash
-   epubtrans clean /path/to/unpacked-epub
-   ```
-
-3. Mark content for translation:
-   ```bash
-   epubtrans mark /path/to/unpacked-epub
-   ```
-
-4. Translate marked content:
-   ```bash
-   epubtrans translate /path/to/unpacked-epub --source English --target Vietnamese
-   ```
-
-5. (Optional) Apply styling:
-   ```bash
-   epubtrans styling /path/to/unpacked --hide "source|target"
-   ```
-
-the command also make original text to be faded out a little bit, so that the translated text can be more visible.
-
-6. Package into a bilingual book:
-   ```bash
-   epubtrans pack /path/to/unpacked
-   ```
-
-## Web Serving
-
-To serve the book on the web:
+Requires [Bun](https://bun.sh) 1.3+.
 
 ```bash
-epubtrans serve /path/to/unpacked
+bun install
+bun run typecheck && bun run lint && bun run test && bun run build
+bun run format                         # Biome formatter
+bun apps/cli/src/main.ts --help        # run the CLI from source
+bun scripts/build-cli.ts --host        # compile a binary into dist/
+bun scripts/smoke-cli-binary.ts        # smoke-test that binary
 ```
 
-Important endpoints:
-- http://localhost:8080/api/info
-- http://localhost:8080/toc.html
-- http://localhost:3000/api/manifest
-- http://localhost:3000/api/spine
+Layout: `packages/core` (engine), `apps/web` (Vite + React app), `apps/cli` (Bun CLI). More in [docs/](docs/) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Editing Translations
+## Credits and license
 
-When accessing the book via the `serve` command, the translated content is editable. After editing, the content is automatically saved when you move the mouse away.
+epubtrans was created by [nguyenvanduocit](https://github.com/nguyenvanduocit/epubtrans); v2 and its prompt presets are his work. This v3 rewrite (TypeScript monorepo, browser app, new CLI) builds on that project and keeps its attribution. The MOBI/KF8 parser is vendored from [foliate-js](https://github.com/johnfactotum/foliate-js) (MIT), see `packages/core/third-party/foliate-js/`.
 
-To apply changes, run the `pack` command again.
+See [LICENSE](LICENSE) for the terms that apply to this repository.
 
-[Watch the editing tutorial video](https://youtu.be/XKIj-gyHgmI)
+---
 
-## Contributing
+## Tiếng Việt
 
-We welcome contributions to the Epub Translator project! Here's how you can help:
+epubtrans dịch sách **không DRM** (EPUB, MOBI, AZW3, FB2) thành **EPUB song ngữ** bằng mô hình AI mà bạn chọn, ngay trong trình duyệt hoặc bằng dòng lệnh.
 
-1. Fork the repository
-2. Create a new branch for your feature or bug fix
-3. Make your changes and commit them
-4. Push to your fork and submit a pull request
+- **Dùng thử không cần cài đặt:** <https://namnhfreelancer.github.io/epubtrans/>
+- **Riêng tư:** không có máy chủ. Sách và tiến độ dịch lưu trong trình duyệt của bạn. API key chỉ nằm trong trình duyệt và chỉ được gửi tới nhà cung cấp bạn đã chọn (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek hoặc URL tương thích OpenAI).
+- **Tự mang API key (BYOK):** ứng dụng ước tính token và chi phí trước khi dịch, tự tạo hướng dẫn văn phong và bảng thuật ngữ (chỉnh sửa được), có chế độ rà soát 2 lượt, lưu tiến độ liên tục nên tải lại trang vẫn dịch tiếp.
+- **Xuất EPUB** ở 3 chế độ: song ngữ, song ngữ (bản dịch trước), chỉ bản dịch. Giao diện có tiếng Việt và tiếng Anh, cài được như ứng dụng (PWA).
+- **Dòng lệnh:** cài bằng lệnh ở mục [Command line](#command-line), đặt khóa trong biến môi trường `EPUBTRANS_API_KEY`, rồi chạy `epubtrans translate sach.epub --to vi --model <id>`. Gặp sự cố hoặc nhấn Ctrl-C, chạy lại cùng lệnh để dịch tiếp; có thể mở tệp `.epubtrans` xuất từ web bằng `epubtrans resume`.
 
-Please ensure your code adheres to the project's coding standards and include tests for new features.
-
-## Limitations and Known Issues
-
-- The quality of translation depends on the Anthropic API and may not be perfect for all types of content.
-- Large books may take a considerable amount of time to translate.
-
-For any issues or feature requests, please open an issue on the GitHub repository.
+Cảm ơn tác giả gốc [nguyenvanduocit](https://github.com/nguyenvanduocit/epubtrans). Điều khoản sử dụng xem tệp [LICENSE](LICENSE).
