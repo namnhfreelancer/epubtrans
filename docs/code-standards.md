@@ -17,7 +17,7 @@
 
 ## Secrets
 
-- API keys live only in the user's browser storage (web) or in an environment variable or key file (CLI). They are sent only to the selected provider endpoint.
+- API keys live only in the user's browser storage (web) or in an environment variable or key file (CLI). They are sent only to the selected provider endpoint, which the CLI never takes from a project file. The web "remember key" option stores the key in `localStorage` on a Pages origin shared with the owner's other sites; keep the default memory-only and keep that caveat in the docs.
 - Never accept a key as a command-line value, never log or print it, never write it to a project file, test fixture or error message. Tests that exercise keys assert they do not appear in output.
 - Do not commit `.env*` files or real keys; real-model checks use a key from the environment.
 

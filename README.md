@@ -17,7 +17,8 @@ There is no backend. The web app runs entirely in your browser:
 
 - Your book never leaves your device. Books and translation progress are stored in your browser (IndexedDB).
 - Your API key is stored only in your browser and is sent **only** to the provider endpoint you selected (an automated browser test records the network log to enforce this). It is never sent to this project, to GitHub, or to any analytics service.
-- The CLI reads the key from an environment variable or a file, never from a command-line argument, and never prints it.
+- **"Remember key" caveat:** by default the key lives in memory only and disappears when you close the tab. If you tick "remember key", it is stored in this browser's `localStorage` for the `namnhfreelancer.github.io` origin, and that origin is shared with the owner's other GitHub Pages sites, whose scripts could read it. On a shared machine, or if you do not want that, leave the box unchecked.
+- The CLI reads the key from an environment variable or a file, never from a command-line argument, and never prints it. It never takes the endpoint from a project file: built-in providers always use their own endpoint (unless you pass `--base-url` on that run), and the `custom` provider needs `--base-url` on every run, so a shared `.epubtrans` file cannot redirect your key.
 
 ## Providers
 
@@ -36,7 +37,7 @@ Models are listed from the provider's `/models` endpoint; you can always type a 
 
 ## Web app
 
-1. Open the app and add your provider, API key and model (the key stays in the browser).
+1. Open the app and add your provider, API key and model (the key stays in the browser; see the "remember key" caveat under [Privacy](#privacy)).
 2. Drop in a book. The source language is detected automatically; pick the target language.
 3. Optionally let the model draft a **style guideline and glossary** for the book, then edit them; start from a preset (general, fiction, technical, psychology) if you prefer. Turn on the **2-pass review** for higher quality.
 4. Check the token and cost estimate, then translate. Progress is saved continuously: reload or close the tab and it resumes without redoing finished segments.
@@ -122,7 +123,7 @@ See [LICENSE](LICENSE) for the terms that apply to this repository.
 epubtrans dịch sách **không DRM** (EPUB, MOBI, AZW3, FB2) thành **EPUB song ngữ** bằng mô hình AI mà bạn chọn, ngay trong trình duyệt hoặc bằng dòng lệnh.
 
 - **Dùng thử không cần cài đặt:** <https://namnhfreelancer.github.io/epubtrans/>
-- **Riêng tư:** không có máy chủ. Sách và tiến độ dịch lưu trong trình duyệt của bạn. API key chỉ nằm trong trình duyệt và chỉ được gửi tới nhà cung cấp bạn đã chọn (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek hoặc URL tương thích OpenAI).
+- **Riêng tư:** không có máy chủ. Sách và tiến độ dịch lưu trong trình duyệt của bạn. API key chỉ nằm trong trình duyệt và chỉ được gửi tới nhà cung cấp bạn đã chọn (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek hoặc URL tương thích OpenAI). Lưu ý: nếu bật "nhớ khóa", khóa được lưu trong `localStorage` của trình duyệt cho origin `namnhfreelancer.github.io`, origin này dùng chung với các trang GitHub Pages khác của chủ repo; trên máy dùng chung hoặc nếu bạn không muốn vậy, hãy để ô này không chọn.
 - **Tự mang API key (BYOK):** ứng dụng ước tính token và chi phí trước khi dịch, tự tạo hướng dẫn văn phong và bảng thuật ngữ (chỉnh sửa được), có chế độ rà soát 2 lượt, lưu tiến độ liên tục nên tải lại trang vẫn dịch tiếp.
 - **Xuất EPUB** ở 3 chế độ: song ngữ, song ngữ (bản dịch trước), chỉ bản dịch. Giao diện có tiếng Việt và tiếng Anh, cài được như ứng dụng (PWA).
 - **Dòng lệnh:** cài bằng lệnh ở mục [Command line](#command-line), đặt khóa trong biến môi trường `EPUBTRANS_API_KEY`, rồi chạy `epubtrans translate sach.epub --to vi --model <id>`. Gặp sự cố hoặc nhấn Ctrl-C, chạy lại cùng lệnh để dịch tiếp; có thể mở tệp `.epubtrans` xuất từ web bằng `epubtrans resume`.

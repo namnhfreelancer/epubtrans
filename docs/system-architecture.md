@@ -49,7 +49,7 @@ Vite, React 19, Tailwind v4, Dexie (IndexedDB) and vite-plugin-pwa; UI strings i
 
 ## CLI (`apps/cli`)
 
-`src/run.ts` dispatches `translate`, `resume`, `export`, `models` and `presets` (`src/commands/`). Shared steps live in `src/pipeline.ts`: persist the project, print the estimate and ask for confirmation, run `translateProject` with throttled atomic saves of the project file (`project-store.ts`), flush on Ctrl-C or error, export the EPUB. API keys come only from `--api-key-file`, `EPUBTRANS_API_KEY` or the provider's own variable (`api-key.ts`); a key flag on argv is rejected. `bun build --compile` produces single binaries (`scripts/build-cli.ts`).
+`src/run.ts` dispatches `translate`, `resume`, `export`, `models` and `presets` (`src/commands/`). Shared steps live in `src/pipeline.ts`: persist the project, print the estimate and ask for confirmation (Ctrl-C at the prompt exits with 130, see `prompt.ts`), then look up prices, optionally generate the guide, run `translateProject` with throttled atomic saves of the project file (`project-store.ts`), flush on Ctrl-C or error, export the EPUB. API keys come only from `--api-key-file`, `EPUBTRANS_API_KEY` or the provider's own variable (`api-key.ts`); a key flag on argv is rejected. `bun build --compile` produces single binaries (`scripts/build-cli.ts`).
 
 ## Security and privacy model
 
@@ -57,6 +57,8 @@ Vite, React 19, Tailwind v4, Dexie (IndexedDB) and vite-plugin-pwa; UI strings i
 - The key is sent only to the selected provider endpoint (Playwright network-log test covers the web app; the CLI builds the provider from the same core code).
 - Model output is untrusted: it is validated against the source markup before it is stored or exported.
 - Project files contain no key. Project JSON and IndexedDB rows are validated before use.
+- Web: the key is memory-only unless the user ticks "remember key", which writes it to `localStorage` on the Pages origin `namnhfreelancer.github.io`. That origin is shared with the owner's other GitHub Pages sites, so any script served there could read it; documented in the README privacy section. Serving the app from a dedicated origin (for example a custom subdomain) would remove the sharing.
+- CLI: the provider endpoint is never read from a project file (shared files could otherwise redirect the key). Presets use their own endpoint unless `--base-url` is passed on that run; `custom` requires `--base-url` on every run. Every request to the provider, including the OpenRouter price lookup and the `--generate-guide` call, happens only after the cost confirmation.
 
 ## Release flow
 
