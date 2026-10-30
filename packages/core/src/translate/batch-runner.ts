@@ -12,8 +12,13 @@ export interface BatchContext {
   settings: ProjectSettings;
   signal: AbortSignal;
   usage: TokenUsage;
-  /** Called exactly once per segment when its outcome for this pass is final. */
-  commit: (segment: Segment) => void;
+  /**
+   * Called exactly once per segment when its outcome for this pass is final. `superseded` is true
+   * when the segment was left untouched because it changed (user edit, retranslation) meanwhile.
+   */
+  commit: (segment: Segment, superseded: boolean) => void;
+  /** True when the segment changed since its batch was built; such a segment is never sent or overwritten. */
+  isSuperseded?: (segment: Segment) => boolean;
   /** Consecutive non-retryable client errors (4xx) without any successful response. */
   clientErrors: number;
 }
@@ -35,7 +40,8 @@ function outputBudget(segments: Segment[]): number {
  * retried a few times before it is marked as failed.
  * Fatal provider errors (auth, unknown model) and aborts propagate to the caller.
  */
-export async function runBatch(segments: Segment[], kind: BatchKind, ctx: BatchContext, attempt = 1): Promise<void> {
+export async function runBatch(batch: Segment[], kind: BatchKind, ctx: BatchContext, attempt = 1): Promise<void> {
+  const segments = current(batch, ctx);
   if (segments.length === 0) return;
   let answer: Map<string, string>;
   try {
@@ -72,7 +78,7 @@ export async function runBatch(segments: Segment[], kind: BatchKind, ctx: BatchC
 
   const rejected: Segment[] = [];
   let reason = '';
-  for (const segment of segments) {
+  for (const segment of current(segments, ctx)) {
     const html = answer.get(segment.id);
     const problem = html === undefined ? 'segment missing from answer' : validateTranslationMarkup(segment.sourceHtml, html);
     if (problem || html === undefined) {
@@ -83,7 +89,7 @@ export async function runBatch(segments: Segment[], kind: BatchKind, ctx: BatchC
     segment.translationHtml = html;
     segment.status = kind === 'translate' ? 'translated' : 'reviewed';
     delete segment.error;
-    ctx.commit(segment);
+    ctx.commit(segment, false);
   }
   // A segment isolated from a larger batch starts its own count of single-segment attempts.
   if (rejected.length) await splitOrFail(rejected, kind, ctx, segments.length === 1 ? attempt : 0, reason);
@@ -101,13 +107,27 @@ async function splitOrFail(segments: Segment[], kind: BatchKind, ctx: BatchConte
   if (segment) fail(segment, kind, reason, ctx);
 }
 
+/** Commits superseded segments as such and returns the others. */
+function current(segments: Segment[], ctx: BatchContext): Segment[] {
+  if (!ctx.isSuperseded) return segments;
+  return segments.filter((s) => {
+    if (!ctx.isSuperseded?.(s)) return true;
+    ctx.commit(s, true);
+    return false;
+  });
+}
+
 /** A failed review keeps the draft translation; a failed translation marks the segment as error. */
 function fail(segment: Segment, kind: BatchKind, reason: string, ctx: BatchContext): void {
+  if (ctx.isSuperseded?.(segment)) {
+    ctx.commit(segment, true);
+    return;
+  }
   if (kind === 'translate') {
     segment.status = 'error';
     segment.error = reason;
   } else {
     segment.error = `review failed: ${reason}`;
   }
-  ctx.commit(segment);
+  ctx.commit(segment, false);
 }

@@ -28,16 +28,25 @@ function setJob(id: string, patch: Partial<JobState>): void {
 }
 
 export function useJob(projectId: string): JobState {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => jobs.get(projectId) ?? IDLE,
-  );
+  return useSyncExternalStore(subscribe, () => jobs.get(projectId) ?? IDLE);
 }
 
 export const isJobActive = (projectId: string): boolean => controllers.has(projectId);
+
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+};
+
+/** Whether a job is running (or pausing) for the project; re-renders only when that flips, not on progress. */
+export function useJobActive(projectId: string): boolean {
+  return useSyncExternalStore(subscribe, () => {
+    const status = jobs.get(projectId)?.status;
+    return status === 'running' || status === 'pausing';
+  });
+}
 
 /** Remaining time in ms from the observed rate, or undefined until there is enough signal. */
 export function estimateRemainingMs(job: Pick<JobState, 'done' | 'total' | 'phaseStartedAt'>, now: number): number | undefined {

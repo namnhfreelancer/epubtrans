@@ -1,44 +1,59 @@
+import { type HtmlTag, tokenizeTags } from './html-tag-tokenizer';
+
 /**
  * DOM-free validation of model output against the source segment markup.
- * Source markup comes from our deterministic serializer, so a tag scanner is reliable there;
- * for model output it is deliberately strict: any tag or attribute change is a mismatch.
+ * Both sides are scanned with an HTML-conformant tag tokenizer, so the comparison sees the
+ * same tags and attributes an HTML parser builds at export. It is deliberately strict: any tag
+ * or attribute that is not in the source (with the same value) is a mismatch.
  */
-const TAG = /<(\/?)([A-Za-z][\w:-]*)((?:\s+[^\s=/>]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/?)>/g;
-const ATTR = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
 
-const decodeAttr = (v: string) =>
-  v
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
+/** Active or raw-text elements: never accepted in a translation, even when the source has them. */
+const FORBIDDEN = new Set([
+  'script',
+  'style',
+  'iframe',
+  'object',
+  'embed',
+  'textarea',
+  'title',
+  'xmp',
+  'noembed',
+  'noframes',
+  'noscript',
+  'plaintext',
+  'template',
+]);
 
-interface TagScan {
+/** Comments, doctypes, CDATA, processing instructions and bogus end tags hide markup from a tag scanner. */
+const HIDDEN_MARKUP = /<[!?]|<\/(?![A-Za-z])/;
+
+interface TagCounts {
   /** Opening/self-closing tag signatures: name plus sorted attributes. */
   open: Map<string, number>;
+  /** Closing tags expected from non-void opening tags. */
+  expectedClose: Map<string, number>;
   close: Map<string, number>;
 }
 
-function scan(html: string): TagScan {
+const bump = (m: Map<string, number>, key: string) => m.set(key, (m.get(key) ?? 0) + 1);
+
+function countTags(tags: HtmlTag[]): TagCounts {
   const open = new Map<string, number>();
+  const expectedClose = new Map<string, number>();
   const close = new Map<string, number>();
-  for (const m of html.matchAll(TAG)) {
-    const name = (m[2] ?? '').toLowerCase();
-    if (m[1]) {
-      close.set(name, (close.get(name) ?? 0) + 1);
+  for (const tag of tags) {
+    if (tag.end) {
+      if (!VOID.has(tag.name)) bump(close, tag.name);
       continue;
     }
-    const attrs: string[] = [];
-    for (const a of (m[3] ?? '').matchAll(ATTR)) {
-      attrs.push(`${(a[1] ?? '').toLowerCase()}=${decodeAttr(a[2] ?? a[3] ?? a[4] ?? '')}`);
-    }
-    const sig = `${name}|${attrs.sort().join('|')}`;
-    open.set(sig, (open.get(sig) ?? 0) + 1);
-    if (m[4] && !VOID.has(name)) close.set(name, (close.get(name) ?? 0) + 1);
+    const attrs = tag.attrs.map((a) => JSON.stringify(a)).sort();
+    bump(open, JSON.stringify([tag.name, ...attrs]));
+    if (VOID.has(tag.name)) continue;
+    bump(expectedClose, tag.name);
+    if (tag.selfClosing) bump(close, tag.name);
   }
-  return { open, close };
+  return { open, expectedClose, close };
 }
 
 const sameCounts = (a: Map<string, number>, b: Map<string, number>) => a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
@@ -49,19 +64,15 @@ const sameCounts = (a: Map<string, number>, b: Map<string, number>) => a.size ==
  */
 export function validateTranslationMarkup(sourceHtml: string, translation: string): string | undefined {
   if (!translation.replace(/<[^>]*>/g, '').trim()) return 'empty translation';
-  const src = scan(sourceHtml);
-  const out = scan(translation);
+  if (HIDDEN_MARKUP.test(translation)) return 'forbidden markup';
+  const tags = tokenizeTags(translation);
+  if (!tags) return 'unterminated tag';
+  if (tags.some((t) => FORBIDDEN.has(t.name))) return 'forbidden markup';
+  const src = countTags(tokenizeTags(sourceHtml) ?? []);
+  const out = countTags(tags);
   if (!sameCounts(src.open, out.open)) return 'inline tags or attributes were not preserved';
-  const expectedClose = new Map<string, number>();
-  for (const [sig, n] of out.open) {
-    const name = sig.split('|')[0] ?? '';
-    if (!VOID.has(name)) expectedClose.set(name, (expectedClose.get(name) ?? 0) + n);
+  for (const name of new Set([...out.close.keys(), ...out.expectedClose.keys()])) {
+    if (out.close.get(name) !== out.expectedClose.get(name)) return `unbalanced <${name}> tags`;
   }
-  for (const [name, n] of out.close) {
-    if (VOID.has(name)) continue;
-    if (expectedClose.get(name) !== n) return `unbalanced <${name}> tags`;
-  }
-  for (const [name, n] of expectedClose) if ((out.close.get(name) ?? 0) !== n) return `unbalanced <${name}> tags`;
-  if (/<\s*(script|style|iframe|object)/i.test(translation)) return 'forbidden markup';
   return undefined;
 }

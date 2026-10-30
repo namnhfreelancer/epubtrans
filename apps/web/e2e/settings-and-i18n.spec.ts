@@ -26,6 +26,9 @@ test('API key stays in memory unless "remember" is checked, and can be cleared',
   await page.reload();
   await expect(page.locator('#api-key')).toHaveValue('');
 
+  // Remembering is opt-in and warns that the Pages origin is shared with other sites.
+  await expect(page.getByLabel('Remember key on this device')).not.toBeChecked();
+  await expect(page.getByTestId('remember-warning')).toContainText('other sites by the same owner');
   await page.locator('#api-key').fill('sk-remembered');
   await page.getByLabel('Remember key on this device').check();
   await page.reload();

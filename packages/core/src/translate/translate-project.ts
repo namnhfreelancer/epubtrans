@@ -33,10 +33,14 @@ export function validateSettings(settings: ProjectSettings): void {
 
 const concurrencyOf = (settings: ProjectSettings) => Math.min(MAX_CONCURRENCY, Math.max(1, Math.floor(settings.concurrency)));
 
+/** What a user edit or a retranslation changes; compared against the state when the phase started. */
+const revisionOf = (s: Segment) => `${s.status}\u0000${s.translationHtml ?? ''}`;
+
 /**
  * Translates every segment that is 'pending' or 'error' (finished segments are skipped, which makes
  * runs resumable), then — when `settings.twoPass` — reviews every 'translated' segment.
- * Segments are mutated in place and reported through `onSegment` for persistence.
+ * Segments are mutated in place and reported through `onSegment` for persistence. A segment changed by
+ * someone else during the run (manual edit, retranslation) is left as is and not reported.
  * Rejects on abort or on a fatal provider error (bad key, unknown model); other failures mark segments as 'error'.
  */
 export async function translateProject(project: Project, provider: ChatProvider, settings: ProjectSettings, opts: TranslateOptions = {}): Promise<void> {
@@ -55,10 +59,14 @@ export async function translateProject(project: Project, provider: ChatProvider,
 
   async function runPhase(p: Project, phase: TranslationPhase, select: (s: Segment) => boolean): Promise<void> {
     const chapterOf = new Map<string, Chapter>();
+    const revisions = new Map<Segment, string>();
     const batches: Segment[][] = [];
     for (const chapter of p.chapters) {
       const selected = chapter.segments.filter(select);
-      for (const s of selected) chapterOf.set(s.id, chapter);
+      for (const s of selected) {
+        chapterOf.set(s.id, chapter);
+        revisions.set(s, revisionOf(s));
+      }
       batches.push(...makeBatches(selected));
     }
     const total = chapterOf.size;
@@ -72,11 +80,14 @@ export async function translateProject(project: Project, provider: ChatProvider,
       signal: controller.signal,
       usage,
       clientErrors: 0,
-      commit: (segment) => {
+      isSuperseded: (segment) => revisions.get(segment) !== revisionOf(segment),
+      commit: (segment, superseded) => {
         done++;
-        p.updatedAt = new Date().toISOString();
-        const chapter = chapterOf.get(segment.id);
-        if (chapter) opts.onSegment?.(segment, chapter);
+        if (!superseded) {
+          p.updatedAt = new Date().toISOString();
+          const chapter = chapterOf.get(segment.id);
+          if (chapter) opts.onSegment?.(segment, chapter);
+        }
         report();
       },
     };

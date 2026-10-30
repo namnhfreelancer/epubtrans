@@ -47,6 +47,8 @@ export const en = {
   'settings.remember': 'Remember key on this device',
   'settings.rememberOn': 'Stored in this browser’s local storage until you clear it.',
   'settings.rememberOff': 'Kept in memory only: you will need to enter it again after reloading the page.',
+  'settings.rememberShared':
+    'Warning: this app shares its web address with other sites by the same owner (GitHub Pages), so scripts on those sites could read a remembered key. Only remember the key on a device you trust, and prefer a key with a spending limit.',
   'settings.rememberFailed': 'This browser does not allow storing the key; it is kept in memory only.',
   'settings.clearKey': 'Clear key',
   'settings.keyNote': 'Your key is only sent to {host}. It is never sent to epubtrans or anyone else.',
@@ -144,6 +146,7 @@ export const en = {
   'reader.editHint': 'Keep the HTML tags. Saved when you leave the field.',
   'reader.retranslate': 'Retranslate',
   'reader.retranslating': 'Retranslating…',
+  'reader.lockedDuringJob': 'Editing and retranslating are paused while this book is being translated. Pause the translation to make changes.',
   'reader.retranslateFailed': 'Retranslation failed: {message}',
   'reader.notTranslated': 'Not translated yet',
   'reader.emptyChapter': 'This chapter has no text.',

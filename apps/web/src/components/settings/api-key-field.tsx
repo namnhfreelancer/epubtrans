@@ -36,12 +36,21 @@ export function ApiKeyField({ providerId, host }: { providerId: string; host?: s
         </div>
       </Field>
       <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" className="mt-0.5 h-4 w-4 accent-teal-700" checked={remembered} onChange={(e) => update(key, e.target.checked)} />
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 accent-teal-700"
+          checked={remembered}
+          aria-describedby="remember-warning"
+          onChange={(e) => update(key, e.target.checked)}
+        />
         <span>
           <span className="font-medium">{t('settings.remember')}</span>
           <span className="block text-xs text-stone-500 dark:text-stone-400">{remembered ? t('settings.rememberOn') : t('settings.rememberOff')}</span>
         </span>
       </label>
+      <p id="remember-warning" data-testid="remember-warning" className="-mt-1 pl-6 text-xs text-amber-800 dark:text-amber-300">
+        {t('settings.rememberShared')}
+      </p>
       <p
         data-testid="key-note"
         className="flex items-start gap-2 rounded-lg bg-stone-100 px-3 py-2 text-xs text-stone-700 dark:bg-stone-800 dark:text-stone-300"

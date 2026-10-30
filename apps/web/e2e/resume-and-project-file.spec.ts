@@ -48,11 +48,24 @@ test('pause stops the run and resume continues it', async ({ page }) => {
   await page.locator('#concurrency').fill('1');
   await page.getByTestId('start-translation').click();
   await expect.poll(async () => (await persistedSegments(page)).length).toBeGreaterThan(0);
+
+  // While the job runs, the reader locks Edit and Retranslate: the run would overwrite such a change.
+  await page.getByRole('link', { name: 'Read & edit' }).click();
+  const edit = page.getByTestId('segment-row').first().getByRole('button', { name: 'Edit' });
+  await expect(edit).toBeDisabled();
+  await expect(edit).toHaveAttribute('title', /being translated/);
+  await expect(page.getByTestId('segment-row').first().getByRole('button', { name: 'Retranslate' })).toBeDisabled();
+  await page.goBack();
+
   await page.getByRole('button', { name: 'Pause' }).click();
   await expect(page.getByText('Paused. Finished segments are saved')).toBeVisible();
   const afterPause = mock.segmentRequests.length;
   await page.waitForTimeout(600);
   expect(mock.segmentRequests.length).toBe(afterPause);
+  await page.getByRole('link', { name: 'Read & edit' }).click();
+  await expect(edit).toBeEnabled();
+  await expect(edit).not.toHaveAttribute('title');
+  await page.goBack();
   mock.delayMs = 0;
   await translateAll(page);
 });

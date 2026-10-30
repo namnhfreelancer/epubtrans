@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n/i18n-context';
 import { errorText, pushNotice } from '../../lib/notices';
 import { persistSegment, saveTranslationEdit, touchProject } from '../../lib/project-store';
 import { sanitizeSegmentHtml } from '../../lib/sanitize-segment-html';
+import { useJobActive } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
 import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
@@ -37,6 +38,9 @@ export function SegmentRow({ project, segment, mode, provider }: SegmentRowProps
   const [rowError, setRowError] = useState<string>();
   const abortRef = useRef<AbortController | null>(null);
   const { sourceLang, targetLang } = project.settings;
+  // The running job would race a manual edit or retranslation of the same segment.
+  const jobActive = useJobActive(project.id);
+  const lockedHint = jobActive ? t('reader.lockedDuringJob') : undefined;
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -100,11 +104,11 @@ export function SegmentRow({ project, segment, mode, provider }: SegmentRowProps
             {rowError}
           </span>
         )}
-        <span className="ml-auto flex gap-1">
-          <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={editing}>
+        <span className="ml-auto flex gap-1" title={lockedHint}>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={editing || jobActive} title={lockedHint}>
             {t('reader.edit')}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => void retranslate()} disabled={busy}>
+          <Button size="sm" variant="ghost" onClick={() => void retranslate()} disabled={busy || jobActive} title={lockedHint}>
             {busy ? t('reader.retranslating') : t('reader.retranslate')}
           </Button>
         </span>

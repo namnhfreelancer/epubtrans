@@ -7,6 +7,7 @@ import { encodeUtf8 } from '../util/text-encoding';
 import { type FileMap, readZip, writeEpubZip } from '../util/zip-archive';
 import { dirname, relativeHref } from '../util/zip-path';
 import { type PlacementContext, placeTranslation, SOURCE_CLASS, setLang, textLabel } from './segment-placement';
+import { stripActiveContent, stripActiveContentFromPackage, unmarkScripted } from './strip-active-content';
 
 export const EXPORT_MODES: ExportMode[] = ['bilingual', 'bilingual-translation-first', 'translation-only'];
 
@@ -19,7 +20,8 @@ const isDone = (s: Segment | undefined): s is Segment & { translationHtml: strin
 /**
  * Builds the output EPUB. Untranslated segments keep their source text. Segment markers are
  * removed, translated blocks get `lang`/`xml:lang`, and bilingual modes link a small stylesheet
- * that fades the source text. `mimetype` is written first and stored.
+ * that fades the source text. Scripts, event handlers and script URLs are stripped from every
+ * content document. `mimetype` is written first and stored.
  */
 export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv): Promise<Uint8Array> {
   if (!EXPORT_MODES.includes(mode)) throw new Error(`Unknown export mode: ${mode}`);
@@ -30,6 +32,7 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
   const cssPath = `${dirname(pkg.opfPath) ? `${dirname(pkg.opfPath)}/` : ''}${STYLESHEET_NAME}`;
   const bilingual = mode !== 'translation-only';
   const base = { env, mode, targetLang: project.settings.targetLang, xmlLangOnly };
+  const sanitized = new Set<string>();
 
   for (const chapter of project.chapters) {
     if (!files.has(chapter.href)) continue;
@@ -47,11 +50,15 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
     }
     if (changed && bilingual) ensureStylesheet(doc, relativeHref(chapter.href, cssPath));
     if (changed && mode === 'translation-only') setLang(doc.documentElement, ctx);
+    stripActiveContent(doc);
+    unmarkScripted(pkg, chapter.href, doc);
+    sanitized.add(chapter.href);
     files.set(chapter.href, encodeUtf8(serializeXhtmlDocument(env, doc, extractDoctype(markup))));
   }
 
   if (pkg.nav && files.has(pkg.nav.path)) repairNavDocument(files, pkg.nav.path, env);
   if (pkg.ncx && files.has(pkg.ncx.path)) updateNcx(files, pkg, project, mode, env);
+  stripActiveContentFromPackage(files, pkg, sanitized, env);
   if (bilingual) files.set(cssPath, encodeUtf8(STYLESHEET));
   files.set(pkg.opfPath, encodeUtf8(serializeXmlDocument(env, updateOpf(pkg, project, mode, bilingual ? cssPath : undefined))));
   return writeEpubZip(files);
