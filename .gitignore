@@ -7,3 +7,4 @@ playwright-report/
 .env*
 .DS_Store
 test-output
+.claude/
