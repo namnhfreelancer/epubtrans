@@ -53,6 +53,20 @@ describe('API key resolution', () => {
     await expect(resolveApiKey('openai', '/nonexistent/key', { env: {}, readStdin: stdin })).rejects.toThrow('Cannot read --api-key-file');
   });
 
+  test('genericAllowed: false skips EPUBTRANS_API_KEY, uses the provider variable, and explains when only the generic key is set', async () => {
+    const opts = { genericAllowed: false };
+    expect((await resolveApiKey('deepseek', undefined, { env: { EPUBTRANS_API_KEY: 'g', DEEPSEEK_API_KEY: 'd' }, readStdin: stdin }, opts))?.key).toBe('d');
+    expect((await resolveApiKey('deepseek', keyFile('f\n'), { env: { EPUBTRANS_API_KEY: 'g' }, readStdin: stdin }, opts))?.key).toBe('f');
+    expect(await resolveApiKey('deepseek', undefined, { env: {}, readStdin: stdin }, opts)).toBeUndefined();
+    const error = await requireApiKey('deepseek', undefined, { env: { EPUBTRANS_API_KEY: 'g' }, readStdin: stdin }, opts).catch((e: unknown) => e as Error);
+    expect(error).toBeInstanceOf(UsageError);
+    expect((error as Error).message).toContain('DEEPSEEK_API_KEY');
+    expect((error as Error).message).toContain('--provider deepseek');
+    const missing = await requireApiKey('deepseek', undefined, { env: {}, readStdin: stdin }, opts).catch((e: unknown) => e as Error);
+    expect((missing as Error).message).toContain('DEEPSEEK_API_KEY');
+    expect((missing as Error).message).not.toContain('EPUBTRANS_API_KEY');
+  });
+
   test('requireApiKey explains how to configure a missing key', async () => {
     const error = await requireApiKey('gemini', undefined, { env: {}, readStdin: stdin }).catch((e: unknown) => e as Error);
     expect((error as Error).message).toContain('EPUBTRANS_API_KEY');

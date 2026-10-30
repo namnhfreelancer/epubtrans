@@ -77,6 +77,8 @@ epubtrans translate book.epub --to vi --provider openrouter --model <model-id>
 
 `translate` imports the book, prints a token and cost estimate, asks for confirmation (skip with `--yes`), translates with a progress display and writes `book.vi.epub`. The key can also come from `--api-key-file <path>` (`-` reads stdin). **The key is never accepted as a plain argument**, because it would leak into shell history and process lists.
 
+`EPUBTRANS_API_KEY` goes to the provider you name on that run (`--provider`, or `--base-url` for a custom endpoint) or to the default on a new import. When the provider comes only from an existing project file, which may be shared, the CLI does not use `EPUBTRANS_API_KEY`: set the provider's own variable (for example `DEEPSEEK_API_KEY`), pass `--api-key-file`, or pass `--provider <id>` yourself.
+
 Progress is saved continuously to `book.epub.epubtrans`. After Ctrl-C or a crash, run the same command again and finished segments are not translated twice.
 
 | Command | Purpose |

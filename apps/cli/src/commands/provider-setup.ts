@@ -16,7 +16,8 @@ export async function buildProvider(
   opts: { keyOptional?: boolean } = {},
 ): Promise<ChatProvider> {
   const optional = opts.keyOptional === true || selection.preset.id === 'custom';
-  const resolved = optional ? await resolveApiKey(selection.preset.id, keyFile, io) : await requireApiKey(selection.preset.id, keyFile, io);
+  const keyOpts = { genericAllowed: selection.genericKeyAllowed };
+  const resolved = optional ? await resolveApiKey(selection.preset.id, keyFile, io, keyOpts) : await requireApiKey(selection.preset.id, keyFile, io, keyOpts);
   if (resolved) io.err(`Using API key from ${resolved.source}\n`);
   return createProvider(selection.preset, resolved?.key ?? '', selection.baseURL, model);
 }

@@ -13,7 +13,7 @@ export function presetsCommand(argv: string[], io: Io): number {
     const env = PROVIDER_KEY_ENV[p.id]?.join(', ') ?? GENERIC_KEY_ENV;
     io.out(`  ${pad(p.id, 11)}${pad(p.baseURL || '(pass --base-url)', 56)}key: ${env}\n`);
   }
-  io.out(`\nAll providers also read ${GENERIC_KEY_ENV} or --api-key-file <path>.\n`);
+  io.out(`\nAll providers also read ${GENERIC_KEY_ENV} when --provider is passed on the run, or --api-key-file <path>.\n`);
   io.out('\nGuideline presets (--guideline-preset <id>)\n');
   for (const g of GUIDELINE_PRESETS) io.out(`  ${pad(g.id, 11)}${g.label}\n`);
   io.out(`\nExport modes (--mode <mode>)\n  ${EXPORT_MODES.join('\n  ')}\n`);
