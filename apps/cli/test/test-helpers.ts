@@ -71,7 +71,16 @@ export function startMockProvider(onChat?: (call: number) => Response | undefine
       if (path.endsWith('/models')) return Response.json({ data: [{ id: 'mock-b' }, { id: 'mock-a' }] });
       if (!path.endsWith('/chat/completions')) return new Response('not found', { status: 404 });
       const body = (await req.json()) as { messages: { role: string; content: string }[] };
-      const user = JSON.parse(body.messages.find((m) => m.role === 'user')?.content ?? '{}') as { segments: { id: string; html: string }[] };
+      const userContent = body.messages.find((m) => m.role === 'user')?.content ?? '{}';
+      let user: { segments: { id: string; html: string }[] };
+      try {
+        user = JSON.parse(userContent) as typeof user;
+      } catch {
+        // Not a segment batch: this is the style-guide request (plain text prompt).
+        calls.push({ path, authorization: req.headers.get('authorization'), segmentIds: [] });
+        const guide = JSON.stringify({ guideline: '- keep it plain', glossary: [{ term: 'Ireland', translation: 'Ai-len' }] });
+        return Response.json({ choices: [{ message: { content: guide } }], usage: { prompt_tokens: 10, completion_tokens: 10 } });
+      }
       calls.push({ path, authorization: req.headers.get('authorization'), segmentIds: user.segments.map((s) => s.id) });
       const intercepted = onChat?.(calls.length);
       if (intercepted) return intercepted;

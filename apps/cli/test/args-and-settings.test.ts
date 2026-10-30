@@ -58,10 +58,19 @@ describe('settings helpers', () => {
     expect(selectProvider({}).preset.id).toBe('openai');
     expect(selectProvider({ 'base-url': 'http://localhost:11434/v1' }).preset.id).toBe('custom');
     const current = { providerId: 'deepseek', baseURL: 'https://proxy.example/v1' };
-    expect(selectProvider({}, current)).toMatchObject({ baseURL: 'https://proxy.example/v1' });
+    expect(selectProvider({}, current).preset.id).toBe('deepseek');
     expect(selectProvider({ provider: 'openrouter' }, current).baseURL).toBe('https://openrouter.ai/api/v1');
     expect(() => selectProvider({ provider: 'nope' })).toThrow('Unknown provider');
     expect(() => selectProvider({ provider: 'custom' })).toThrow('needs --base-url');
+  });
+
+  test('the endpoint stored in a project file is never used: presets keep their own, custom needs --base-url', () => {
+    const stored = { providerId: 'openrouter', baseURL: 'http://127.0.0.1:1/v1' };
+    expect(selectProvider({}, stored).baseURL).toBe('https://openrouter.ai/api/v1');
+    expect(selectProvider({ 'base-url': 'http://localhost:9/v1' }, stored).baseURL).toBe('http://localhost:9/v1');
+    const custom = { providerId: 'custom', baseURL: 'http://127.0.0.1:1/v1' };
+    expect(() => selectProvider({}, custom)).toThrow('needs --base-url on every run');
+    expect(selectProvider({ 'base-url': 'http://localhost:9/v1' }, custom).baseURL).toBe('http://localhost:9/v1');
   });
 
   test('run flags override only what was passed', () => {

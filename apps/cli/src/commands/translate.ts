@@ -4,7 +4,6 @@ import {
   detectLanguage,
   GUIDELINE_PRESETS,
   type GuidelinePresetId,
-  generateGuide,
   getGuidelinePreset,
   importBook,
   loadProjectFile,
@@ -95,13 +94,6 @@ export async function translateCommand(argv: string[], io: Io): Promise<number> 
   if (!settings.model) throw new UsageError('--model <id> is required. List the available models with: epubtrans models --provider <id>');
   const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io);
 
-  if (flags['generate-guide'] && (!existingBytes || countStatuses(project).done === 0)) {
-    io.err('Generating style guideline and glossary ...\n');
-    const guide = await generateGuide(project, provider, settings, io.signal);
-    settings = { ...settings, guideline: guide.guideline, glossary: guide.glossary };
-    io.err(`Guide ready: ${guide.glossary.length} glossary entries\n`);
-  }
-
   const outPath = flags.out ?? defaultOutPath(input, settings.targetLang);
   assertOutputIsSeparate(outPath, input, projectPath);
   return translateAndExport({
@@ -111,6 +103,7 @@ export async function translateCommand(argv: string[], io: Io): Promise<number> 
     provider,
     outPath,
     mode,
+    generateGuide: flags['generate-guide'] === true && (!existingBytes || countStatuses(project).done === 0),
     yes: flags.yes === true,
     io,
   });

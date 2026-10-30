@@ -17,15 +17,18 @@ export interface ProviderSelection {
 
 /**
  * Provider choice: `--provider`, else the project's provider, else `custom` when only `--base-url`
- * is given, else `openai`. A different provider than the project's resets the base URL to its preset.
+ * is given, else `openai`. The endpoint is never taken from a project file: project files are shared
+ * (web app, other people), so a stored base URL could redirect the API key. Built-in presets use their
+ * own endpoint unless `--base-url` is passed on this run; `custom` requires `--base-url` on every run.
  */
-export function selectProvider(flags: ProviderFlagValues, current?: Pick<ProjectSettings, 'providerId' | 'baseURL'>): ProviderSelection {
+export function selectProvider(flags: ProviderFlagValues, current?: Pick<ProjectSettings, 'providerId'>): ProviderSelection {
   const id = flags.provider ?? current?.providerId ?? (flags['base-url'] ? 'custom' : 'openai');
   const preset = PROVIDER_PRESETS.find((p) => p.id === id);
   if (!preset) throw new UsageError(`Unknown provider "${id}". Available: ${PROVIDER_PRESETS.map((p) => p.id).join(', ')}`);
-  const keepCurrentUrl = current !== undefined && current.providerId === preset.id && current.baseURL !== '';
-  const baseURL = (flags['base-url'] ?? (keepCurrentUrl ? current.baseURL : preset.baseURL)).trim();
-  if (!baseURL) throw new UsageError(`Provider "${preset.id}" needs --base-url`);
+  const baseURL = (flags['base-url'] ?? preset.baseURL).trim();
+  if (!baseURL) {
+    throw new UsageError(`Provider "${preset.id}" needs --base-url on every run (an endpoint stored in a project file is never trusted with your API key)`);
+  }
   return { preset: getProviderPreset(preset.id), baseURL };
 }
 
