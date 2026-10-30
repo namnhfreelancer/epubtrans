@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: 1.3.14
+  EPUBCHECK_VERSION: 5.4.0
+  EPUBCHECK_SHA256: 33350c61038e71dfb3d45a76aed04bf5481e6d5500cb780f6e98db8bbd15a28c
+
+jobs:
+  check:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run test
+      - run: bun run build
+      - name: Smoke-test the compiled CLI binary
+        run: bun scripts/smoke-cli-binary.ts
+
+  e2e:
+    name: Web end-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Install Chromium
+        working-directory: apps/web
+        run: bunx playwright install --with-deps chromium
+      - run: bun run --filter @epubtrans/web test:e2e
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  epubcheck:
+    name: EPUB validity (epubcheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: bun install --frozen-lockfile
+      - name: Download epubcheck
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/epubcheck.zip" "https://github.com/w3c/epubcheck/releases/download/v${EPUBCHECK_VERSION}/epubcheck-${EPUBCHECK_VERSION}.zip"
+          echo "${EPUBCHECK_SHA256}  $RUNNER_TEMP/epubcheck.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/epubcheck.zip" -d "$RUNNER_TEMP"
+      - name: Export sample EPUBs from the core fixtures
+        run: bun run --filter @epubtrans/core export:samples
+      - name: Validate every exported EPUB
+        run: |
+          shopt -s nullglob
+          files=(packages/core/test-output/*.epub)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::no EPUBs found in packages/core/test-output"
+            exit 1
+          fi
+          failed=0
+          for f in "${files[@]}"; do
+            echo "::group::epubcheck $f"
+            if ! java -jar "$RUNNER_TEMP/epubcheck-${EPUBCHECK_VERSION}/epubcheck.jar" "$f"; then
+              echo "::error file=$f::epubcheck reported errors"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$failed"

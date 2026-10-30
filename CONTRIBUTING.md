@@ -1,76 +1,70 @@
-# Contributing to [Project Name]
+# Contributing to epubtrans
 
-We welcome contributions to [Project Name]! This document outlines the process for contributing to this project and how to get started.
+Thanks for helping out. This document covers the workflow; architecture and conventions live in [docs/](docs/).
 
-## Getting Started
+## Getting started
 
-1. Fork the repository on GitHub.
-2. Clone your fork locally:
+1. Fork the repository on GitHub and clone your fork:
+   ```bash
+   git clone https://github.com/<your-user>/epubtrans.git
+   cd epubtrans
    ```
-   git clone https://github.com/nguyenvanduocit/epubtrans.git
-   ```
-3. Create a new branch for your feature or bug fix:
-   ```
-   git checkout -b feature/your-feature-name
-   ```
-
-## Development Environment
-
-1. Ensure you have Go installed (version X.X or higher).
-2. Install any necessary dependencies:
-   ```
-   go mod tidy
+2. Create a branch for your change:
+   ```bash
+   git checkout -b feat/your-feature-name
    ```
 
-## Making Changes
+## Development environment
 
-1. Make your changes in your feature branch.
-2. Add or update tests as necessary.
-3. Ensure all tests pass:
+Install [Bun](https://bun.sh) 1.3 or newer, then install dependencies from the repository root:
+
+```bash
+bun install
+```
+
+Workspaces: `packages/core` (engine), `apps/web` (browser app), `apps/cli` (command line). See [docs/codebase-summary.md](docs/codebase-summary.md).
+
+## Making changes
+
+1. Make your changes in your feature branch and add or update tests.
+2. Run the same checks CI runs:
+   ```bash
+   bun run typecheck
+   bun run lint        # Biome; `bun run format` fixes formatting
+   bun run test
+   bun run build
    ```
-   go test ./...
-   ```
-4. Run `gofmt` to ensure your code follows Go's formatting standards:
-   ```
-   gofmt -s -w .
-   ```
+3. Changes to the web app also need the end-to-end suite (`bun run --filter @epubtrans/web test:e2e`, requires `bunx playwright install chromium` once).
+4. Changes to EPUB output should be checked with [epubcheck](https://www.w3.org/publishing/epubcheck/); CI does this for the exported fixtures.
 
-## Committing Changes
+## Committing changes
 
-1. Commit your changes with a clear and descriptive commit message:
-   ```
-   git commit -m "Add feature X" -m "This feature does Y and Z"
-   ```
-2. Push your changes to your fork:
-   ```
-   git push origin feature/your-feature-name
-   ```
+Use [Conventional Commits](https://www.conventionalcommits.org/); releases and the changelog are generated from them by release-please:
 
-## Submitting a Pull Request
+```
+feat(cli): add --dry-run to translate
+fix(core): keep nested inline tags when splitting a batch
+feat!: change the project file schema
+```
 
-1. Go to the original repository on GitHub.
-2. Click the "New pull request" button.
-3. Select your feature branch from your fork.
-4. Fill out the pull request template with all relevant information.
-5. Submit the pull request.
+`feat` produces a minor release, `fix` a patch release, and `!` or a `BREAKING CHANGE:` footer a major release.
 
-## Code Review Process
+## Submitting a pull request
 
-1. Maintainers will review your pull request.
-2. They may ask for changes or clarifications.
-3. Make any requested changes in your feature branch and push the changes.
-4. Once approved, a maintainer will merge your pull request.
+1. Push your branch to your fork.
+2. Open a pull request against `main` and describe what changed and why.
+3. Make sure CI is green.
 
-## Coding Standards
+## Code review
 
-- Follow Go's official [Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments).
-- Write clear, readable, and maintainable code.
-- Document your code using Go's standard commenting practices.
+Maintainers review pull requests and may ask for changes. Push follow-up commits to the same branch; a maintainer merges once approved.
 
-## Reporting Issues
+## Coding standards
 
-- Use the GitHub issue tracker to report bugs.
-- Clearly describe the issue, including steps to reproduce.
-- Include your Go version and operating system.
+See [docs/code-standards.md](docs/code-standards.md). In short: TypeScript strict, Biome formatting, small kebab-case modules, no DOM globals in `packages/core`, and no secrets in code, logs or test fixtures.
 
-Thank you for contributing to Epubtrans
+## Reporting issues
+
+Use the GitHub issue tracker. Describe the problem, the steps to reproduce it, the book format (never attach a book you may not share), the provider and model, and your browser or CLI version (`epubtrans --version`). Never paste an API key.
+
+Thank you for contributing to epubtrans.
