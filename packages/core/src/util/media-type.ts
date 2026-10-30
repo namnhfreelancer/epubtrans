@@ -31,3 +31,8 @@ export function base64ToBytes(base64: string): Uint8Array {
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out;
 }
+
+/** Media type essence for comparisons: parameters (`; charset=...`) dropped, trimmed and lower-cased. */
+export function normalizeMediaType(mediaType: string): string {
+  return (mediaType.split(';')[0] ?? '').trim().toLowerCase();
+}
