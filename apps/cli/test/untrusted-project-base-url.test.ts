@@ -66,7 +66,7 @@ describe('a base URL stored in a project file never receives the API key', () =>
 
   test('translate on top of an existing project file is protected the same way', async () => {
     const t = await projectPointingAt(evil, 'openrouter');
-    const io = createTestIo({ env: { EPUBTRANS_API_KEY: SECRET }, interactive: true });
+    const io = createTestIo({ env: { OPENROUTER_API_KEY: SECRET }, interactive: true });
     const input = t.path.replace('shared.epubtrans', 'a-modest-proposal.epub');
     expect(await run(['translate', input, '--project', t.path, '--to', 'vi', '--out', t.out], io)).toBe(1);
     expect(outgoing).toEqual([]);

@@ -13,6 +13,11 @@ import type { ProviderFlagValues, RunFlagValues } from './flag-specs';
 export interface ProviderSelection {
   preset: ProviderPreset;
   baseURL: string;
+  /**
+   * False when the provider id came only from the project file (no --provider or --base-url on this run):
+   * a shared file must not decide which provider receives the generic EPUBTRANS_API_KEY.
+   */
+  genericKeyAllowed: boolean;
 }
 
 /**
@@ -20,6 +25,7 @@ export interface ProviderSelection {
  * is given, else `openai`. The endpoint is never taken from a project file: project files are shared
  * (web app, other people), so a stored base URL could redirect the API key. Built-in presets use their
  * own endpoint unless `--base-url` is passed on this run; `custom` requires `--base-url` on every run.
+ * Likewise `EPUBTRANS_API_KEY` is only used for a provider the user named on this run (or a fresh import).
  */
 export function selectProvider(flags: ProviderFlagValues, current?: Pick<ProjectSettings, 'providerId'>): ProviderSelection {
   const id = flags.provider ?? current?.providerId ?? (flags['base-url'] ? 'custom' : 'openai');
@@ -29,7 +35,8 @@ export function selectProvider(flags: ProviderFlagValues, current?: Pick<Project
   if (!baseURL) {
     throw new UsageError(`Provider "${preset.id}" needs --base-url on every run (an endpoint stored in a project file is never trusted with your API key)`);
   }
-  return { preset: getProviderPreset(preset.id), baseURL };
+  const fromProjectOnly = flags.provider === undefined && flags['base-url'] === undefined && current?.providerId !== undefined;
+  return { preset: getProviderPreset(preset.id), baseURL, genericKeyAllowed: !fromProjectOnly };
 }
 
 export function parseExportMode(value: string | undefined): ExportMode {

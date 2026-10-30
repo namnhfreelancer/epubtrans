@@ -49,7 +49,7 @@ Vite, React 19, Tailwind v4, Dexie (IndexedDB) and vite-plugin-pwa; UI strings i
 
 ## CLI (`apps/cli`)
 
-`src/run.ts` dispatches `translate`, `resume`, `export`, `models` and `presets` (`src/commands/`). Shared steps live in `src/pipeline.ts`: persist the project, print the estimate and ask for confirmation (Ctrl-C at the prompt exits with 130, see `prompt.ts`), then look up prices, optionally generate the guide, run `translateProject` with throttled atomic saves of the project file (`project-store.ts`), flush on Ctrl-C or error, export the EPUB. API keys come only from `--api-key-file`, `EPUBTRANS_API_KEY` or the provider's own variable (`api-key.ts`); a key flag on argv is rejected. `bun build --compile` produces single binaries (`scripts/build-cli.ts`).
+`src/run.ts` dispatches `translate`, `resume`, `export`, `models` and `presets` (`src/commands/`). Shared steps live in `src/pipeline.ts`: persist the project, print the estimate and ask for confirmation (Ctrl-C at the prompt exits with 130, see `prompt.ts`), then look up prices, optionally generate the guide, run `translateProject` with throttled atomic saves of the project file (`project-store.ts`), flush on Ctrl-C or error, export the EPUB. API keys come only from `--api-key-file`, `EPUBTRANS_API_KEY` or the provider's own variable (`api-key.ts`); a key flag on argv is rejected. `EPUBTRANS_API_KEY` is skipped when the provider id comes only from the project file (no `--provider` or `--base-url` on that run), so a shared file cannot pick who receives the generic key; the CLI then fails with instructions. `bun build --compile` produces single binaries (`scripts/build-cli.ts`).
 
 ## Security and privacy model
 
