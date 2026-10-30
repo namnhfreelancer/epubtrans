@@ -1,3 +1,5 @@
+import { promptLine } from './prompt';
+
 /** Everything the commands need from the process, injectable so tests run without spawning. */
 export interface Io {
   out(text: string): void;
@@ -13,22 +15,14 @@ export interface Io {
   signal: AbortSignal;
 }
 
-export function createProcessIo(signal: AbortSignal): Io {
+export function createProcessIo(signal: AbortSignal, onInterrupt: () => void): Io {
   return {
     out: (text) => void process.stdout.write(text),
     err: (text) => void process.stderr.write(text),
     env: process.env,
     interactive: Boolean(process.stdin.isTTY),
     progressInPlace: Boolean(process.stderr.isTTY),
-    prompt: async (question) => {
-      const { createInterface } = await import('node:readline/promises');
-      const rl = createInterface({ input: process.stdin, output: process.stderr });
-      try {
-        return await rl.question(question);
-      } finally {
-        rl.close();
-      }
-    },
+    prompt: (question) => promptLine(question, { input: process.stdin, output: process.stderr, signal, onInterrupt }),
     readStdin: () => Bun.stdin.text(),
     signal,
   };
