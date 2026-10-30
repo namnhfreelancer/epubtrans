@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">epubtrans</title>
+  <rect width="512" height="512" fill="#0f766e"/>
+  <g transform="translate(76.8 76.8) scale(0.7)">
+    <path d="M88 148c58-26 116-26 160 6v224c-44-32-102-32-160-6z" fill="#f0fdfa"/>
+    <path d="M424 148c-58-26-116-26-160 6v224c44-32 102-32 160-6z" fill="#5eead4"/>
+    <g stroke="#0f766e" stroke-width="14" stroke-linecap="round">
+      <path d="M124 200c34-10 60-8 88 4M124 248c34-10 60-8 88 4M124 296c34-10 60-8 88 4"/>
+      <path d="M300 204c28-12 54-14 88-4M300 252c28-12 54-14 88-4M300 300c28-12 54-14 88-4"/>
+    </g>
+  </g>
+</svg>
