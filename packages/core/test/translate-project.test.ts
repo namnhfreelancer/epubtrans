@@ -203,6 +203,33 @@ describe('translateProject', () => {
     await expect(translateProject(project, provider, project.settings, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
     expect(provider.calls.length).toBe(1);
   });
+
+  it('never overwrites or re-sends a segment edited while the run is in progress', async () => {
+    const big = (w: string) => `${w} `.repeat(3000); // one segment per batch
+    const project = makeProject([[segment('a', big('a')), segment('b', big('b')), segment('c', big('c'))]]);
+    project.settings.concurrency = 1;
+    const [a, b, c] = project.chapters[0]?.segments ?? [];
+    if (!a || !b || !c) throw new Error('fixture');
+    const persisted: string[] = [];
+    const progress: number[] = [];
+    const provider = mockProvider((req) => {
+      // While "a" is in flight the user edits it, and edits "c" before its batch is sent.
+      if (idsOf(req.user)[0] === 'a') {
+        a.translationHtml = 'USER EDIT A';
+        a.status = 'translated';
+        c.translationHtml = 'USER EDIT C';
+        c.status = 'translated';
+      }
+      return answerAll(req);
+    });
+    await translateProject(project, provider, project.settings, { onSegment: (s) => persisted.push(s.id), onProgress: (p) => progress.push(p.done) });
+    expect([a.status, a.translationHtml]).toEqual(['translated', 'USER EDIT A']);
+    expect([c.status, c.translationHtml]).toEqual(['translated', 'USER EDIT C']);
+    expect([b.status, b.translationHtml?.startsWith('[vi] b')]).toEqual(['translated', true]);
+    expect(provider.calls.map((call) => idsOf(call.user))).toEqual([['a'], ['b']]);
+    expect(persisted).toEqual(['b']);
+    expect(progress.at(-1)).toBe(3);
+  });
 });
 
 describe('retranslateSegment', () => {
