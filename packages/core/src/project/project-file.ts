@@ -12,6 +12,7 @@ import type {
   WordHintSettings,
   WordHints,
 } from '../types';
+import { redactSecrets } from '../util/redact-secrets';
 import { readZip, writeZip } from '../util/zip-archive';
 import { clampHintLevel, defaultWordHintSettings, MAX_HINTS_PER_CHAPTER_LIMIT, MAX_HINTS_PER_PARAGRAPH_LIMIT } from '../word-hints/hint-levels';
 
@@ -25,9 +26,14 @@ const STATUSES: SegmentStatus[] = ['pending', 'translated', 'reviewed', 'error']
 
 export async function saveProjectFile(project: Project): Promise<Uint8Array> {
   const { sourceEpub, ...state } = project;
+  // Project files get shared: segment errors may carry text a provider echoed, so they are redacted on the way out.
+  const chapters = state.chapters.map((c) => ({
+    ...c,
+    segments: c.segments.map((s) => (s.error === undefined ? s : { ...s, error: redactSecrets(s.error) })),
+  }));
   return writeZip(
     new Map([
-      [PROJECT_JSON, strToU8(JSON.stringify(state))],
+      [PROJECT_JSON, strToU8(JSON.stringify({ ...state, chapters }))],
       [SOURCE_EPUB, sourceEpub],
     ]),
   );
@@ -228,7 +234,7 @@ function validateChapter(c: Json, path: string): Chapter {
         sourceText: str(seg, 'sourceText', sp),
         status,
         ...(translationHtml !== undefined ? { translationHtml } : {}),
-        ...(error !== undefined ? { error } : {}),
+        ...(error !== undefined ? { error: redactSecrets(error) } : {}),
         ...(seg.userEdited === true ? { userEdited: true } : {}),
       };
     }),
