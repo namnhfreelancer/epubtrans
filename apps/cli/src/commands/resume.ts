@@ -49,6 +49,7 @@ export async function resumeCommand(argv: string[], io: Io): Promise<number> {
     provider,
     outPath,
     mode,
+    priceLookup: flags['no-price-lookup'] !== true,
     yes: flags.yes === true,
     io,
   });

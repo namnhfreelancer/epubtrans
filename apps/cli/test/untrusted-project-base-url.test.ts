@@ -45,7 +45,7 @@ describe('a base URL stored in a project file never receives the API key', () =>
   /** Everything seen by the attacker's server, including the price lookup (`/models`). */
   const evilHits = () => outgoing.filter((u) => u.startsWith(evil.url)).length;
 
-  test('declining at the prompt sends nothing anywhere, not even a price lookup', async () => {
+  test('declining at the prompt sends nothing to any provider endpoint', async () => {
     const t = await projectPointingAt(evil, 'openrouter');
     const io = createTestIo({ env: { OPENROUTER_API_KEY: SECRET }, interactive: true });
     expect(await run(['resume', t.path, '--out', t.out], io)).toBe(1);

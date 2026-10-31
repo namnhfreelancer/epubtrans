@@ -35,6 +35,8 @@ You bring your own API key (BYOK). Presets:
 
 Models are listed from the provider's `/models` endpoint; you can always type a model id by hand. Cost is estimated before translating from token counts and the prices you enter (USD per 1M tokens; OpenRouter prices are filled in automatically). No price table is bundled.
 
+Prices are looked up automatically for the selected model from public catalogs: OpenRouter's `GET https://openrouter.ai/api/v1/models`, then LiteLLM's `model_prices_and_context_window.json` on `raw.githubusercontent.com`. Both are plain unauthenticated GETs of public files: your API key, book and model name are never sent to them (the match happens on your device). The web app shows where the price came from ("Price from OpenRouter (matched: anthropic/claude-opus-5.5)"), caches the parsed prices in `localStorage` for 24 hours, and falls back to manual entry when the model is unknown or the catalogs are unreachable; prices you type always win. The CLI prints the source and matched id before the estimate and skips the lookup with `--no-price-lookup`.
+
 ## Web app
 
 1. Open the app and add your provider, API key and model (the key stays in the browser; see the "remember key" caveat under [Privacy](#privacy)).
@@ -93,6 +95,8 @@ Progress is saved continuously to `book.epub.epubtrans`. After Ctrl-C or a crash
 **Sample translation.** To check quality before paying for a whole book, translate a sample first: in the web app use the "Sample translation" card on the setup page, on the command line run `epubtrans sample book.epub --to vi --model <id>`. It picks 5 passages of about 350 words from different chapters spread across the book (seeded, so the same seed picks the same passages), translates them with your guideline and glossary, and shows source and translation side by side. Change the guideline or glossary and run it again to compare ("Translate samples again" in the app, the same command in the CLI); "New random samples" or `--new` picks other passages. The sampled segments count as translated, so the full run skips them. The selection is stored in the project file.
 
 Common options: `--from <lang>` (default auto), `--provider <preset id>`, `--base-url <url>`, `--model <id>`, `--concurrency <1-16>`, `--two-pass`, `--guideline-preset general|fiction|technical|psychology`, `--guideline-file <path>`, `--generate-guide`, `--mode bilingual|bilingual-translation-first|translation-only`, `--out <file.epub>`, `--project <file>`, `--price-in/--price-out <USD per 1M tokens>`, `--yes`. Run `epubtrans <command> --help` for details.
+
+`--no-price-lookup` turns off the automatic price lookup used when `--price-in/--price-out` are absent.
 
 Exit codes: `0` success, `1` error, `2` usage error, `3` finished with untranslated segments (EPUB still written), `130` interrupted (progress saved).
 

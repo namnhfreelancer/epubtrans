@@ -11,8 +11,9 @@ function basePath(raw: string | undefined): string {
 
 /**
  * Content Security Policy for the production build. Inline scripts are blocked; provider calls may go to
- * any https origin (custom base URLs vary) or to a local server. Dev mode needs Vite's inline preamble,
- * so the meta tag is only injected at build time.
+ * any https origin (custom base URLs vary) or to a local server. The same allowance covers the public price
+ * catalogs (openrouter.ai, raw.githubusercontent.com), which are fetched as plain GETs without credentials.
+ * Dev mode needs Vite's inline preamble, so the meta tag is only injected at build time.
  */
 const CSP = [
   "default-src 'self'",
