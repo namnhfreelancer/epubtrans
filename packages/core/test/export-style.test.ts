@@ -102,6 +102,15 @@ describe('export style validation', () => {
   });
 });
 
+describe('export style beats the book stylesheet', () => {
+  it('marks every chosen value !important, so selectors like p.ct in the book cannot override it', () => {
+    const style = validateExportStyle({ source: { opacity: 0.7 }, translation: { color: '#888888', fontSizePercent: 80 } });
+    const css = exportStyleCss(style, { fonts: [], attribution: false });
+    expect(css).toContain('.et-src { opacity: 0.7 !important; }');
+    expect(css).toContain('.et-tr { color: #888888 !important; font-size: 80% !important; }');
+  });
+});
+
 describe('export style CSS', () => {
   it('is the legacy stylesheet without a style', () => {
     expect(exportStyleCss(undefined, { fonts: [], attribution: false })).toBe(LEGACY_CSS);
@@ -116,10 +125,14 @@ describe('export style CSS', () => {
       hint: { color: '#abcdef', fontSizePercent: 100 },
     });
     const css = exportStyleCss(style, { fonts: embeddedFontsFor(style, 'bilingual'), attribution: true });
-    expect(css).toContain('.et-src { opacity: 0.8; color: #555555; font-size: 90%; font-style: italic; font-family: "Literata", serif; }');
-    expect(css).toContain('.et-tr { color: #123456; font-family: "Noto Sans", sans-serif; font-weight: bold; font-size: 110%; }');
-    expect(css).toContain('.et-src, .et-tr { margin-top: 1em; margin-bottom: 1em; }');
-    expect(css).toContain('ruby.et-ww > rt { font-size: 100%; font-style: normal; font-weight: normal; color: #abcdef; }');
+    expect(css).toContain(
+      '.et-src { opacity: 0.8 !important; color: #555555 !important; font-size: 90% !important; font-style: italic !important; font-family: "Literata", serif !important; }',
+    );
+    expect(css).toContain(
+      '.et-tr { color: #123456 !important; font-family: "Noto Sans", sans-serif !important; font-weight: bold !important; font-size: 110% !important; }',
+    );
+    expect(css).toContain('.et-src, .et-tr { margin-top: 1em !important; margin-bottom: 1em !important; }');
+    expect(css).toContain('ruby.et-ww > rt { font-size: 100% !important; font-style: normal; font-weight: normal; color: #abcdef !important; }');
     expect(css).toContain('.et-ww-p { line-height: 2.4; }');
     expect(css).toContain('.et-attr {');
     expect(css).not.toMatch(/background/i);
@@ -159,7 +172,7 @@ describe('exportEpub with an export style', () => {
   it('marks translation-only blocks and links the stylesheet when the translation is styled', async () => {
     const project = await translatedBook();
     const out = await exportEpub(withStyle(project, { translation: { fontSizePercent: 120 } }), 'translation-only', env);
-    expect(cssOf(out)).toContain('.et-tr { font-size: 120%; }');
+    expect(cssOf(out)).toContain('.et-tr { font-size: 120% !important; }');
     const chapter = project.chapters[2]?.href as string;
     const html = unzipText(out, chapter);
     expect(html).toContain('class="et-tr"');

@@ -43,7 +43,7 @@ test('book style: live preview, embedded fonts and attribution in the export, te
   await editor.getByTestId('style-attribution').check();
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-epub').click()]);
   const files = expectEpubZip(await readDownload(download));
-  expect(css(files)).toContain('.et-tr { color: #aa2200; font-family: "Literata", serif; }');
+  expect(css(files)).toContain('.et-tr { color: #aa2200 !important; font-family: "Literata", serif !important; }');
   expect(files['OEBPS/epubtrans-fonts/literata-regular.ttf']?.byteLength).toBe(95_372);
   expect(strFromU8(files['OEBPS/epubtrans-fonts/literata-OFL.txt'] ?? new Uint8Array())).toContain('SIL OPEN FONT LICENSE');
   expect(strFromU8(files['OEBPS/epubtrans-attribution.xhtml'] ?? new Uint8Array())).toContain('mock-model');
