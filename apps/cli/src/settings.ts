@@ -2,10 +2,15 @@ import {
   EXPORT_MODES,
   type ExportMode,
   getProviderPreset,
+  MAX_BATCH_SEGMENTS_LIMIT,
+  MAX_CACHED_INPUT_RATIO,
   MAX_CONCURRENCY,
+  MAX_IDENTICAL_MIN_LETTERS,
   PROVIDER_PRESETS,
   type ProjectSettings,
   type ProviderPreset,
+  REASONING_LEVELS,
+  type ReasoningLevel,
 } from '@epubtrans/core';
 import { UsageError } from './args';
 import type { ProviderFlagValues, RunFlagValues } from './flag-specs';
@@ -75,6 +80,13 @@ export function applyRunFlags(settings: ProjectSettings, flags: RunFlagValues, s
   ] as const) {
     if (value !== undefined && value < 0) throw new UsageError(`${name} must not be negative`);
   }
+  const cachedRatio = flags['cached-ratio'];
+  if (cachedRatio !== undefined && (cachedRatio < 0 || cachedRatio > MAX_CACHED_INPUT_RATIO)) {
+    throw new UsageError(`--cached-ratio must be between 0 and ${MAX_CACHED_INPUT_RATIO} (the cached input price as a fraction of --price-in)`);
+  }
+  const maxSegments = integerFlag('--max-segments', flags['max-segments'], 1, MAX_BATCH_SEGMENTS_LIMIT);
+  const minLetters = integerFlag('--identical-min-letters', flags['identical-min-letters'], 0, MAX_IDENTICAL_MIN_LETTERS);
+  const reasoning = parseReasoning(flags.reasoning);
   return {
     ...settings,
     providerId: selection.preset.id,
@@ -84,5 +96,22 @@ export function applyRunFlags(settings: ProjectSettings, flags: RunFlagValues, s
     twoPass: flags['two-pass'] === true ? true : settings.twoPass,
     ...(priceIn !== undefined ? { priceInPerM: priceIn } : {}),
     ...(priceOut !== undefined ? { priceOutPerM: priceOut } : {}),
+    ...(cachedRatio !== undefined ? { cachedInputRatio: cachedRatio } : {}),
+    ...(maxSegments !== undefined ? { maxSegmentsPerBatch: maxSegments } : {}),
+    ...(minLetters !== undefined ? { identicalMinLetters: minLetters } : {}),
+    ...(reasoning !== undefined ? { reasoning } : {}),
   };
+}
+
+function integerFlag(name: string, value: number | undefined, min: number, max: number): number | undefined {
+  if (value !== undefined && (!Number.isInteger(value) || value < min || value > max))
+    throw new UsageError(`${name} must be an integer between ${min} and ${max}`);
+  return value;
+}
+
+export function parseReasoning(value: string | undefined): ReasoningLevel | undefined {
+  if (value === undefined) return undefined;
+  const level = REASONING_LEVELS.find((l) => l === value.trim().toLowerCase());
+  if (!level) throw new UsageError(`Unknown --reasoning "${value}". Use one of: ${REASONING_LEVELS.join(', ')}`);
+  return level;
 }

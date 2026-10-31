@@ -10,7 +10,7 @@ import {
 import { useI18n } from '../../i18n/i18n-context';
 import { languageLabel } from '../../lib/languages';
 import { errorText, pushNotice } from '../../lib/notices';
-import { updateHintSettings } from '../../lib/project-store';
+import { updateHintSettings } from '../../lib/project-settings-store';
 import { INPUT_CLASS } from '../ui/input-class';
 import { Alert, Field } from '../ui/layout-primitives';
 

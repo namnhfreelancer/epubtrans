@@ -1,7 +1,7 @@
 # @epubtrans/core
 
 Environment-agnostic engine shared by the web app and the CLI: import DRM-free EPUB, MOBI,
-AZW3 (KF8) and FB2 books, translate them with any OpenAI-compatible or Anthropic model, and
+AZW3 (KF8), FB2, plain-text and Markdown books, translate them with any OpenAI-compatible or Anthropic model, and
 export valid EPUB 3 in three layouts.
 
 Core never touches DOM globals. Pass a `DomEnv`:
@@ -35,4 +35,4 @@ header of `mobi.js` for local modifications).
 
 Tests: `bun run test` (Vitest with linkedom). Fixtures in `test/fixtures` are public domain:
 Project Gutenberg eBook #1080, *A Modest Proposal* by Jonathan Swift, downloaded as EPUB 3,
-MOBI and KF8 (AZW3); `aesop-fables.fb2` is hand-written from G. F. Townsend's 1867 translation.
+MOBI and KF8 (AZW3); `aesop-fables.fb2`, `aesop-fables.txt` and `aesop-fables.md` are hand-written from G. F. Townsend's 1867 translation.

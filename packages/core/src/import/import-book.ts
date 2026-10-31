@@ -4,10 +4,12 @@ import { type PackageInfo, parsePackage, readText, readTocLabels } from '../epub
 import { isAttributionDocument } from '../export/attribution-page';
 import { detectFormat } from '../formats/detect-format';
 import { fb2ToEpub } from '../formats/fb2-to-epub';
+import { markdownToEpub } from '../formats/markdown-to-epub';
 import { mobiToEpub } from '../formats/mobi-to-epub';
+import { plainTextToEpub } from '../formats/plain-text-to-epub';
 import { createDefaultSettings } from '../project/default-settings';
 import { segmentContentDocument, segmentNavDocument, segmentNcx } from '../segment/segment-document';
-import type { Chapter, DomEnv, Project, Segment } from '../types';
+import type { BookFormat, Chapter, DomEnv, Project, Segment } from '../types';
 import { randomId } from '../util/random-id';
 import { encodeUtf8 } from '../util/text-encoding';
 import { type FileMap, readZip, writeEpubZip } from '../util/zip-archive';
@@ -15,19 +17,31 @@ import { basename } from '../util/zip-path';
 
 export const TOC_CHAPTER_TITLE = 'Table of Contents';
 
+/** Converts any supported input format into an EPUB package. */
+async function toEpub(format: BookFormat, data: Uint8Array, fileName: string, env: DomEnv): Promise<Uint8Array> {
+  switch (format) {
+    case 'epub':
+      return data;
+    case 'fb2':
+      return fb2ToEpub(data, env);
+    case 'txt':
+      return plainTextToEpub(data, fileName, env);
+    case 'md':
+      return markdownToEpub(data, fileName, env);
+    default:
+      return mobiToEpub(data, env);
+  }
+}
+
 /**
- * Imports an EPUB, MOBI, AZW3 or FB2 book: detects the format, normalizes it into an EPUB
+ * Imports an EPUB, MOBI, AZW3, FB2, TXT or Markdown book: detects the format, normalizes it into an EPUB
  * package, segments every spine document (plus the TOC) and returns a new project whose
  * `sourceEpub` carries the segment markers.
  */
 export async function importBook(bytes: Uint8Array, fileName: string, env: DomEnv): Promise<Project> {
   const { format, bytes: data } = detectFormat(bytes, fileName);
-  const epub = format === 'epub' ? data : format === 'fb2' ? fb2ToEpub(data, env) : await mobiToEpub(data, env);
-  const files = readZip(epub);
-  const encryption = files.has('META-INF/encryption.xml') ? readText(files, 'META-INF/encryption.xml') : '';
-  if (files.has('META-INF/rights.xml') || (encryption && !isFontObfuscationOnly(encryption))) {
-    throw new Error('This book is DRM-protected; only DRM-free books are supported');
-  }
+  const files = readZip(await toEpub(format, data, fileName, env));
+  assertDrmFree(files);
   const pkg = parsePackage(files, env);
   const chapters = segmentPackage(files, pkg, env);
   if (!chapters.some((c) => c.segments.length > 0)) throw new Error('No translatable text found in this book');
@@ -43,6 +57,25 @@ export async function importBook(bytes: Uint8Array, fileName: string, env: DomEn
     chapters,
     sourceEpub: writeEpubZip(files),
   };
+}
+
+/**
+ * DRM markers in `META-INF`, with the scheme they belong to. Readium LCP books carry a license document and Apple
+ * FairPlay books a `sinf.xml`; both usually also encrypt content in encryption.xml, but the marker alone is enough.
+ */
+const DRM_MARKERS: readonly { path: string; scheme: string }[] = [
+  { path: 'META-INF/license.lcpl', scheme: 'Readium LCP' },
+  { path: 'META-INF/sinf.xml', scheme: 'Apple FairPlay' },
+  { path: 'META-INF/rights.xml', scheme: 'Adobe ADEPT' },
+];
+
+/** Rejects a DRM-protected package with an error that names the scheme when it is known. */
+function assertDrmFree(files: FileMap): void {
+  const hint = 'only DRM-free books are supported. Use the DRM-free edition of the book (many shops and libraries offer one).';
+  const marker = DRM_MARKERS.find((m) => files.has(m.path));
+  if (marker) throw new Error(`This book is DRM-protected (${marker.scheme}); ${hint}`);
+  const encryption = files.has('META-INF/encryption.xml') ? readText(files, 'META-INF/encryption.xml') : '';
+  if (encryption && !isFontObfuscationOnly(encryption)) throw new Error(`This book is DRM-protected (encrypted content); ${hint}`);
 }
 
 /** Font obfuscation (IDPF/Adobe) is not DRM; anything else in encryption.xml is. */

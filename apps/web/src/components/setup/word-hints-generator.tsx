@@ -111,7 +111,12 @@ export function WordHintsGenerator({
       )}
       {busyElsewhere && <Alert>{t('run.busyElsewhere')}</Alert>}
       {startError && <Alert kind="error">{startError}</Alert>}
-      {!running && job.status === 'failed' && <Alert kind="error">{t('hints.failed', { message: job.error ?? '' })}</Alert>}
+      {!running && job.status === 'failed' && job.settingsChanged && (
+        <Alert kind="warning">
+          <span data-testid="hints-settings-changed">{t('hints.settingsChanged')}</span>
+        </Alert>
+      )}
+      {!running && job.status === 'failed' && !job.settingsChanged && <Alert kind="error">{t('hints.failed', { message: job.error ?? '' })}</Alert>}
       {!running && job.status === 'cancelled' && <Alert>{t('hints.cancelled')}</Alert>}
       {!running && job.status === 'done' && (
         <Alert kind={job.failed > 0 ? 'warning' : 'success'}>

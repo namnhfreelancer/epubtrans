@@ -66,7 +66,7 @@ describe('a translation job whose book is deleted meanwhile', () => {
     await addProject(project);
     const { provider, release, requests } = gatedProvider();
 
-    expect(await startJob(project, project.settings, provider)).toBe('started');
+    expect(await startJob(project, (book) => book, provider)).toBe('started');
     await expect.poll(() => requests.length).toBe(1);
 
     // Another tab deletes the book while the first request is in flight (this tab's job knows nothing of it).
@@ -89,7 +89,7 @@ describe('a translation job whose book is deleted meanwhile', () => {
     await repository.deleteProject(id);
     const { provider, requests } = gatedProvider();
 
-    await startJob(project, project.settings, provider);
+    await startJob(project, (book) => book, provider);
     await settled(id);
 
     expect(getJobState(id).status).toBe('aborted');

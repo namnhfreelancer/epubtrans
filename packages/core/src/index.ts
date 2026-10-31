@@ -44,6 +44,19 @@ export {
 export { detectFormat } from './formats/detect-format';
 export { type ExtractCandidatesOptions, extractGlossaryCandidates, type GlossaryCandidate } from './glossary/extract-candidates';
 export { foldGlossaryKey, GLOSSARY_TERM_TYPES } from './glossary/glossary-entry';
+export {
+  applyGlossaryImport,
+  formatGlossaryFile,
+  GLOSSARY_FILE_COLUMNS,
+  GlossaryFileError,
+  type GlossaryFileFormat,
+  type GlossaryImportMode,
+  type GlossaryImportResult,
+  glossaryFileFormat,
+  MAX_GLOSSARY_FILE_CHARS,
+  type ParsedGlossaryFile,
+  parseGlossaryFile,
+} from './glossary/glossary-file';
 export { selectGlossaryEntries } from './glossary/glossary-matcher';
 export { compareGlossaryEntries, DEFAULT_GLOSSARY_CAP, glossaryLimit, mergeGlossary } from './glossary/merge-glossary';
 export { importBook, TOC_CHAPTER_TITLE } from './import/import-book';
@@ -53,8 +66,8 @@ export { lookupModelPricing } from './pricing/lookup-model-pricing';
 export { DEFAULT_PRICING_SOURCES, liteLlmSource, openRouterSource } from './pricing/pricing-sources';
 export type { LookupModelPricingOptions, ModelPricing, PricingEntry, PricingSource, PricingSourceId } from './pricing/pricing-types';
 export { createDefaultSettings, DEFAULT_CONCURRENCY } from './project/default-settings';
-export { type LoadProjectOptions, loadProjectFile, saveProjectFile, validateProjectState } from './project/project-file';
-export { createProvider } from './providers/create-provider';
+export { type LoadProjectOptions, loadProjectFile, REASONING_LEVELS, saveProjectFile, validateProjectState } from './project/project-file';
+export { createProvider, type ProviderOptions } from './providers/create-provider';
 export { ProviderError } from './providers/provider-http';
 export { getProviderPreset, PROVIDER_PRESETS } from './providers/provider-presets';
 export { estimateCost, priceEstimate } from './translate/estimate-cost';
@@ -70,9 +83,24 @@ export {
   splitGuideline,
 } from './translate/generate-guide-guideline';
 export { GUIDELINE_PRESETS, type GuidelinePreset, type GuidelinePresetId, getGuidelinePreset } from './translate/guideline-presets';
+export {
+  DEFAULT_IDENTICAL_MIN_LETTERS,
+  identicalMinLettersOf,
+  isIdenticalTranslation,
+  MAX_IDENTICAL_MIN_LETTERS,
+} from './translate/identical-translation';
 export { retranslateSegment } from './translate/retranslate-segment';
 export { estimateTokens, languageName } from './translate/token-estimate';
-export { keepsUserEdit, MAX_BATCH_TOKENS, MAX_CONCURRENCY, makeBatches, translateProject } from './translate/translate-project';
+export {
+  DEFAULT_MAX_BATCH_SEGMENTS,
+  keepsUserEdit,
+  MAX_BATCH_SEGMENTS_LIMIT,
+  MAX_BATCH_TOKENS,
+  MAX_CONCURRENCY,
+  makeBatches,
+  maxSegmentsOf,
+  translateProject,
+} from './translate/translate-project';
 export {
   DEFAULT_SAMPLE_PASSAGES,
   DEFAULT_SAMPLE_WORDS,
@@ -85,6 +113,7 @@ export {
   type TranslateSampleOptions,
   translateSample,
 } from './translate/translate-sample';
+export { addUsage, cachePriceRatios, MAX_CACHED_INPUT_RATIO, type UsagePricing, usageCostUsd } from './translate/usage-cost';
 export type * from './types';
 export { randomId } from './util/random-id';
 export { REDACTED, redactSecrets } from './util/redact-secrets';

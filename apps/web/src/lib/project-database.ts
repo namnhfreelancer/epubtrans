@@ -1,4 +1,4 @@
-import type { Chapter, ExportStyle, Project, SegmentStatus, WordHintEntry } from '@epubtrans/core';
+import type { Chapter, ExportStyle, Project, SegmentStatus, SegmentWarning, WordHintEntry } from '@epubtrans/core';
 import { Dexie, type Table } from 'dexie';
 
 /**
@@ -15,6 +15,8 @@ import { Dexie, type Table } from 'dexie';
 export type ProjectMetaRow = Omit<Project, 'chapters' | 'sourceEpub' | 'wordHints'> & {
   segmentCount: number;
   hintLanguages?: { sourceLang: string; glossLang: string };
+  /** Bumped when the book's translations are reset or the book is replaced; absent (0) on rows of older versions. */
+  settingsRevision?: number;
 };
 
 export type HintRow = WordHintEntry & { projectId: string };
@@ -44,6 +46,8 @@ export interface SegmentStateRow {
   error?: string;
   /** The user saved this translation by hand (kept apart from machine output). */
   userEdited?: boolean;
+  /** Non-blocking flag set by automatic runs (the translation equals the source). */
+  warning?: SegmentWarning;
 }
 
 export class ProjectDatabase extends Dexie {

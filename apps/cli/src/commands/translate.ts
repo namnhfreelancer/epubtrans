@@ -12,6 +12,7 @@ import {
 import { expectPositionals, parseArgs, UsageError } from '../args';
 import { domEnv } from '../dom-env';
 import { TRANSLATE_FLAGS } from '../flag-specs';
+import { applyGlossaryFile } from '../glossary-import';
 import { applyWordWiseFlags } from '../hint-flags';
 import type { Io } from '../io';
 import { translateAndExport } from '../pipeline';
@@ -21,7 +22,7 @@ import { applyStyleFlags, loadProjectFileWithWarnings } from '../style-flags';
 import { assertOutputIsSeparate, defaultOutPath, PROJECT_EXTENSION } from './output-paths';
 import { buildProvider } from './provider-setup';
 
-const USAGE = 'epubtrans translate <input.(epub|mobi|azw3|fb2)> --to <lang> --model <id> [options]';
+const USAGE = 'epubtrans translate <input.(epub|mobi|azw3|fb2|txt|md)> --to <lang> --model <id> [options]';
 
 export async function readBytes(path: string, what: string): Promise<Uint8Array | undefined> {
   try {
@@ -91,9 +92,10 @@ export async function translateCommand(argv: string[], io: Io): Promise<number> 
   }
 
   const selection = selectProvider(flags, existingBytes ? project.settings : undefined);
-  settings = await applyStyleFlags(applyWordWiseFlags(applyRunFlags(settings, flags, selection), flags), flags, io);
+  settings = await applyGlossaryFile(applyRunFlags(settings, flags, selection), flags['glossary-file'], io);
+  settings = await applyStyleFlags(applyWordWiseFlags(settings, flags), flags, io);
   if (!settings.model) throw new UsageError('--model <id> is required. List the available models with: epubtrans models --provider <id>');
-  const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io);
+  const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io, { reasoning: settings.reasoning });
 
   const outPath = flags.out ?? defaultOutPath(input, settings.targetLang);
   assertOutputIsSeparate(outPath, input, projectPath);

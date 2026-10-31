@@ -78,7 +78,12 @@ export function iso6393ToBcp47(code: string): string {
 
 /** Detects the dominant source language from a sample of segment text spread across the book. */
 export function detectLanguage(project: Project): string {
-  const texts = project.chapters.flatMap((c) => c.segments.map((s) => s.sourceText)).filter((t) => t.length > 20);
+  return detectTextLanguage(project.chapters.flatMap((c) => c.segments.map((s) => s.sourceText)));
+}
+
+/** Detects the dominant language of a list of paragraphs (a sample spread across them); 'und' when unknown. */
+export function detectTextLanguage(paragraphs: readonly string[]): string {
+  const texts = paragraphs.filter((t) => t.length > 20);
   if (texts.length === 0) return 'und';
   const stride = Math.max(1, Math.floor(texts.length / 60));
   let sample = '';

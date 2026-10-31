@@ -71,7 +71,7 @@ describe('a Word Wise hints job', () => {
     expect(await startHintJob(project, planWordHints(project, list, project.settings), project.settings, gated.provider)).toBe('started');
     expect(isHintJobActive(project.id)).toBe(true);
     expect(((await navigator.locks.query()).held ?? []).some((l) => l.name === jobLockName(project.id))).toBe(true);
-    expect(await startJob(project, project.settings, gated.provider)).toBe('already-running');
+    expect(await startJob(project, (book) => book, gated.provider)).toBe('already-running');
     gated.release();
     await waitFor(() => getHintJobState(project.id).status === 'done');
     await waitFor(() => !isHintJobActive(project.id));

@@ -44,7 +44,7 @@ export function libraryTools(ctx: ToolContext): ToolSpec[] {
       name: 'import_book_from_url',
       title: 'Import a book from a URL',
       description:
-        'Downloads a DRM-free EPUB, MOBI, AZW3, FB2 or .epubtrans file from an https URL into the library after the user approves the host in the page. The host must allow downloads from web pages (CORS); many sites do not, and then the user drops the file on the library page instead. Returns the new book id.',
+        'Downloads a DRM-free EPUB, MOBI, AZW3, FB2, TXT, Markdown or .epubtrans file from an https URL into the library after the user approves the host in the page. The host must allow downloads from web pages (CORS); many sites do not, and then the user drops the file on the library page instead. Returns the new book id.',
       inputSchema: objectSchema({ url: { type: 'string', description: 'Absolute https:// URL of the book file.', maxLength: 2048 } }, ['url']),
       annotations: { untrustedContentHint: true },
       run: async (args, signal) => {

@@ -1,4 +1,4 @@
-import { getProviderPreset, PROVIDER_PRESETS } from '@epubtrans/core';
+import { getProviderPreset, PROVIDER_PRESETS, REASONING_LEVELS, type ReasoningLevel } from '@epubtrans/core';
 import { ApiKeyField } from '../components/settings/api-key-field';
 import { ModelField } from '../components/settings/model-field';
 import { INPUT_CLASS } from '../components/ui/input-class';
@@ -78,6 +78,22 @@ export function SettingsPage() {
           profile={profile}
           onChange={(patch) => providerConfig.updateProfile(preset.id, patch)}
         />
+        <div className="mt-5">
+          <Field label={t('settings.reasoning')} htmlFor="reasoning" hint={t('settings.reasoningHint')}>
+            <select
+              id="reasoning"
+              className={INPUT_CLASS}
+              value={profile.reasoning ?? 'default'}
+              onChange={(e) => providerConfig.updateProfile(preset.id, { reasoning: e.target.value as ReasoningLevel })}
+            >
+              {REASONING_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {t(`settings.reasoning.${level}`)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
       </Card>
     </div>
   );

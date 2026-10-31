@@ -6,14 +6,16 @@ import {
   type SampleRunResult,
   type SampleSelection,
   selectSamplePassages,
+  type TokenUsage,
   translateSample,
 } from '@epubtrans/core';
 import { expectPositionals, parseArgs, UsageError } from '../args';
 import { SAMPLE_FLAGS } from '../flag-specs';
+import { applyGlossaryFile } from '../glossary-import';
 import type { Io } from '../io';
 import { confirmRun, EXIT } from '../pipeline';
 import { lookupEstimatePrices } from '../price-lookup';
-import { createProgress, formatTokens, formatUsd, usageCost } from '../progress';
+import { createProgress, formatTokens, formatUsd, tokensUsedLine, usageCost } from '../progress';
 import { createProjectSaver, writeProjectFile } from '../project-store';
 import { formatSampleReport } from '../sample-report';
 import { applyRunFlags, selectProvider } from '../settings';
@@ -21,7 +23,7 @@ import { openProject } from './open-project';
 import { buildProvider } from './provider-setup';
 
 const USAGE =
-  'epubtrans sample <input.(epub|mobi|azw3|fb2) | project.epubtrans> [--passages N] [--words N] [--seed S] [--new] --to <lang> --model <id> [options]';
+  'epubtrans sample <input.(epub|mobi|azw3|fb2|txt|md) | project.epubtrans> [--passages N] [--words N] [--seed S] [--new] --to <lang> --model <id> [options]';
 
 interface SampleChoice {
   passages?: number;
@@ -54,7 +56,7 @@ function describeEstimate(project: Project, settings: ProjectSettings, selection
   const segments = selection.passages.reduce((n, p) => n + p.segmentIds.length, 0);
   const cost =
     settings.priceInPerM !== undefined && settings.priceOutPerM !== undefined
-      ? `about ${formatUsd(usageCost({ input: estimate.inputTokens, output: estimate.outputTokens }, settings.priceInPerM, settings.priceOutPerM) ?? 0)}`
+      ? `about ${formatUsd(usageCost({ input: estimate.inputTokens, output: estimate.outputTokens }, settings) ?? 0)}`
       : 'cost unknown (pass --price-in and --price-out, USD per 1M tokens, for a cost estimate)';
   return [
     `Sample: ${segments} segments in ${selection.passages.length} passages (seed ${selection.seed})${settings.twoPass ? ' (+ review pass)' : ''}`,
@@ -75,9 +77,9 @@ export async function sampleCommand(argv: string[], io: Io): Promise<number> {
 
   const selection = chooseSelection(project, { passages: flags.passages, words: flags.words, seed: flags.seed, fresh: flags.new });
   const provider = selectProvider(flags, opened.existing ? project.settings : undefined);
-  const settings = applyRunFlags(opened.settings, flags, provider);
+  const settings = await applyGlossaryFile(applyRunFlags(opened.settings, flags, provider), flags['glossary-file'], io);
   if (!settings.model) throw new UsageError('--model <id> is required. List the available models with: epubtrans models --provider <id>');
-  const chat = await buildProvider(provider, flags['api-key-file'], settings.model, io);
+  const chat = await buildProvider(provider, flags['api-key-file'], settings.model, io, { reasoning: settings.reasoning });
 
   project.settings = settings;
   await writeProjectFile(project, projectPath);
@@ -94,7 +96,7 @@ export async function sampleCommand(argv: string[], io: Io): Promise<number> {
   const signal = AbortSignal.any([io.signal, stop.signal]);
   const saver = createProjectSaver(project, projectPath, (err) => stop.abort(err));
   const progress = createProgress(io, priced);
-  let usage = { input: 0, output: 0 };
+  let usage: TokenUsage = { input: 0, output: 0 };
   let failure: unknown;
   let result: SampleRunResult | undefined;
   try {
@@ -114,8 +116,7 @@ export async function sampleCommand(argv: string[], io: Io): Promise<number> {
   // Persist whatever finished, even after an abort or a fatal error.
   await saver.flush();
 
-  const cost = usageCost(usage, priced.priceInPerM, priced.priceOutPerM);
-  io.err(`Tokens used: ${formatTokens(usage.input)} in / ${formatTokens(usage.output)} out${cost === undefined ? '' : ` (${formatUsd(cost)})`}\n`);
+  io.err(tokensUsedLine(usage, priced));
   if (failure !== undefined) {
     if (!io.signal.aborted) throw failure;
     io.err(`Interrupted. Progress saved to ${projectPath}.\n`);

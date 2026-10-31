@@ -27,8 +27,12 @@ export interface MockProviderState {
   glossaryRequests: number;
   /** Lemmas sent in each Word Wise gloss request, in arrival order. */
   hintRequests: string[][];
+  /** Gloss language tag of each Word Wise gloss request ("Gloss language: Vietnamese (vi)" → `vi`), in arrival order. */
+  hintLanguages: string[];
   /** Prefix prepended to every translated segment. */
   prefix: string;
+  /** Prefix each translation with the target language tag of its request instead (`[de] `), to see which language a tab used. */
+  prefixByTarget: boolean;
   /** Artificial latency per chat request. */
   delayMs: number;
   /** Segment ids answered with markup that fails validation, so they end in `error`; clear it to answer validly again. */
@@ -36,6 +40,11 @@ export interface MockProviderState {
   /** Answer every segment with invalid markup (e.g. all sampled passages fail while the rest of the book stays pending). */
   invalidAll: boolean;
 }
+
+/** The target language tag in a translation prompt ("Target language: German (de)"). */
+const TARGET_TAG = /Target language: [^(\n]*\(([\w-]+)\)/;
+/** The gloss language tag in a Word Wise prompt ("Gloss language: Vietnamese (vi)"). */
+const GLOSS_TAG = /Gloss language: [^(\n]*\(([\w-]+)\)/;
 
 /** Forbidden markup: the translation validator rejects it whatever the source looks like. */
 const INVALID_MARKUP = '<script>broken()</script>';
@@ -64,15 +73,17 @@ function answer(body: ChatBody, state: MockProviderState): string {
   if (system.includes('Word Wise hints')) {
     const { items } = JSON.parse(user) as { items: { id: string; lemma: string }[] };
     state.hintRequests.push(items.map((i) => i.lemma));
+    state.hintLanguages.push(GLOSS_TAG.exec(system)?.[1] ?? '?');
     return JSON.stringify({ items: items.map((i) => ({ id: i.id, sense: 'main', gloss: `≈${i.lemma}` })) });
   }
   const { segments } = JSON.parse(user) as { segments: { id: string; html?: string; draft?: string }[] };
   const review = segments.some((s) => s.draft !== undefined);
+  const prefix = state.prefixByTarget ? `[${TARGET_TAG.exec(`${system}\n${user}`)?.[1] ?? '?'}] ` : state.prefix;
   state.segmentRequests.push({ kind: review ? 'review' : 'translate', ids: segments.map((s) => s.id) });
   return JSON.stringify({
     segments: segments.map((s) => ({
       id: s.id,
-      html: review ? (s.draft ?? '') : state.invalidAll || state.invalidIds.has(s.id) ? INVALID_MARKUP : `${state.prefix}${s.html ?? ''}`,
+      html: review ? (s.draft ?? '') : state.invalidAll || state.invalidIds.has(s.id) ? INVALID_MARKUP : `${prefix}${s.html ?? ''}`,
     })),
   });
 }
@@ -86,13 +97,18 @@ async function fulfill(route: Route, status: number, json?: unknown): Promise<vo
 }
 
 /** Installs the fake provider on `page`: GET /models, POST /chat/completions (translate, review, guideline, glossary, Word Wise glosses). */
-export async function installMockProvider(page: Page, opts: Partial<Pick<MockProviderState, 'delayMs' | 'prefix'>> = {}): Promise<MockProviderState> {
+export async function installMockProvider(
+  page: Page,
+  opts: Partial<Pick<MockProviderState, 'delayMs' | 'prefix' | 'prefixByTarget'>> = {},
+): Promise<MockProviderState> {
   const state: MockProviderState = {
     segmentRequests: [],
     guideRequests: 0,
     glossaryRequests: 0,
     hintRequests: [],
+    hintLanguages: [],
     prefix: opts.prefix ?? '[vi] ',
+    prefixByTarget: opts.prefixByTarget ?? false,
     delayMs: opts.delayMs ?? 0,
     invalidIds: new Set(),
     invalidAll: false,

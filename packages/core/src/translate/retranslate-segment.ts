@@ -29,6 +29,8 @@ export async function retranslateSegment(
   delete segment.userEdited;
   if (draft.error) segment.error = draft.error;
   else delete segment.error;
+  if (draft.warning) segment.warning = draft.warning;
+  else delete segment.warning;
   project.updatedAt = new Date().toISOString();
   return segment;
 }

@@ -24,18 +24,27 @@ export const STYLE_FLAGS = {
   'no-attribution': { type: 'boolean' },
 } as const satisfies FlagSpecs;
 
-export const RUN_FLAGS = {
-  ...PROVIDER_FLAGS,
-  ...WORD_WISE_FLAGS,
-  ...STYLE_FLAGS,
+/** Request and accounting tuning shared by every command that translates. */
+const TUNING_FLAGS = {
   concurrency: { type: 'number' },
   'two-pass': { type: 'boolean' },
   'price-in': { type: 'number' },
   'price-out': { type: 'number' },
+  'cached-ratio': { type: 'number' },
   'no-price-lookup': { type: 'boolean' },
+  'max-segments': { type: 'number' },
+  reasoning: { type: 'string' },
+  'identical-min-letters': { type: 'number' },
+  yes: { type: 'boolean', short: 'y' },
+} as const satisfies FlagSpecs;
+
+export const RUN_FLAGS = {
+  ...PROVIDER_FLAGS,
+  ...WORD_WISE_FLAGS,
+  ...STYLE_FLAGS,
+  ...TUNING_FLAGS,
   mode: { type: 'string' },
   out: { type: 'string' },
-  yes: { type: 'boolean', short: 'y' },
 } as const satisfies FlagSpecs;
 
 export const TRANSLATE_FLAGS = {
@@ -45,6 +54,7 @@ export const TRANSLATE_FLAGS = {
   from: { type: 'string' },
   'guideline-preset': { type: 'string' },
   'guideline-file': { type: 'string' },
+  'glossary-file': { type: 'string' },
   'generate-guide': { type: 'boolean' },
 } as const satisfies FlagSpecs;
 
@@ -52,15 +62,11 @@ export const RESUME_FLAGS = RUN_FLAGS;
 
 export const SAMPLE_FLAGS = {
   ...PROVIDER_FLAGS,
-  concurrency: { type: 'number' },
-  'two-pass': { type: 'boolean' },
-  'price-in': { type: 'number' },
-  'price-out': { type: 'number' },
-  'no-price-lookup': { type: 'boolean' },
-  yes: { type: 'boolean', short: 'y' },
+  ...TUNING_FLAGS,
   project: { type: 'string' },
   to: { type: 'string' },
   from: { type: 'string' },
+  'glossary-file': { type: 'string' },
   passages: { type: 'number' },
   words: { type: 'number' },
   seed: { type: 'number' },
@@ -72,6 +78,11 @@ export const EXPORT_FLAGS = {
   ...STYLE_FLAGS,
   mode: { type: 'string' },
   out: { type: 'string' },
+} as const satisfies FlagSpecs;
+
+export const GLOSSARY_EXPORT_FLAGS = {
+  out: { type: 'string' },
+  format: { type: 'string' },
 } as const satisfies FlagSpecs;
 
 export const HINTS_FLAGS = {
@@ -90,11 +101,12 @@ export const HINTS_FLAGS = {
   'hints-per-paragraph': { type: 'number' },
   'hints-per-chapter': { type: 'number' },
   'style-file': { type: 'string' },
+  'glossary-file': { type: 'string' },
 } as const satisfies FlagSpecs;
 
 export const MODELS_FLAGS = PROVIDER_FLAGS;
 
 export type ProviderFlagValues = ParsedFlags<typeof PROVIDER_FLAGS>;
-export type RunFlagValues = ParsedFlags<typeof RUN_FLAGS>;
+export type RunFlagValues = ParsedFlags<typeof TUNING_FLAGS> & ProviderFlagValues;
 export type WordWiseFlagValues = ParsedFlags<typeof WORD_WISE_FLAGS>;
 export type HintsFlagValues = ParsedFlags<typeof HINTS_FLAGS>;

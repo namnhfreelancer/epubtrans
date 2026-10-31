@@ -3,7 +3,7 @@ import { browserDomEnv } from './dom-env';
 
 /** Hard cap on input size; larger files would exhaust memory in the browser. */
 export const MAX_FILE_BYTES = 300 * 1024 * 1024;
-export const ACCEPTED_EXTENSIONS = ['.epub', '.mobi', '.azw3', '.azw', '.fb2', '.zip', '.epubtrans'];
+export const ACCEPTED_EXTENSIONS = ['.epub', '.mobi', '.azw3', '.azw', '.fb2', '.zip', '.txt', '.md', '.markdown', '.epubtrans'];
 
 export type ImportErrorKind = 'drm' | 'unsupported' | 'empty' | 'project' | 'tooLarge' | 'generic';
 
@@ -31,8 +31,8 @@ export function classifyImportError(err: unknown, projectFile: boolean): BookImp
 }
 
 /**
- * Reads a book (EPUB/MOBI/AZW3/FB2) or an `.epubtrans` project file into a Project. `options.onIgnoredKey` hears about
- * export style keys a project file from a newer version holds, which are left out.
+ * Reads a book (EPUB/MOBI/AZW3/FB2/TXT/Markdown) or an `.epubtrans` project file into a Project. `options.onIgnoredKey`
+ * hears about export style keys a project file from a newer version holds, which are left out.
  */
 export async function readProjectFromFile(file: File, options: LoadProjectOptions = {}): Promise<Project> {
   const projectFile = isProjectFileName(file.name);
