@@ -1,4 +1,4 @@
-import { estimateWordHintsCost, type FrequencyList, type Project, planWordHints } from '@epubtrans/core';
+import type { FrequencyList, Project } from '@epubtrans/core';
 import { useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { refreshJobLocks, useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
@@ -10,6 +10,7 @@ import { useJobActive } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
 import { useCostEstimate } from '../../lib/use-cost-estimate';
 import { useRunPrices } from '../../lib/use-run-prices';
+import { computeWordHintsPlan, planForRun } from '../../lib/word-hints-plan-cache';
 import { Button } from '../ui/button';
 import { Alert, ProgressBar } from '../ui/layout-primitives';
 
@@ -41,11 +42,9 @@ export function WordHintsGenerator({
 
   // Selecting candidates scans the whole book and `version` changes on every finished word or segment, so the plan
   // and its estimate are scheduled like the book estimate: debounced, when idle, and kept as they are during a run.
+  // Generate reuses this plan while it is current, so a click never rescans the book.
   const { estimate: planned } = useCostEstimate(
-    () => {
-      const plan = planWordHints(project, list, project.settings);
-      return { plan, estimate: estimateWordHintsCost(plan.candidates, { priceInPerM, priceOutPerM }, plan) };
-    },
+    () => computeWordHintsPlan(project, list, version, { priceInPerM, priceOutPerM }),
     running || translating || sampling,
     // `version` tracks in-place project mutations (settings, new hints).
     [project, list, priceInPerM, priceOutPerM, version],
@@ -59,9 +58,9 @@ export function WordHintsGenerator({
     if (provider.problem) return setStartError(t(provider.problem));
     try {
       const { provider: chat, settings } = provider.prepare(project);
-      // Plan again from the current state: another tab may have added hints since this view rendered.
-      const fresh = planWordHints(project, list, settings);
-      if ((await startHintJob(project, fresh, settings, chat)) === 'busy-elsewhere') await refreshJobLocks();
+      // A stale plan (another tab added hints since it was computed) is replaced by one from the current state.
+      const plan = planForRun(planned, project, list, settings, version);
+      if ((await startHintJob(project, plan, settings, chat)) === 'busy-elsewhere') await refreshJobLocks();
     } catch (err) {
       setStartError(errorText(err));
     }
