@@ -83,6 +83,7 @@ export {
   translateSample,
 } from './translate/translate-sample';
 export type * from './types';
+export { randomId } from './util/random-id';
 export { REDACTED, redactSecrets } from './util/redact-secrets';
 export { lemmatizeEnglish } from './word-hints/english-lemmatizer';
 export { estimateWordHintsCost, type WordHintsEstimate } from './word-hints/estimate-word-hints-cost';

@@ -1,4 +1,4 @@
-import type { Chapter, Project, SegmentStatus, WordHintEntry } from '@epubtrans/core';
+import type { Chapter, ExportStyle, Project, SegmentStatus, WordHintEntry } from '@epubtrans/core';
 import { Dexie, type Table } from 'dexie';
 
 /**
@@ -7,7 +7,8 @@ import { Dexie, type Table } from 'dexie';
  * - `chapters`: imported chapter structure (written once per import),
  * - `sources`: the normalized EPUB bytes (written once per import),
  * - `segments`: per-segment translation state overlay (one small row per finished/edited segment),
- * - `hints` (version 2): one row per glossed Word Wise lemma, written as a hints run finishes it.
+ * - `hints` (version 2): one row per glossed Word Wise lemma, written as a hints run finishes it,
+ * - `styleTemplates` (version 3): named export styles shared by every book (not part of any project).
  * Every segment that is not 'pending' has an overlay row, so progress counts never need the chapters.
  * The project row keeps the language pair of the hints (`hintLanguages`); the entries live in `hints`.
  */
@@ -17,6 +18,13 @@ export type ProjectMetaRow = Omit<Project, 'chapters' | 'sourceEpub' | 'wordHint
 };
 
 export type HintRow = WordHintEntry & { projectId: string };
+
+export interface StyleTemplateRow {
+  id: string;
+  name: string;
+  style: ExportStyle;
+  updatedAt: string;
+}
 
 export interface ChaptersRow {
   projectId: string;
@@ -44,6 +52,7 @@ export class ProjectDatabase extends Dexie {
   sources!: Table<SourceRow, string>;
   segments!: Table<SegmentStateRow, [string, string]>;
   hints!: Table<HintRow, [string, string]>;
+  styleTemplates!: Table<StyleTemplateRow, string>;
 
   constructor(name = 'epubtrans') {
     super(name);
@@ -54,5 +63,6 @@ export class ProjectDatabase extends Dexie {
       segments: '[projectId+id], projectId',
     });
     this.version(2).stores({ hints: '[projectId+lemma], projectId' });
+    this.version(3).stores({ styleTemplates: 'id, name' });
   }
 }

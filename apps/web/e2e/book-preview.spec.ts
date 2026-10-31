@@ -1,54 +1,13 @@
 import { readFileSync } from 'node:fs';
-import { expect, type Frame, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { configureMockProvider, FIXTURES, importBook, openFirstBook } from './support/app-helpers';
 import { installMockProvider } from './support/mock-provider';
+import { evalInSection, sectionFrame } from './support/preview-frames';
 
 const SEARCH_WORD = 'melancholy';
 /** Chrome's report of a blocked inline script (older versions: "Refused to execute inline script ..."). */
 const INLINE_SCRIPT_VIOLATION = /inline script/i;
-
-/**
- * The rendered section document: foliate draws each section into a blob: iframe inside closed shadow roots, and
- * replaces the iframe when the section changes, so it is looked up afresh by its content.
- */
-async function sectionFrame(page: Page, selector: string): Promise<Frame> {
-  let found: Frame | undefined;
-  await expect
-    .poll(async () => {
-      for (const frame of page.frames()) {
-        if (frame.isDetached() || !frame.url().startsWith('blob:')) continue;
-        try {
-          if ((await frame.locator(selector).count()) > 0) {
-            found = frame;
-            return true;
-          }
-        } catch {
-          // Detached while being queried (a rebuild replaced it): keep polling.
-        }
-      }
-      return false;
-    })
-    .toBe(true);
-  return found as Frame;
-}
-
-/**
- * Evaluates `fn` on the first element matching `selector` in the current section document, or returns undefined
- * (none yet, or a rebuild replaced the frame meanwhile); meant for `expect.poll`.
- */
-async function evalInSection<T>(page: Page, selector: string, fn: (el: Element) => T): Promise<T | undefined> {
-  for (const frame of page.frames()) {
-    if (frame.isDetached() || !frame.url().startsWith('blob:')) continue;
-    try {
-      const target = frame.locator(selector).first();
-      if ((await target.count()) > 0) return await target.evaluate(fn);
-    } catch {
-      // Replaced by a rebuild while being queried.
-    }
-  }
-  return undefined;
-}
 
 /** Finds, in the reader, the segment whose source contains `text`. */
 async function segmentIdWithText(page: Page, text: string): Promise<string> {

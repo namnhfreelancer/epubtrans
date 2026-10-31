@@ -1,6 +1,7 @@
 import { type ExportMode, exportEpub, type Project } from '@epubtrans/core';
 import { useEffect, useRef, useState } from 'react';
 import { browserDomEnv } from '../lib/dom-env';
+import { loadFontFile } from '../lib/embedded-font-files';
 import { errorText } from '../lib/notices';
 import { previewFingerprint } from './preview-fingerprint';
 
@@ -49,7 +50,7 @@ export function usePreviewExport(project: Project, version: number, mode: Export
       builtFor.current = { project, mode, fingerprint };
       setState((s) => ({ ...s, building: true }));
       try {
-        const bytes = await exportEpub(project, mode, browserDomEnv(), { preview: true });
+        const bytes = await exportEpub(project, mode, browserDomEnv(), { preview: true, loadFontFile });
         if (ticket === generation.current) setState({ bytes, building: false });
       } catch (err) {
         if (ticket === generation.current) setState((s) => ({ ...s, building: false, error: errorText(err) }));

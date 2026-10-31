@@ -84,6 +84,9 @@ export default defineConfig({
   ],
   build: {
     target: 'es2022',
+    // Embeddable fonts and their licenses stay separate files of this origin (fetched only when an export embeds them),
+    // never data: URLs, which `connect-src` would block.
+    assetsInlineLimit: (file) => (file.includes('/data/fonts/') ? false : undefined),
     chunkSizeWarningLimit: 2048,
     // Keeps `/*! ... @license ... */` notices (the vendored foliate-js MIT notice) in the minified chunks.
     rolldownOptions: { output: { comments: { legal: true } } },

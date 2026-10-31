@@ -1,4 +1,16 @@
-import { composeGuideline, GUIDELINE_PRESETS, type ProjectSettings, splitGuideline, wordHintSettingsOf } from '@epubtrans/core';
+import {
+  composeGuideline,
+  EXPORT_STYLE_PRESET_IDS,
+  type ExportStylePresetId,
+  exportStylePreset,
+  GUIDELINE_PRESETS,
+  matchingPreset,
+  type ProjectSettings,
+  splitGuideline,
+  wordHintSettingsOf,
+} from '@epubtrans/core';
+import { STYLE_MESSAGES } from '../components/export-style/export-style-messages';
+import { formatMessage } from '../i18n/translate-message';
 import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
 import { getGuideJobState, isGuideJobRunning } from '../lib/guide-jobs';
 import { getHintJobState } from '../lib/hint-jobs';
@@ -14,6 +26,18 @@ import { fail, ok, untrustedText } from './tool-result';
 
 const PRESET_IDS = GUIDELINE_PRESETS.map((p) => p.id);
 const GUIDE_LOCKED_HINT = 'Wait until generate_guide finishes (poll get_book_status), then set the preset again.';
+
+/**
+ * Whether a style preset may replace the book's export style: always over a preset look, but a custom style (one the
+ * user built field by field or applied from a template) is only replaced with the user's approval in the page.
+ */
+function applyStylePreset(settings: ProjectSettings, id: ExportStylePresetId, ctx: ToolContext): { applied: boolean } {
+  const custom = settings.exportStyle !== undefined && matchingPreset(settings.exportStyle) === undefined;
+  if (!custom) return { applied: true };
+  const messages = STYLE_MESSAGES[ctx.locale()];
+  const question = formatMessage(messages['style.presetConfirm'], { preset: messages[`style.preset.${id}`] });
+  return { applied: ctx.confirm(ctx.t('webmcp.agentAsks', { question })) };
+}
 
 /** Book tools: read the status, change the language pair, two-pass mode and guideline preset. */
 export function bookTools(ctx: ToolContext): ToolSpec[] {
@@ -67,6 +91,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
             glossedWords: project.wordHints?.entries.length ?? 0,
             job: getHintJobState(project.id).status,
           },
+          exportStyle: { preset: matchingPreset(settings.exportStyle) ?? 'custom', attribution: settings.attribution === true },
           guidelineChars: settings.guideline.length,
           glossaryEntries: settings.glossary.length,
           provider: {
@@ -83,7 +108,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
       name: 'update_book_settings',
       title: 'Update book settings',
       description:
-        'Changes a book’s target language, source language, two-pass review mode or guideline preset. Languages are BCP 47 tags such as vi, fr or zh-Hans (source also accepts auto). A preset replaces only the base guideline and keeps the generated book-specific block; replacing custom guideline text needs the user’s approval in the page, and the preset is not applied while guideline generation runs (reported in notApplied).',
+        'Changes a book’s languages (BCP 47 tags such as vi or zh-Hans; source also accepts auto), two-pass review, guideline preset or export style preset. A guideline preset replaces only the base guideline, keeping the generated block, and is not applied while guideline generation runs (see notApplied). Replacing custom guideline text or a custom export style needs the user’s approval in the page.',
       inputSchema: objectSchema(
         {
           bookId: BOOK_ID,
@@ -91,6 +116,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
           sourceLang: { type: 'string', description: 'Source language as a BCP 47 tag, or auto to detect it.', maxLength: 35 },
           twoPass: { type: 'boolean', description: 'Review every draft in a second pass: better quality, about twice the cost.' },
           guidelinePreset: { type: 'string', enum: PRESET_IDS, description: 'Base style guideline to apply.' },
+          stylePreset: { type: 'string', enum: [...EXPORT_STYLE_PRESET_IDS], description: 'Look of the exported book.' },
         },
         ['bookId'],
       ),
@@ -102,8 +128,9 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
         const sourceInput = args.optString('sourceLang');
         const twoPass = args.optBool('twoPass');
         const presetId = args.optString('guidelinePreset');
-        if (targetInput === undefined && sourceInput === undefined && twoPass === undefined && presetId === undefined) {
-          return fail('Nothing to change.', 'Pass at least one of targetLang, sourceLang, twoPass, guidelinePreset.');
+        const stylePresetId = EXPORT_STYLE_PRESET_IDS.find((id) => id === args.optString('stylePreset'));
+        if (targetInput === undefined && sourceInput === undefined && twoPass === undefined && presetId === undefined && stylePresetId === undefined) {
+          return fail('Nothing to change.', 'Pass at least one of targetLang, sourceLang, twoPass, guidelinePreset, stylePreset.');
         }
         const patch: Partial<ProjectSettings> = {};
         if (targetInput !== undefined) {
@@ -117,6 +144,8 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
           patch.sourceLang = tag;
         }
         if (twoPass !== undefined) patch.twoPass = twoPass;
+        const stylePreset = stylePresetId === undefined ? undefined : applyStylePreset(project.settings, stylePresetId, ctx);
+        if (stylePreset?.applied) patch.exportStyle = exportStylePreset(stylePresetId as ExportStylePresetId);
         // Like the setup page, the guideline is locked while generation runs: its result is merged into the guideline
         // it started from and would silently overwrite a preset applied now.
         const guideLocked = presetId !== undefined && isGuideJobRunning(project.id);
@@ -146,6 +175,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
           sourceLang: settings.sourceLang,
           twoPass: settings.twoPass,
           ...(preset ? { guidelinePreset: preset === 'applied' ? chosen?.id : 'declined by the user' } : {}),
+          ...(stylePreset ? { stylePreset: stylePreset.applied ? stylePresetId : 'declined by the user' } : {}),
           ...(guideLocked ? { notApplied: ['guidelinePreset'], note: `guidelinePreset: generation is running. ${GUIDE_LOCKED_HINT}` } : {}),
         });
       },
