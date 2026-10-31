@@ -1,4 +1,4 @@
-import type { Project, ProjectSettings, Segment } from '@epubtrans/core';
+import type { Project, ProjectSettings, SampleSelection, Segment } from '@epubtrans/core';
 import { useEffect, useSyncExternalStore } from 'react';
 import { repository } from './app-services';
 import { createExternalStore } from './external-store';
@@ -127,4 +127,10 @@ export function saveTranslationEdit(project: Project, segment: Segment, html: st
   project.updatedAt = new Date().toISOString();
   touchProject(project.id);
   return persistSegment(project.id, segment);
+}
+
+/** Persists the passages picked by a sample translation (the in-memory project already carries them). */
+export function persistLastSample(projectId: string, selection: SampleSelection): Promise<void> {
+  const snapshot: SampleSelection = { seed: selection.seed, passages: selection.passages.map((p) => ({ ...p, segmentIds: [...p.segmentIds] })) };
+  return enqueueWrite(projectId, () => repository.saveLastSample(projectId, snapshot));
 }

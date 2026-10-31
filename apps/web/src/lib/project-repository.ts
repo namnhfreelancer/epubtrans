@@ -1,4 +1,4 @@
-import { type Project, type ProjectSettings, type Segment, validateProjectState } from '@epubtrans/core';
+import { type Project, type ProjectSettings, type SampleSelection, type Segment, validateProjectState } from '@epubtrans/core';
 import type { ProjectDatabase, ProjectMetaRow, SegmentStateRow } from './project-database';
 
 export interface ProjectSummary {
@@ -94,6 +94,12 @@ export function createProjectRepository(db: ProjectDatabase) {
 
     async saveSettings(id: string, settings: ProjectSettings): Promise<void> {
       const updated = await db.projects.update(id, { settings, updatedAt: new Date().toISOString() });
+      if (!updated) throw new ProjectNotFoundError(`Project ${id} not found`);
+    },
+
+    /** Remembers the passages of the last sample translation so the viewer and "translate again" survive a reload. */
+    async saveLastSample(id: string, lastSample: SampleSelection): Promise<void> {
+      const updated = await db.projects.update(id, { lastSample, updatedAt: new Date().toISOString() });
       if (!updated) throw new ProjectNotFoundError(`Project ${id} not found`);
     },
 

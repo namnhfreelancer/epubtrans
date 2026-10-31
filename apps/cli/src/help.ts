@@ -3,6 +3,7 @@ export const MAIN_HELP = `epubtrans - translate DRM-free EPUB, MOBI, AZW3 and FB
 Usage
   epubtrans translate <input> --to <lang> --model <id> [options]
   epubtrans resume <file.epubtrans> [options]
+  epubtrans sample <input | file.epubtrans> [--passages N] [--words N] [--seed S] [--new] [options]
   epubtrans export <file.epubtrans> [--mode <mode>] [--out file.epub]
   epubtrans models [--provider <id>] [--base-url <url>]
   epubtrans presets
@@ -61,6 +62,33 @@ project file in place and writes the EPUB.
 Options
 ${PROVIDER_OPTIONS}
 ${RUN_OPTIONS}
+`,
+  sample: `Usage: epubtrans sample <input.(epub|mobi|azw3|fb2) | file.epubtrans> --to <lang> --model <id> [options]
+
+Translates a few passages from different chapters of the book (default: 5 passages of about 350 words) so you
+can judge the quality before the full run. Prints an estimate for just the sample and asks for confirmation,
+then prints every passage as source/translation pairs. The passages are saved in the project file
+(<input>.epubtrans, created if missing); "translate" and "resume" skip them afterwards.
+
+Run the command again without selection options to translate the same passages once more, for example
+after editing the guideline in the project (the sampled segments are always translated again).
+
+Options
+  --to <lang>              Target language (required for a new project)
+  --from <lang>            Source language (default: auto-detect)
+  --project <file>         Project file (default: <input>.epubtrans)
+  --passages <n>           Number of passages, each from a different chapter, 1-50 (default 5)
+  --words <n>              Source words per passage, 20-5000 (default 350)
+  --seed <n>               Seed that picks the passages (same seed, same passages)
+  --new                    Pick new random passages instead of repeating the stored ones
+${PROVIDER_OPTIONS}
+  --concurrency <n>        Parallel requests, 1-16 (default 3)
+  --two-pass               Add a review pass over every translation
+  --price-in <usd>         USD per 1M input tokens, for the cost estimate
+  --price-out <usd>        USD per 1M output tokens
+  -y, --yes                Start without asking for confirmation after the estimate
+
+Exit codes: 0 done, 1 error or cancelled, 2 usage error, 3 some sample segments failed, 130 interrupted.
 `,
   export: `Usage: epubtrans export <file.epubtrans> [options]
 

@@ -172,6 +172,28 @@ export const en = {
   'export.project': 'Project file',
   'export.projectHint': 'Save the book, settings and translations as an .epubtrans file to back up, move to another device or continue in the CLI.',
   'export.downloadProject': 'Download .epubtrans',
+  'sample.title': 'Sample translation',
+  'sample.intro':
+    'Translate a few passages from different parts of the book first, to check quality, style and glossary before the full run. Sampled passages count as translated, and the full run skips them.',
+  'sample.passages': 'Number of passages',
+  'sample.passagesHint': 'Each passage is about 350 words from a different chapter.',
+  'sample.translate': 'Translate samples',
+  'sample.again': 'Translate samples again',
+  'sample.new': 'New random samples',
+  'sample.cancel': 'Cancel',
+  'sample.running': 'Translating samples… {done} / {total}',
+  'sample.estimate': 'Sample cost: ≈ {input} input + {output} output tokens',
+  'sample.estimateUsd': '≈ {usd}',
+  'sample.failed': 'Sample translation stopped: {message}',
+  'sample.cancelled': 'Sample translation cancelled. Finished segments are kept.',
+  'sample.done': 'Samples translated. Check them below; change the guideline or glossary and translate again if needed.',
+  'sample.seed': 'Seed {seed}',
+  'sample.viewerTitle': 'Samples',
+  'sample.passageHeading': 'Passage {n}: {title}',
+  'sample.source': 'Source',
+  'sample.translation': 'Translation',
+  'sample.lockedByRun': 'Pause or wait for the full translation to finish first.',
+  'sample.blocksRun': 'Samples are being translated. The full translation can start afterwards.',
 } as const;
 
 export type MessageKey = keyof typeof en;

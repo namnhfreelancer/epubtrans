@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n/i18n-context';
 import { formatDuration, formatNumber } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
 import { updateSettings } from '../../lib/project-store';
+import { useSampleRunning } from '../../lib/sample-jobs';
 import { countSegments, remainingWork } from '../../lib/segment-counts';
 import { estimateRemainingMs, pauseJob, startJob, useJob } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
@@ -17,6 +18,7 @@ export function TranslationControls({ project, version, provider }: { project: P
   const [startError, setStartError] = useState<string>();
   const [now, setNow] = useState(Date.now());
   const running = job.status === 'running' || job.status === 'pausing';
+  const sampleRunning = useSampleRunning(project.id);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
   const counts = useMemo(() => countSegments(project), [project, version]);
   const work = remainingWork(counts, project.settings.twoPass);
@@ -56,7 +58,13 @@ export function TranslationControls({ project, version, provider }: { project: P
           </Button>
         ) : (
           work > 0 && (
-            <Button variant="primary" data-testid="start-translation" onClick={start}>
+            <Button
+              variant="primary"
+              data-testid="start-translation"
+              onClick={start}
+              disabled={sampleRunning}
+              title={sampleRunning ? t('sample.blocksRun') : undefined}
+            >
               {label}
             </Button>
           )

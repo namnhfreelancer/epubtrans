@@ -19,7 +19,7 @@ interface SegmentRowProps {
   provider: ActiveProviderState;
 }
 
-function SegmentText({ html, lang, faded = false }: { html: string; lang?: string; faded?: boolean }) {
+export function SegmentText({ html, lang, faded = false }: { html: string; lang?: string; faded?: boolean }) {
   return (
     <div
       lang={lang}
