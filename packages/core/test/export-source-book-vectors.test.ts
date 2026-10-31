@@ -6,7 +6,7 @@ import { sanitizeMarkupFile, stripActiveContent } from '../src/export/strip-acti
 import { cssStylesheetInstruction, cssStylesheetInstructions } from '../src/export/xml-prolog';
 import { readZip } from '../src/util/zip-archive';
 import { addManifestItems, browserLikeEnv, dec, editText, enc, expectNoActiveMarkup, poisonedProject } from './package-markup-test-helpers';
-import { env, fakeTranslate, readFixture, unzipText } from './test-helpers';
+import { env, fakeTranslate, loadFontFile, readFixture, unzipText } from './test-helpers';
 
 const CHAPTER = 'OEBPS/6893508861643006172_1080-h-1.htm.xhtml';
 const RAW_TEXT_ELEMENTS = ['style', 'title', 'noscript', 'textarea', 'xmp', 'noembed'];
@@ -310,6 +310,23 @@ describe('multi-rendition books', () => {
       expect(unzipText(out, 'A/a.opf')).toContain('epubtrans-css');
       expect(unzipText(await exportEpub(project, 'translation-only', domEnv), 'B/b.opf')).not.toContain('epubtrans-css');
     }
+  });
+
+  it('a rendition sharing the styled stylesheet also lists its embedded fonts', async () => {
+    const project = await importBook(multiRenditionEpub(), 'multi.epub', env);
+    for (const s of project.chapters.flatMap((c) => c.segments)) {
+      s.translationHtml = fakeTranslate(s.sourceHtml);
+      s.status = 'translated';
+    }
+    project.settings = { ...project.settings, exportStyle: { translation: { font: 'literata' } } };
+    const out = await exportEpub(project, 'bilingual', env, { loadFontFile });
+    for (const [opfPath, href] of [
+      ['A/a.opf', 'epubtrans-fonts/literata-regular.ttf'],
+      ['B/b.opf', '../A/epubtrans-fonts/literata-regular.ttf'],
+    ] as const) {
+      expect(unzipText(out, opfPath), opfPath).toContain(`href="${href}"`);
+    }
+    expect(readZip(out).has('A/epubtrans-fonts/literata-OFL.txt')).toBe(true);
   });
 
   it('a single-rendition book exports exactly as before', async () => {

@@ -123,13 +123,13 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
   const attribution = wantsAttribution(project, mode);
   if (attribution) addAttributionPage(files, pkg, project, cssPath, xmlLangOnly);
   const withCss = bilingual || linked.size > 0 || attribution;
+  updateOpf(pkg, project, mode, withCss ? cssPath : undefined);
+  // Other renditions that share a document linking the stylesheet list it, and the fonts it loads, too.
+  const sharing = renditions.slice(1).filter((other) => other.manifest.some((m) => linked.has(m.path)));
+  for (const other of sharing) addManifestItem(other, STYLESHEET_ID, cssPath, 'text/css');
   if (withCss) {
     files.set(cssPath, encodeUtf8(exportStyleCss(style, { fonts: fonts.fonts, attribution })));
-    packageEmbeddedFonts(files, pkg, cssPath, fonts, xmlLangOnly);
-  }
-  updateOpf(pkg, project, mode, withCss ? cssPath : undefined);
-  for (const other of renditions.slice(1)) {
-    if (other.manifest.some((m) => linked.has(m.path))) addManifestItem(other, STYLESHEET_ID, cssPath, 'text/css');
+    packageEmbeddedFonts(files, [pkg, ...sharing], cssPath, fonts, xmlLangOnly);
   }
   applyExportIdentifier(files, renditions, project, mode, env);
   for (const { opfPath, opf } of renditions) {

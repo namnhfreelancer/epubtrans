@@ -50,22 +50,19 @@ export async function loadEmbeddedFontFiles(fonts: readonly EmbeddedFont[], load
 
 /**
  * Writes the fonts and their OFL license files into `epubtrans-fonts/` next to the stylesheet and lists them in the
- * primary package's manifest (fonts plainly, never obfuscated). Returns the container paths written.
+ * manifest of every package that lists the stylesheet (fonts plainly, never obfuscated).
  */
-export function packageEmbeddedFonts(files: FileMap, pkg: PackageInfo, cssPath: string, loaded: LoadedFontFiles, epub2: boolean): string[] {
+export function packageEmbeddedFonts(files: FileMap, pkgs: readonly PackageInfo[], cssPath: string, loaded: LoadedFontFiles, epub2: boolean): void {
   const dir = `${dirname(cssPath) ? `${dirname(cssPath)}/` : ''}${FONT_DIR}`;
-  const written: string[] = [];
   for (const font of loaded.fonts) {
     for (const face of font.faces) {
       const path = `${dir}/${face.file}`;
       files.set(path, loaded.files.get(face.file) as Uint8Array);
-      addManifestItem(pkg, `epubtrans-font-${face.file.replace(/\.ttf$/, '')}`, path, epub2 ? TTF_MEDIA_TYPE.epub2 : TTF_MEDIA_TYPE.epub3);
-      written.push(path);
+      for (const pkg of pkgs)
+        addManifestItem(pkg, `epubtrans-font-${face.file.replace(/\.ttf$/, '')}`, path, epub2 ? TTF_MEDIA_TYPE.epub2 : TTF_MEDIA_TYPE.epub3);
     }
     const license = `${dir}/${font.licenseFile}`;
     files.set(license, loaded.files.get(font.licenseFile) as Uint8Array);
-    addManifestItem(pkg, `epubtrans-font-license-${font.id}`, license, 'text/plain');
-    written.push(license);
+    for (const pkg of pkgs) addManifestItem(pkg, `epubtrans-font-license-${font.id}`, license, 'text/plain');
   }
-  return written;
 }
