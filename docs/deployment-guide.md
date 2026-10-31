@@ -32,9 +32,9 @@ Live URL: <https://namnhfreelancer.github.io/epubtrans/>. The origin `namnhfreel
 
 Versioning is driven by Conventional Commits through release-please (manifest mode, `release-type: node`, root package `epubtrans`, tags like `v3.0.0`). The root `package.json` `version` and `.release-please-manifest.json` are the source of truth; the CLI prints the root version.
 
-The current manifest version is `2.12.0` (the last Go release) and `release-please-config.json` pins `"release-as": "3.0.0"` so the first release of the TypeScript rewrite is **3.0.0** regardless of how the rewrite is merged.
+The first release of the TypeScript rewrite, **3.0.0**, was pinned with a temporary `"release-as": "3.0.0"` in `release-please-config.json`; that pin has been removed now that v3.0.0 is out.
 
-**After 3.0.0 is released, remove the `release-as` line from `release-please-config.json`.** It stays in force until removed: leaving it would make release-please propose 3.0.0 again instead of computing 3.0.1, 3.1.0 and so on. From then on `fix` gives a patch release, `feat` a minor release, and a `!` commit a major release.
+Versions are now computed from commits: `fix` gives a patch release, `feat` a minor release, and a `!` commit a major release.
 
 ### What a release produces
 
