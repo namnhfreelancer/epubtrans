@@ -8,24 +8,26 @@ const XSL_PATH = /\.xslt?$/i;
 const XSL_MEDIA_TYPES = new Set(['application/xslt+xml', 'text/xsl']);
 
 /**
- * Removes files an exported package must not carry, so no file escapes sanitization through an
- * unusual extension or media type:
- * - XSLT stylesheets (by extension or media type), with their manifest items: EPUB has no use for
- *   them and a browser runs the markup they generate;
- * - every file the OPF does not reference. Kept are `mimetype`, `META-INF/**`, the OPF itself,
- *   manifest items and local targets of OPF `<link>` elements (EPUB 3 linked metadata records are
- *   not manifest items).
+ * Removes files an exported package must not carry:
+ * - XSLT stylesheets (by extension or media type), with their manifest items in every rendition:
+ *   EPUB has no use for them and a browser runs the markup they generate;
+ * - every file no package document references. Kept are `mimetype`, `META-INF/**`, every
+ *   rootfile of `META-INF/container.xml` (`rootfiles`, including those that are not parsed OPFs),
+ *   and for each parsed rendition its manifest items and the local targets of its OPF `<link>`
+ *   elements (EPUB 3 linked metadata records are not manifest items).
+ * What is kept is then sanitized by content as well as by type (`stripActiveContentFromPackage`),
+ * so no file escapes through an unusual extension or media type.
  */
-export function prunePackageFiles(files: FileMap, pkg: PackageInfo): void {
-  const xslIds = new Set(pkg.manifest.filter((m) => isXsl(m.path, m.mediaType)).map((m) => m.id));
-  if (xslIds.size > 0) removeManifestItems(pkg, xslIds);
-
-  const opfDir = dirname(pkg.opfPath);
-  const referenced = new Set([
-    pkg.opfPath,
-    ...pkg.manifest.map((m) => m.path),
-    ...byLocalName(pkg.opf, 'link').map((l) => resolvePath(opfDir, l.getAttribute('href') ?? '')),
-  ]);
+export function prunePackageFiles(files: FileMap, renditions: PackageInfo[], rootfiles: string[]): void {
+  const referenced = new Set(rootfiles);
+  for (const pkg of renditions) {
+    const xslIds = new Set(pkg.manifest.filter((m) => isXsl(m.path, m.mediaType)).map((m) => m.id));
+    if (xslIds.size > 0) removeManifestItems(pkg, xslIds);
+    const opfDir = dirname(pkg.opfPath);
+    referenced.add(pkg.opfPath);
+    for (const item of pkg.manifest) referenced.add(item.path);
+    for (const link of byLocalName(pkg.opf, 'link')) referenced.add(resolvePath(opfDir, link.getAttribute('href') ?? ''));
+  }
   for (const path of Array.from(files.keys())) {
     if (XSL_PATH.test(path)) files.delete(path);
     else if (path !== 'mimetype' && !path.startsWith('META-INF/') && !referenced.has(path)) files.delete(path);
