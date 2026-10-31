@@ -1,5 +1,7 @@
 import type { Project } from '@epubtrans/core';
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { ExportStyleEditor } from '../components/export-style/export-style-editor';
+import { useStyleText } from '../components/export-style/export-style-messages';
 import { Button } from '../components/ui/button';
 import { Alert } from '../components/ui/layout-primitives';
 import { navigate } from '../lib/hash-route';
@@ -43,6 +45,7 @@ function useAvailableArea(ref: RefObject<HTMLElement | null>): { width: number; 
  */
 export function PreviewPanel({ project, version }: { project: Project; version: number }) {
   const p = usePreviewText();
+  const s = useStyleText();
   const [settings, setSettings] = useState<PreviewSettings>(loadPreviewSettings);
   const build = usePreviewExport(project, version, settings.mode);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -146,6 +149,13 @@ export function PreviewPanel({ project, version }: { project: Project; version: 
             →
           </Button>
         </div>
+        {/* The book's export style, edited next to the preview: changes are saved and rebuild the preview (debounced). */}
+        <details data-testid="preview-style" className="rounded-2xl border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-stone-900">
+          <summary className="cursor-pointer text-sm font-semibold">{s('style.title')}</summary>
+          <div className="mt-4">
+            <ExportStyleEditor project={project} mode={settings.mode} />
+          </div>
+        </details>
       </div>
     </div>
   );

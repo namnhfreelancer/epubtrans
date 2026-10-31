@@ -9,6 +9,7 @@ import { repository } from '../lib/app-services';
 import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
 import { deleteBookFromDevice } from '../lib/delete-book-from-device';
 import { downloadBytes, safeFileName } from '../lib/download-file';
+import { ignoredKeysText } from '../lib/export-style-edit';
 import { useExternalStore } from '../lib/external-store';
 import { dialogText } from '../lib/format';
 import { BookImportError, isProjectFileName, readProjectFromFile } from '../lib/import-book-file';
@@ -33,7 +34,8 @@ export function LibraryPage() {
     for (const file of files) {
       setBusyName(file.name);
       try {
-        const project = await readProjectFromFile(file);
+        const ignoredKeys: string[] = [];
+        const project = await readProjectFromFile(file, { onIgnoredKey: (key) => ignoredKeys.push(key) });
         if (isProjectFileName(file.name) && (await repository.exists(project.id))) {
           if (await isJobRunningElsewhere(project.id)) {
             pushNotice('error', t('library.busyElsewhere'));
@@ -49,6 +51,7 @@ export function LibraryPage() {
         }
         await addProject(project);
         pushNotice('success', t('library.imported', { title: project.title }));
+        if (ignoredKeys.length > 0) pushNotice('info', t('library.ignoredStyleKeys', { title: project.title, keys: ignoredKeysText(ignoredKeys) }), 10_000);
       } catch (err) {
         const kind = err instanceof BookImportError ? err.kind : 'generic';
         setImportError({ text: `${file.name}: ${t(`import.error.${kind}`)}`, detail: errorText(err) });

@@ -1,4 +1,5 @@
-import { createDefaultSettings, type Project } from '@epubtrans/core';
+import { readFileSync } from 'node:fs';
+import { createDefaultSettings, type DomEnv, type Project } from '@epubtrans/core';
 import { expect } from 'vitest';
 import { translate } from '../src/i18n/translate-message';
 import { apiKeys } from '../src/lib/api-key-store';
@@ -142,13 +143,13 @@ export interface ToolHarness {
   /** Answers of the next confirm dialogs (default: accept). */
   confirmAnswers: boolean[];
   navigations: Route[];
-  downloads: { fileName: string; bytes: number }[];
+  downloads: { fileName: string; bytes: number; data: Uint8Array }[];
   tools: Map<string, ModelContextTool>;
   unregister(): void;
 }
 
 /** Registers every tool on a fake model context, with a fake browser context, and calls them like an agent. */
-export function toolHarness(opts: { fetch: typeof fetch; secrets?: () => string[] }): ToolHarness {
+export function toolHarness(opts: { fetch: typeof fetch; secrets?: () => string[]; domEnv?: DomEnv }): ToolHarness {
   const harness: Omit<ToolHarness, 'call' | 'tools' | 'unregister'> = { outputs: [], confirms: [], confirmAnswers: [], navigations: [], downloads: [] };
   const ctx: ToolContext = {
     t: (key, params) => translate('en', key, params),
@@ -158,10 +159,12 @@ export function toolHarness(opts: { fetch: typeof fetch; secrets?: () => string[
       return harness.confirmAnswers.shift() ?? true;
     },
     navigate: (route) => harness.navigations.push(route),
-    download: (bytes, fileName) => harness.downloads.push({ fileName, bytes: bytes.byteLength }),
+    download: (bytes, fileName) => harness.downloads.push({ fileName, bytes: bytes.byteLength, data: bytes }),
     domEnv: () => {
+      if (opts.domEnv) return opts.domEnv;
       throw new Error('No DOM in unit tests');
     },
+    loadFontFile: async (file) => new Uint8Array(readFileSync(new URL(`../../../packages/core/data/fonts/${file}`, import.meta.url))),
     fetch: (input, init) => opts.fetch(input, init),
     secrets: opts.secrets ?? (() => Object.values(apiKeys.store.get().keys).filter(Boolean)),
   };

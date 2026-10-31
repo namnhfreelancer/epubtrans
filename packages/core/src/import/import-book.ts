@@ -1,6 +1,7 @@
 import { extractDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
 import { byLocalName, firstByLocalName, parseXml, textOf } from '../dom/xml-dom-helpers';
 import { type PackageInfo, parsePackage, readText, readTocLabels } from '../epub/package-document';
+import { isAttributionDocument } from '../export/attribution-page';
 import { detectFormat } from '../formats/detect-format';
 import { fb2ToEpub } from '../formats/fb2-to-epub';
 import { mobiToEpub } from '../formats/mobi-to-epub';
@@ -76,6 +77,8 @@ function segmentPackage(files: FileMap, pkg: PackageInfo, env: DomEnv): Chapter[
     if (item.path === pkg.nav?.path || !files.has(item.path)) continue;
     const markup = readText(files, item.path);
     const doc = parseXhtmlDocument(env, markup);
+    // The attribution page of an earlier epubtrans export is not book text: exporting again replaces it.
+    if (isAttributionDocument(doc)) continue;
     const segments = segmentContentDocument(doc, prefix());
     if (!segments.length) continue;
     files.set(item.path, encodeUtf8(serializeXhtmlDocument(env, doc, extractDoctype(markup))));

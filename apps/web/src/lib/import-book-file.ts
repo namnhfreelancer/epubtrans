@@ -1,4 +1,4 @@
-import { detectLanguage, importBook, loadProjectFile, type Project } from '@epubtrans/core';
+import { detectLanguage, importBook, type LoadProjectOptions, loadProjectFile, type Project } from '@epubtrans/core';
 import { browserDomEnv } from './dom-env';
 
 /** Hard cap on input size; larger files would exhaust memory in the browser. */
@@ -30,13 +30,16 @@ export function classifyImportError(err: unknown, projectFile: boolean): BookImp
   return new BookImportError('generic', message);
 }
 
-/** Reads a book (EPUB/MOBI/AZW3/FB2) or an `.epubtrans` project file into a Project. */
-export async function readProjectFromFile(file: File): Promise<Project> {
+/**
+ * Reads a book (EPUB/MOBI/AZW3/FB2) or an `.epubtrans` project file into a Project. `options.onIgnoredKey` hears about
+ * export style keys a project file from a newer version holds, which are left out.
+ */
+export async function readProjectFromFile(file: File, options: LoadProjectOptions = {}): Promise<Project> {
   const projectFile = isProjectFileName(file.name);
   try {
     if (file.size > MAX_FILE_BYTES) throw new BookImportError('tooLarge', `${file.name} is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB`);
     const bytes = new Uint8Array(await file.arrayBuffer());
-    if (projectFile) return await loadProjectFile(bytes);
+    if (projectFile) return await loadProjectFile(bytes, options);
     const project = await importBook(bytes, file.name, browserDomEnv());
     const detected = detectLanguage(project);
     if (detected !== 'und') project.settings.sourceLang = detected;

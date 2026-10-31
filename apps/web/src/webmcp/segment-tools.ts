@@ -4,11 +4,14 @@ import {
   HINT_EXPORT_MODES,
   MAX_HINTS_PER_CHAPTER_LIMIT,
   MAX_HINTS_PER_PARAGRAPH_LIMIT,
+  MAX_TEMPLATE_NAME_LENGTH,
+  matchingPreset,
   type Project,
   retranslateSegment,
   WORD_HINT_STYLES,
   wordHintSettingsOf,
 } from '@epubtrans/core';
+import { styleTemplates } from '../lib/app-services';
 import { exportFileName } from '../lib/download-file';
 import { buildErrorIndex, locateSegment } from '../lib/error-index';
 import { persistJobSegment, touchProject } from '../lib/project-store';
@@ -130,7 +133,7 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
     {
       name: 'export_epub',
       title: 'Export the EPUB',
-      description: `Builds the EPUB of a book in the chosen layout and downloads it in the browser. Layouts: ${EXPORT_MODES.join(', ')}. Untranslated segments keep their source text; translation-only has no source text; original keeps only the source text and needs no translation. Word Wise hints the user generated are included in ${HINT_EXPORT_MODES.join(', ')}; the hint options override the book's saved ones for this export only.`,
+      description: `Builds the EPUB of a book in the chosen layout and downloads it in the browser. Layouts: ${EXPORT_MODES.join(', ')}. Untranslated segments keep their source text; translation-only has no source text; original keeps only the source text. Word Wise hints the user generated are included in ${HINT_EXPORT_MODES.join(', ')}; hint options and styleTemplate (a saved style template instead of the book's style) apply to this export only.`,
       inputSchema: objectSchema(
         {
           bookId: BOOK_ID,
@@ -147,6 +150,11 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
             minimum: 0,
             maximum: MAX_HINTS_PER_CHAPTER_LIMIT,
             description: 'Hint a word sense only its first N occurrences per chapter; 0 = every occurrence.',
+          },
+          styleTemplate: {
+            type: 'string',
+            maxLength: MAX_TEMPLATE_NAME_LENGTH,
+            description: 'Name of a style template the user saved (Export tab); applies to this export only. Omit to use the book’s style.',
           },
         },
         ['bookId', 'mode'],
@@ -169,10 +177,26 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
           ...(maxPerParagraph !== undefined ? { maxPerParagraph } : {}),
           ...(perChapter !== undefined ? { perChapter } : {}),
         };
-        const project: Project = overridden ? { ...found, settings: { ...found.settings, wordHints: hintOptions } } : found;
+        const templateName = args.optString('styleTemplate');
+        const template = templateName === undefined ? undefined : await styleTemplates.findByName(templateName);
+        if (templateName !== undefined && !template) {
+          const names = (await styleTemplates.list()).map((t) => untrustedText(t.name, 80));
+          return fail(
+            `No style template named "${untrustedText(templateName, 80)}".`,
+            names.length
+              ? `Saved templates: ${names.slice(0, 20).join(', ')}${names.length > 20 ? ', …' : ''}.`
+              : 'The user has no saved style templates; omit styleTemplate to use the book’s style.',
+          );
+        }
+        const settings = {
+          ...found.settings,
+          ...(overridden ? { wordHints: hintOptions } : {}),
+          ...(template ? { exportStyle: template.style } : {}),
+        };
+        const project: Project = overridden || template ? { ...found, settings } : found;
         let bytes: Uint8Array;
         try {
-          bytes = await exportEpub(project, mode, ctx.domEnv());
+          bytes = await exportEpub(project, mode, ctx.domEnv(), { loadFontFile: ctx.loadFontFile });
         } catch (err) {
           return fail(`Export failed: ${clip(err instanceof Error ? err.message : String(err), 300)}`);
         }
@@ -186,6 +210,7 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
           bytes: bytes.byteLength,
           untranslated: counts.pending + counts.error,
           hints: { included: hintOptions.enabled && glossed > 0 && HINT_EXPORT_MODES.includes(mode), enabled: hintOptions.enabled, glossedWords: glossed },
+          style: template ? { template: untrustedText(template.name, 80) } : { preset: matchingPreset(project.settings.exportStyle) ?? 'custom' },
         });
       },
     },

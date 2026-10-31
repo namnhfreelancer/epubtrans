@@ -1,4 +1,4 @@
-import type { DomEnv, Project } from '@epubtrans/core';
+import type { DomEnv, FontFileLoader, Project } from '@epubtrans/core';
 import { en } from '../i18n/messages-en';
 import type { Locale, Translate } from '../i18n/translate-message';
 import { apiKeys } from '../lib/api-key-store';
@@ -6,6 +6,7 @@ import { repository } from '../lib/app-services';
 import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
 import { browserDomEnv } from '../lib/dom-env';
 import { downloadBytes } from '../lib/download-file';
+import { loadFontFile } from '../lib/embedded-font-files';
 import { isGuideJobRunning } from '../lib/guide-jobs';
 import { navigate, type Route } from '../lib/hash-route';
 import { isHintJobActive } from '../lib/hint-jobs';
@@ -28,6 +29,8 @@ export interface ToolContext {
   navigate(route: Route): void;
   download(bytes: Uint8Array, fileName: string, mimeType: string): void;
   domEnv(): DomEnv;
+  /** Reads the bundled fonts an export style embeds (same-origin files in the browser). */
+  loadFontFile: FontFileLoader;
   fetch(input: string, init: RequestInit): Promise<Response>;
   /** Values that must never appear in a tool output (the stored API keys). */
   secrets(): string[];
@@ -42,6 +45,7 @@ export function browserToolContext(getI18n: () => { t: Translate; locale: Locale
     navigate,
     download: downloadBytes,
     domEnv: browserDomEnv,
+    loadFontFile,
     fetch: (input, init) => window.fetch(input, init),
     secrets: () => Object.values(apiKeys.store.get().keys).filter(Boolean),
   };

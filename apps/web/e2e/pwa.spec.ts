@@ -1,4 +1,7 @@
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+import { FONT_CACHE_NAME } from '../pwa-font-caching';
 
 test.describe('installable PWA', () => {
   test.use({ serviceWorkers: 'allow' });
@@ -74,6 +77,25 @@ test.describe('installable PWA', () => {
     await page.context().setOffline(true);
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Your library' })).toBeVisible();
+    await page.context().setOffline(false);
+
+    // Bundled export fonts are not precached, but one fetched once is cached and then loads offline too.
+    const fontFile = readdirSync(fileURLToPath(new URL('../dist/assets/', import.meta.url))).find((f) => /^literata-regular-.+\.ttf$/.test(f));
+    expect(fontFile).toBeTruthy();
+    const fontUrl = new URL(`/assets/${fontFile}`, page.url()).toString();
+    const fetchSize = (url: string) => page.evaluate(async (u) => (await (await fetch(u)).arrayBuffer()).byteLength, url);
+    const precached = await page.evaluate(async () => {
+      const urls: string[] = [];
+      for (const name of await caches.keys()) urls.push(...(await (await caches.open(name)).keys()).map((r) => r.url));
+      return urls;
+    });
+    expect(precached.some((u) => u.endsWith('.ttf'))).toBe(false);
+    expect(await fetchSize(fontUrl)).toBe(95_372);
+    await expect
+      .poll(() => page.evaluate(async ({ name, url }) => Boolean(await (await caches.open(name)).match(url)), { name: FONT_CACHE_NAME, url: fontUrl }))
+      .toBe(true);
+    await page.context().setOffline(true);
+    expect(await fetchSize(fontUrl)).toBe(95_372);
     await page.context().setOffline(false);
 
     expect(cspViolations).toEqual([]);

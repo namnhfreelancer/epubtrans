@@ -20,11 +20,13 @@ import { lookupEstimatePrices } from '../price-lookup';
 import { createProgress, formatTokens, formatUsd, usageCost } from '../progress';
 import { createProjectSaver, writeProjectFile } from '../project-store';
 import { applyRunFlags, selectProvider } from '../settings';
+import { applyStyleFlags } from '../style-flags';
 import { loadFrequencyList } from '../word-frequency';
 import { openProject } from './open-project';
 import { buildProvider } from './provider-setup';
 
-const USAGE = 'epubtrans hints <input.(epub|mobi|azw3|fb2) | project.epubtrans> [--level N] [--gloss-lang <lang>] [--style ruby|inline] --model <id> [options]';
+const USAGE =
+  'epubtrans hints <input.(epub|mobi|azw3|fb2) | project.epubtrans> [--level N] [--gloss-lang <lang>] [--style ruby|inline] [--style-file style.json] --model <id> [options]';
 
 function describeEstimate(plan: WordHintsPlan, settings: ProjectSettings): string {
   const hints = wordHintSettingsOf(settings);
@@ -52,7 +54,7 @@ export async function hintsCommand(argv: string[], io: Io): Promise<number> {
   const { project, projectPath } = opened;
 
   const selection = selectProvider(flags, opened.existing ? project.settings : undefined);
-  const settings = applyHintsCommandFlags(applyRunFlags(opened.settings, flags, selection), flags);
+  const settings = await applyStyleFlags(applyHintsCommandFlags(applyRunFlags(opened.settings, flags, selection), flags), flags, io);
   if (!settings.model) throw new UsageError('--model <id> is required. List the available models with: epubtrans models --provider <id>');
   const lang = wordHintLanguage(settings.sourceLang);
   if (!lang) {

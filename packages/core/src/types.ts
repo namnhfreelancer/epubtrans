@@ -61,6 +61,72 @@ export interface ProjectSettings {
   priceOutPerM?: number;
   /** Word Wise hints for this book; absent in projects that never configured them. */
   wordHints?: WordHintSettings;
+  /** Typography of the exported book (written to `epubtrans.css` only); absent means the default look. */
+  exportStyle?: ExportStyle;
+  /** Opt-in: exports end with a short "Translated with <model> by epubtrans" page. Absent means off. */
+  attribution?: boolean;
+}
+
+/**
+ * Font choice for a block: a generic CSS family (the reader's own font of that kind) or the id of a bundled
+ * SIL OFL font, which export embeds in the EPUB. Absent means the book's own font.
+ */
+export type ExportFontId = 'serif' | 'sans-serif' | 'monospace' | 'literata' | 'noto-serif' | 'be-vietnam-pro' | 'noto-sans';
+
+/** `normal` or `bold`, or a numeric CSS weight (100–900 in steps of 100). */
+export type ExportFontWeight = 'normal' | 'bold' | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
+
+/**
+ * Look of the original text in the bilingual exports (`original` exports keep the book's own look: their text carries no
+ * `et-src` class). Every field is optional: absent inherits.
+ */
+export interface SourceBlockStyle {
+  /** `#rrggbb` (validated and normalized; `#rgb` and `rgb(r, g, b)` are accepted as input). */
+  color?: string;
+  /** 0.2–1; the default look fades the source to 0.55. */
+  opacity?: number;
+  /** 50–200, percent of the surrounding text size. */
+  fontSizePercent?: number;
+  italic?: boolean;
+  font?: ExportFontId;
+}
+
+/** Look of the translated text. Every field is optional: absent inherits. */
+export interface TranslationBlockStyle {
+  color?: string;
+  font?: ExportFontId;
+  fontWeight?: ExportFontWeight;
+  fontSizePercent?: number;
+}
+
+/** Look of Word Wise hints (the ruby/inline choice stays in {@link WordHintSettings.style}). */
+export interface HintBlockStyle {
+  color?: string;
+  /** 30–120, percent of the hinted word's size (default: 55 for ruby glosses, 80 for inline ones). */
+  fontSizePercent?: number;
+}
+
+/**
+ * Per-book typography of the export. Values are validated strictly (colors, numeric ranges, a font allowlist) and
+ * only ever emitted into the generated `epubtrans.css`, never as inline styles. No background colors are set, so
+ * reader themes (light, sepia, dark) keep working; colors default to inheriting the reader's.
+ */
+export interface ExportStyle {
+  /** The preset this style started from, for display only. */
+  preset?: ExportStylePresetId;
+  source?: SourceBlockStyle;
+  translation?: TranslationBlockStyle;
+  /** Vertical space above and below each source and translation block, in em (0–3). */
+  blockSpacingEm?: number;
+  hint?: HintBlockStyle;
+}
+
+export type ExportStylePresetId = 'classic' | 'learner' | 'high-contrast' | 'translation-emphasis' | 'minimal';
+
+/** A named, reusable export style (web: saved in IndexedDB; exported and imported as JSON). */
+export interface StyleTemplate {
+  name: string;
+  style: ExportStyle;
 }
 
 /** How a hint is written into the exported book. EPUB 2 packages always get `inline` (ruby is invalid there). */

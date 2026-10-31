@@ -17,9 +17,17 @@ export const WORD_WISE_FLAGS = {
   'hints-per-chapter': { type: 'number' },
 } as const satisfies FlagSpecs;
 
+/** Export style options shared by translate, resume and export. */
+export const STYLE_FLAGS = {
+  'style-file': { type: 'string' },
+  attribution: { type: 'boolean' },
+  'no-attribution': { type: 'boolean' },
+} as const satisfies FlagSpecs;
+
 export const RUN_FLAGS = {
   ...PROVIDER_FLAGS,
   ...WORD_WISE_FLAGS,
+  ...STYLE_FLAGS,
   concurrency: { type: 'number' },
   'two-pass': { type: 'boolean' },
   'price-in': { type: 'number' },
@@ -61,6 +69,7 @@ export const SAMPLE_FLAGS = {
 
 export const EXPORT_FLAGS = {
   ...WORD_WISE_FLAGS,
+  ...STYLE_FLAGS,
   mode: { type: 'string' },
   out: { type: 'string' },
 } as const satisfies FlagSpecs;
@@ -80,6 +89,7 @@ export const HINTS_FLAGS = {
   style: { type: 'string' },
   'hints-per-paragraph': { type: 'number' },
   'hints-per-chapter': { type: 'number' },
+  'style-file': { type: 'string' },
 } as const satisfies FlagSpecs;
 
 export const MODELS_FLAGS = PROVIDER_FLAGS;

@@ -5,7 +5,7 @@ Usage
   epubtrans resume <file.epubtrans> [options]
   epubtrans sample <input | file.epubtrans> [--passages N] [--words N] [--seed S] [--new] [options]
   epubtrans hints <input | file.epubtrans> [--level N] [--gloss-lang <lang>] [--style ruby|inline] [options]
-  epubtrans export <file.epubtrans> [--mode <mode>] [--out file.epub] [--word-wise]
+  epubtrans export <file.epubtrans> [--mode <mode>] [--out file.epub] [--word-wise] [--style-file <json>] [--[no-]attribution]
   epubtrans models [--provider <id>] [--base-url <url>]
   epubtrans presets
   epubtrans --version | --help
@@ -36,6 +36,14 @@ const WORD_WISE_OPTIONS = `  --word-wise              Write the Word Wise hints 
   --hints-per-paragraph <n>  At most n hints per paragraph, rarest words first (0 = no limit, default 3)
   --hints-per-chapter <n>  Hint a word sense only the first n times per chapter (0 = every time, default 1)`;
 
+/** Style options; `saved` describes translate and resume (which keep them in the project), else export (this export only). */
+const styleOptions = (saved: boolean) => `  --style-file <path>      Export style (colors, sizes, fonts, spacing, hint look) from a JSON file: a style object or
+                           a style template exported by the web app (exactly one template). Invalid values are
+                           rejected; settings this version does not know are skipped with a warning. Bundled OFL
+                           fonts it names are embedded in the EPUB with their license${saved ? '. Saved in the project' : ''}
+  --attribution            End the EPUB with a short "Translated with <model> by epubtrans" page (off by default)${saved ? '.\n                           Saved in the project: later exports and resumes add it too' : ''}
+  --no-attribution         ${saved ? 'Turn a saved --attribution off again (saved in the project)' : 'No attribution page in this export, even when the project has it on'}`;
+
 const RUN_OPTIONS = `  --concurrency <n>        Parallel requests, 1-16 (default 3)
   --two-pass               Add a review pass over every translation
   --price-in <usd>         USD per 1M input tokens, for the cost estimate
@@ -45,7 +53,8 @@ const RUN_OPTIONS = `  --concurrency <n>        Parallel requests, 1-16 (default
   --mode <mode>            bilingual (default) | bilingual-translation-first | translation-only | original
   --out <file.epub>        Output path (default: <input>.<lang>.epub)
   -y, --yes                Start without asking for confirmation after the estimate
-${WORD_WISE_OPTIONS}`;
+${WORD_WISE_OPTIONS}
+${styleOptions(true)}`;
 
 export const COMMAND_HELP: Record<string, string> = {
   translate: `Usage: epubtrans translate <input.(epub|mobi|azw3|fb2)> --to <lang> --model <id> [options]
@@ -106,12 +115,13 @@ Exit codes: 0 done, 1 error or cancelled, 2 usage error, 3 some sample segments 
 
 Writes the EPUB from a project as it stands. Untranslated segments keep their source text. No API key needed.
 "original" writes the source text only (no translation needed), for reading with Word Wise hints.
-Word Wise options apply to this export only; the project file is not changed.
+Word Wise and style options apply to this export only; the project file is not changed.
 
 Options
   --mode <mode>            bilingual (default) | bilingual-translation-first | translation-only | original
   --out <file.epub>        Output path (default: <project>.<lang>.epub, <project>.original.epub for original)
 ${WORD_WISE_OPTIONS}
+${styleOptions(false)}
 `,
   hints: `Usage: epubtrans hints <input.(epub|mobi|azw3|fb2) | file.epubtrans> --model <id> [options]
 
@@ -133,6 +143,7 @@ Options
   --style <style>          ruby (default) | inline: how hints are exported (EPUB 2 books always get inline)
   --hints-per-paragraph <n>  Export at most n hints per paragraph (default 3, 0 = no limit)
   --hints-per-chapter <n>  Export a word sense only the first n times per chapter (default 1, 0 = every time)
+  --style-file <path>      Save an export style (JSON style or single web template) in the project, for later exports
   --to <lang>              Target language of a new project (default: --gloss-lang)
   --from <lang>            Source language (default: auto-detect)
   --project <file>         Project file (default: <input>.epubtrans)

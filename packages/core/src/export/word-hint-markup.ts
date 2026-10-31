@@ -9,11 +9,6 @@ export const HINT_INLINE_CLASS = 'et-ww-i';
 /** Paragraphs holding ruby hints get extra line height so the glosses above the line do not collide. */
 export const HINT_PARAGRAPH_CLASS = 'et-ww-p';
 
-export const HINT_STYLESHEET = `ruby.${HINT_RUBY_CLASS} > rt { font-size: 0.55em; font-style: normal; font-weight: normal; }
-.${HINT_PARAGRAPH_CLASS} { line-height: 2; }
-.${HINT_INLINE_CLASS} { font-size: 0.8em; opacity: 0.75; }
-`;
-
 /** One hint to write: the `nth` occurrence of exactly `word` in its segment, with its gloss. */
 export interface HintPlacement {
   word: string;
