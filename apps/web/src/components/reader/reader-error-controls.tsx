@@ -71,7 +71,7 @@ export function ReaderErrorControls({ total, ordinal, canStep, onStep, onlyError
             variant="primary"
             data-testid="retry-all-failed"
             onClick={retry.onRetry}
-            disabled={!retry.resume && (retry.running || Boolean(retry.blockedHint))}
+            disabled={Boolean(retry.busyElsewhere) || (!retry.resume && (retry.running || Boolean(retry.blockedHint)))}
             title={retry.resume ? t('reader.resumeHint') : retry.blockedHint}
           >
             {retry.resume ? t('reader.resumeTranslation', retry.resume) : retry.running ? t('reader.retryingAll') : t('reader.retryAll')}
