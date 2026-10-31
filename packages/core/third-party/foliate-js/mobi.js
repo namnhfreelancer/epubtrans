@@ -1,10 +1,13 @@
-// Vendored from foliate-js (https://github.com/johnfactotum/foliate-js), MIT License,
-// commit 78914aef4466eb960965702401634c2cb348e9b1. See ./LICENSE.
-// Local modifications for epubtrans (environment-agnostic use in browsers and Bun):
-//  - DOMParser/XMLSerializer are injected through the MOBI constructor instead of globals.
-//  - unescapeHTML no longer needs `document`; CSS.escape replaced with a local escape.
-//  - TOC labels use textContent (innerText is not available in every DOM implementation).
-//  - Each KF8/MOBI6 section exposes `loadText()` returning its raw markup.
+/*!
+ * @license MIT
+ * foliate-js (https://github.com/johnfactotum/foliate-js), Copyright (c) 2022 John Factotum.
+ * Vendored from commit 78914aef4466eb960965702401634c2cb348e9b1; the MIT license text is in ./LICENSE.
+ * Local modifications for epubtrans (environment-agnostic use in browsers and Bun):
+ *  - DOMParser/XMLSerializer are injected through the MOBI constructor instead of globals.
+ *  - unescapeHTML no longer needs `document`; CSS.escape replaced with a local escape.
+ *  - TOC labels use textContent (innerText is not available in every DOM implementation).
+ *  - Each KF8/MOBI6 section exposes `loadText()` returning its raw markup.
+ */
 const NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' }
 const unescapeHTML = str => {
     if (!str) return ''

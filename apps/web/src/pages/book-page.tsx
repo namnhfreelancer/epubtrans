@@ -5,8 +5,9 @@ import { Alert } from '../components/ui/layout-primitives';
 import { useI18n } from '../i18n/i18n-context';
 import { type BookTab, routeHref } from '../lib/hash-route';
 import { useProject } from '../lib/project-store';
+import { PreviewPanel } from '../preview/preview-panel';
 
-const TABS: BookTab[] = ['setup', 'read', 'export'];
+const TABS: BookTab[] = ['setup', 'read', 'preview', 'export'];
 
 export function BookPage({ id, tab, segment }: { id: string; tab: BookTab; segment?: string }) {
   const { t } = useI18n();
@@ -51,6 +52,7 @@ export function BookPage({ id, tab, segment }: { id: string; tab: BookTab; segme
       </nav>
       {tab === 'setup' && <TranslationSetupPanel project={project} version={version} />}
       {tab === 'read' && <ReaderPanel project={project} version={version} segment={segment} />}
+      {tab === 'preview' && <PreviewPanel project={project} version={version} />}
       {tab === 'export' && <ExportPanel project={project} version={version} />}
     </div>
   );

@@ -69,6 +69,7 @@ export const en = {
   'book.notFound': 'This book is not in your library.',
   'book.tab.setup': 'Translate',
   'book.tab.read': 'Read & edit',
+  'book.tab.preview': 'Preview',
   'book.tab.export': 'Export',
 
   'setup.languages': 'Languages',

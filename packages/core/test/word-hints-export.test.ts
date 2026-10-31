@@ -125,6 +125,18 @@ describe('Word Wise hints in exports', () => {
     expect(unzipText(out, CHAPTER)).not.toContain('et-ww');
     expect([...readZip(out).keys()].some((k) => k.endsWith('epubtrans.css'))).toBe(false);
   });
+
+  it('shows the same hints in the in-app preview build, next to the preview markers', async () => {
+    const project = await hintedProject({ translated: true });
+    for (const mode of HINT_EXPORT_MODES) {
+      const plain = unzipText(await exportEpub(project, mode, env), CHAPTER);
+      const preview = unzipText(await exportEpub(project, mode, env, { preview: true }), CHAPTER);
+      expect(preview, mode).toContain('data-et-id=');
+      expect(preview.match(/<ruby class="et-ww">/g)?.length, mode).toBe(plain.match(/<ruby class="et-ww">/g)?.length);
+      expect(preview, mode).toContain('<ruby class="et-ww">prodigious');
+    }
+    expect(unzipText(await exportEpub(project, 'translation-only', env, { preview: true }), CHAPTER)).not.toContain('et-ww');
+  });
 });
 
 describe('hint density at export', () => {
