@@ -3,7 +3,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { repository } from './app-services';
 import { broadcast, closeProjectChannel, onCrossTabMessage, watchProjectChannel } from './cross-tab-channel';
 import { createExternalStore } from './external-store';
-import { applyStoredState, revisionOf, type SegmentRevision } from './segment-revision';
+import { applyStoredState, type EditableSegment, revisionOf, type SegmentRevision } from './segment-revision';
 
 /**
  * In-memory cache of opened projects. The setup screen, the reader and a running translation job
@@ -183,8 +183,10 @@ export function saveTranslationEdit(project: Project, segment: Segment, html: st
   if (value) {
     segment.translationHtml = value;
     segment.status = segment.status === 'reviewed' ? 'reviewed' : 'translated';
+    (segment as EditableSegment).userEdited = true;
   } else {
     delete segment.translationHtml;
+    delete (segment as EditableSegment).userEdited;
     segment.status = 'pending';
   }
   delete segment.error;

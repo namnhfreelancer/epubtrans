@@ -118,6 +118,8 @@ export const vi: Record<MessageKey, string> = {
   'setup.estimateUsd': '≈ {usd}',
   'setup.estimateNoPrice': 'Nhập giá để xem chi phí.',
   'setup.estimateNothing': 'Không còn gì để dịch.',
+  'setup.estimateCalculating': 'Đang tính ước tính…',
+  'setup.estimateUpdatesAfterRun': 'Ước tính sẽ được cập nhật sau khi chạy xong.',
   'setup.priceFound': 'Giá từ {source} (khớp với: {id}).',
   'setup.priceFromProvider': 'Giá từ danh sách mô hình của nhà cung cấp.',
   'setup.priceLooking': 'Đang tra giá công khai…',
@@ -176,6 +178,8 @@ export const vi: Record<MessageKey, string> = {
   'reader.noErrors': 'Không có đoạn nào bị lỗi.',
   'reader.retryAll': 'Dịch lại tất cả đoạn lỗi',
   'reader.retryingAll': 'Đang dịch lại…',
+  'reader.resumeTranslation': 'Tiếp tục dịch ({pending} chưa dịch, {failed} lỗi)',
+  'reader.resumeHint': 'Mở trang thiết lập, nơi hiển thị ước tính chi phí và nút Bắt đầu.',
 
   'status.pending': 'Chờ dịch',
   'status.translated': 'Đã dịch',
@@ -240,7 +244,7 @@ export const vi: Record<MessageKey, string> = {
   'guide.maxEntries': 'Số mục thuật ngữ tối đa',
   'guide.maxEntriesHint': 'Bảng thuật ngữ lớn dần theo độ dài sách: khoảng một mục cho mỗi 500 từ, tối thiểu 30, tối đa bằng số này.',
   'guide.extendsHint':
-    'Khi tạo, hướng dẫn hiện tại (mẫu có sẵn hoặc nội dung bạn tự viết) được giữ nguyên và một khối “Book-specific guideline” được thêm bên dưới; tạo lại chỉ thay khối đó.',
+    'Khi tạo, hướng dẫn hiện tại (mẫu có sẵn hoặc nội dung bạn tự viết) được giữ nguyên và một khối “Book-specific guideline” được thêm bên dưới; tạo lại sẽ thay mọi thứ bên dưới tiêu đề đó, kể cả nội dung bạn tự thêm ở đó, nên hãy viết quy tắc riêng ở phía trên.',
   'guide.applyPresetKeepsGenerated': 'Thay phần hướng dẫn gốc bằng mẫu “{preset}”? Khối hướng dẫn riêng cho sách được giữ lại.',
   'guide.phase.extract': 'Đang quét sách để tìm tên riêng và thuật ngữ…',
   'guide.phase.guideline': 'Đang soạn hướng dẫn văn phong từ các đoạn trích khắp cuốn sách…',
@@ -249,4 +253,5 @@ export const vi: Record<MessageKey, string> = {
   'guide.skipped': 'Đã bỏ qua {n} lô ứng viên vì câu trả lời của mô hình không dùng được.',
   'guide.sections': 'Các mục của hướng dẫn',
   'guide.cancel': 'Hủy',
+  'guide.lockedWhileGenerating': 'Đang tạo… hướng dẫn và bảng thuật ngữ bị khóa cho đến khi hoàn tất (hoặc bạn hủy).',
 };

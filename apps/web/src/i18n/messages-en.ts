@@ -116,6 +116,8 @@ export const en = {
   'setup.estimateUsd': '≈ {usd}',
   'setup.estimateNoPrice': 'Enter prices to see the cost.',
   'setup.estimateNothing': 'Nothing left to translate.',
+  'setup.estimateCalculating': 'Calculating the estimate…',
+  'setup.estimateUpdatesAfterRun': 'The estimate updates after the run.',
   'setup.priceFound': 'Price from {source} (matched: {id}).',
   'setup.priceFromProvider': "Price from your provider's model list.",
   'setup.priceLooking': 'Looking up the public price…',
@@ -174,6 +176,8 @@ export const en = {
   'reader.noErrors': 'No failed segments.',
   'reader.retryAll': 'Retry all failed',
   'reader.retryingAll': 'Retrying…',
+  'reader.resumeTranslation': 'Resume translation ({pending} pending, {failed} failed)',
+  'reader.resumeHint': 'Opens the setup page, where the cost estimate and Start are shown.',
 
   'status.pending': 'Pending',
   'status.translated': 'Translated',
@@ -238,7 +242,7 @@ export const en = {
   'guide.maxEntries': 'Max glossary entries',
   'guide.maxEntriesHint': 'The glossary grows with the book: about one entry per 500 words, at least 30, at most this number.',
   'guide.extendsHint':
-    'Generation keeps your current guideline (preset or your own text) and adds a “Book-specific guideline” block below it; generating again replaces only that block.',
+    'Generation keeps your current guideline (preset or your own text) and adds a “Book-specific guideline” block below it; generating again replaces everything below that heading, including text you add there, so write your own rules above it.',
   'guide.applyPresetKeepsGenerated': 'Replace the base guideline with the “{preset}” preset? The book-specific block is kept.',
   'guide.phase.extract': 'Scanning the book for names and terms…',
   'guide.phase.guideline': 'Writing the style guideline from passages across the book…',
@@ -247,6 +251,7 @@ export const en = {
   'guide.skipped': '{n} candidate batches were skipped because the model answer was unusable.',
   'guide.sections': 'Guideline sections',
   'guide.cancel': 'Cancel',
+  'guide.lockedWhileGenerating': 'Generating… the guideline and glossary are locked until it finishes (or you cancel).',
 } as const;
 
 export type MessageKey = keyof typeof en;
