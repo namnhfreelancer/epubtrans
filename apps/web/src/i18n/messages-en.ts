@@ -22,6 +22,7 @@ export const en = {
   'library.deleteConfirm': 'Delete “{title}” and its translation progress from this device?',
   'library.deleted': 'Deleted “{title}”',
   'library.replaceConfirm': '“{title}” is already in your library. Replace it with the imported project file?',
+  'library.busyElsewhere': 'This book is being translated in another tab. Pause it there first to delete or replace it.',
   'library.byAuthor': 'by {author}',
   'library.progress': '{done} / {total} segments',
   'library.errors': '{n} failed',
@@ -134,6 +135,7 @@ export const en = {
   'run.needKey': 'Add an API key in Settings first.',
   'run.needModel': 'Choose a model in Settings first.',
   'run.allDone': 'All segments are translated.',
+  'run.bookDeleted': 'This book was deleted in another tab, so translation stopped. Nothing more was saved.',
   'run.busyElsewhere': 'This book is being translated in another tab. Pause it there or wait until it finishes to start here.',
 
   'reader.chapters': 'Chapters',

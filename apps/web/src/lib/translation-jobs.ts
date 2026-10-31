@@ -1,9 +1,12 @@
 import { type ChatProvider, type Project, type ProjectSettings, type TokenUsage, type TranslationPhase, translateProject } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
+import { repository } from './app-services';
 import { runWithJobLock } from './cross-tab-job-lock';
+import { ProjectNotFoundError } from './project-repository';
 import { createJobBaseline, persistJobSegment, touchProject } from './project-store';
 
-export type JobStatus = 'idle' | 'running' | 'pausing' | 'paused' | 'done' | 'failed';
+/** `aborted`: the book was deleted (in another tab) while the job ran, so the job stopped without writing anything more. */
+export type JobStatus = 'idle' | 'running' | 'pausing' | 'paused' | 'done' | 'failed' | 'aborted';
 /** `busy-elsewhere`: another tab holds the project's job lock, so nothing was started here. */
 export type StartJobResult = 'started' | 'already-running' | 'busy-elsewhere';
 
@@ -30,8 +33,10 @@ function setJob(id: string, patch: Partial<JobState>): void {
   for (const l of [...listeners]) l();
 }
 
+export const getJobState = (projectId: string): JobState => jobs.get(projectId) ?? IDLE;
+
 export function useJob(projectId: string): JobState {
-  return useSyncExternalStore(subscribe, () => jobs.get(projectId) ?? IDLE);
+  return useSyncExternalStore(subscribe, () => getJobState(projectId));
 }
 
 export const isJobActive = (projectId: string): boolean => controllers.has(projectId);
@@ -96,6 +101,12 @@ export function startJob(project: Project, settings: ProjectSettings, provider: 
 /** One run of core's translator; never rejects (the outcome is recorded in the job state). */
 async function runJob(project: Project, settings: ProjectSettings, provider: ChatProvider, controller: AbortController): Promise<void> {
   setJob(project.id, { ...IDLE, status: 'running', phaseStartedAt: Date.now() });
+  try {
+    // Do not spend API calls on a book that was already deleted in another tab.
+    if (!(await repository.exists(project.id))) return setJob(project.id, { status: 'aborted' });
+  } catch (err) {
+    return setJob(project.id, { status: 'failed', error: err instanceof Error ? err.message : String(err) });
+  }
   const baseline = createJobBaseline(project);
   let writeError: Error | undefined;
   const writes: Promise<void>[] = [];
@@ -127,7 +138,8 @@ async function runJob(project: Project, settings: ProjectSettings, provider: Cha
     await Promise.all(writes);
     const failure = writeError ?? err;
     const paused = !writeError && controller.signal.aborted && controller.signal.reason === PAUSE;
-    setJob(project.id, paused ? { status: 'paused' } : { status: 'failed', error: failure instanceof Error ? failure.message : String(failure) });
+    if (failure instanceof ProjectNotFoundError) setJob(project.id, { status: 'aborted' });
+    else setJob(project.id, paused ? { status: 'paused' } : { status: 'failed', error: failure instanceof Error ? failure.message : String(failure) });
   }
 }
 

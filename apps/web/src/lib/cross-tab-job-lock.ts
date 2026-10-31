@@ -50,6 +50,21 @@ export async function refreshJobLocks(): Promise<void> {
   for (const l of [...listeners]) l();
 }
 
+/**
+ * Fresh answer (not the polled snapshot) to "is another tab running a job for this project?", for guarding
+ * destructive actions at the moment they are attempted. False without the Web Locks API.
+ */
+export async function isJobRunningElsewhere(projectId: string): Promise<boolean> {
+  const locks = lockManager();
+  if (!locks || heldHere.has(projectId)) return false;
+  try {
+    return ((await locks.query()).held ?? []).some((lock) => lock.name === jobLockName(projectId));
+  } catch (err) {
+    console.warn('epubtrans: could not query job locks', err);
+    return false;
+  }
+}
+
 onCrossTabMessage((_projectId, message) => {
   if (message.type === 'job') void refreshJobLocks();
 });
