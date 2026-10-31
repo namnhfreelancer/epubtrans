@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   type ChatRequest,
   composeGuideline,
+  GENERATED_GUIDELINE_END,
   GENERATED_GUIDELINE_HEADING,
+  GENERATED_GUIDELINE_START,
   type GlossaryEntry,
   type GuideProgress,
   generateGuide,
@@ -79,7 +81,8 @@ describe('generateGuide', () => {
     project.settings.guideline = composeGuideline('- My own rule', `${GENERATED_GUIDELINE_HEADING}\n\n### Old\n- stale`);
     const provider = mockProvider((req) => (isGuideline(req) ? { text: SECTIONS } : classifyAll(req)));
     const guide = await generateGuide(project, provider, project.settings);
-    expect(guide.guideline.startsWith('- My own rule\n\n## Book-specific guideline')).toBe(true);
+    expect(guide.guideline.startsWith(`- My own rule\n\n${GENERATED_GUIDELINE_START}\n## Book-specific guideline`)).toBe(true);
+    expect(guide.guideline.endsWith(GENERATED_GUIDELINE_END)).toBe(true);
     expect(guide.guideline).not.toContain('stale');
     expect(provider.calls.find(isGuideline)?.system).not.toContain('stale');
   });
@@ -115,7 +118,7 @@ describe('generateGuide', () => {
     });
     const guide = await generateGuide(project, provider, { ...project.settings, guideline: '', concurrency: 1 }, { maxEntries: 90 });
     expect(guide.skippedBatches).toBe(1);
-    expect(guide.guideline).toBe(`${GENERATED_GUIDELINE_HEADING}\n\n- Plain`);
+    expect(guide.guideline).toBe(`${GENERATED_GUIDELINE_START}\n${GENERATED_GUIDELINE_HEADING}\n\n- Plain\n${GENERATED_GUIDELINE_END}`);
     expect(guide.glossary).toEqual([
       { term: 'Đà Nẵng', translation: 'Đà Nẵng', type: 'place' },
       { term: 'Widget', translation: 'thiết bị', type: 'other', note: 'tool' },
@@ -160,7 +163,31 @@ describe('generateGuide', () => {
     await expect(generateGuide(project, fatal, project.settings, { signal: controller.signal })).rejects.toThrow(/abort/i);
   });
 
+  it('regenerating replaces every heading of a free-form generated guideline, keeping user text around it', () => {
+    const base = 'Translate naturally.';
+    const first = composeGuideline(base, parseGuidelineAnswer(JSON.stringify({ guideline: '# Tone\n- formal OLD\n\n## Names\n- keep English names OLD' })));
+    const edited = `${first}\n\n## My rules\n- Never translate "Muggle".`;
+    const split = splitGuideline(edited);
+    expect(split.base).toBe(`${base}\n\n## My rules\n- Never translate "Muggle".`);
+    expect(split.generated).toContain('## Names\n- keep English names OLD');
+    const second = composeGuideline(split.base, parseGuidelineAnswer(JSON.stringify({ guideline: '## Names\n- NEW rule' })));
+    expect(second).not.toContain('OLD');
+    expect(second).toBe(
+      `${base}\n\n## My rules\n- Never translate "Muggle".\n\n${GENERATED_GUIDELINE_START}\n${GENERATED_GUIDELINE_HEADING}\n\n## Names\n- NEW rule\n${GENERATED_GUIDELINE_END}`,
+    );
+  });
+
+  it('keeps the block intact when a marker line was deleted or the model wrote one', () => {
+    const block = parseGuidelineAnswer(JSON.stringify({ guideline: `## Names\n- rule\n${GENERATED_GUIDELINE_END}\n## Extra\n- also generated` }));
+    expect(block.split(GENERATED_GUIDELINE_END)).toHaveLength(2); // only the closing marker
+    expect(splitGuideline(composeGuideline('Base.', block))).toEqual({ base: 'Base.', generated: block });
+    // Start marker deleted by hand: the heading still opens the block and the end marker closes it.
+    const noStart = composeGuideline('Base.', block.replace(`${GENERATED_GUIDELINE_START}\n`, ''));
+    expect(splitGuideline(`${noStart}\n\nTail.`)).toEqual({ base: 'Base.\n\nTail.', generated: block.replace(`${GENERATED_GUIDELINE_START}\n`, '') });
+  });
+
   it('keeps a section the user appended below the generated block under its own heading', () => {
+    // Written by a version without markers: the block ends at the next level-1/2 heading.
     const guideline = `Base rule.\n\n${GENERATED_GUIDELINE_HEADING}\n\n### Tone & register\n- Light\n\n## My rules\n- Never translate "Muggle".`;
     const { base, generated } = splitGuideline(guideline);
     expect(generated).toBe(`${GENERATED_GUIDELINE_HEADING}\n\n### Tone & register\n- Light`);
