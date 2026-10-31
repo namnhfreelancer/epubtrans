@@ -58,12 +58,22 @@ export const GUIDELINE_SECTIONS: readonly GuidelineSection[] = [
   },
 ];
 
-/** Splits a guideline into the base text and the previously generated block (if any). */
+/** A level-1 or level-2 Markdown heading; the generated block itself only uses level-3 subsections. */
+const TOP_HEADING = /^#{1,2}\s/;
+
+/**
+ * Splits a guideline into the base text and the previously generated block (if any). The generated block runs from
+ * its heading to the next level-1/2 heading: a section the user added below it under such a heading is theirs and
+ * counts as base text (so regenerating keeps it, above the new block).
+ */
 export function splitGuideline(guideline: string): { base: string; generated: string } {
   const lines = guideline.split('\n');
   const at = lines.findIndex((line) => line.trim() === GENERATED_GUIDELINE_HEADING);
   if (at < 0) return { base: guideline.trim(), generated: '' };
-  return { base: lines.slice(0, at).join('\n').trim(), generated: lines.slice(at).join('\n').trim() };
+  const after = lines.findIndex((line, i) => i > at && TOP_HEADING.test(line.trim()));
+  const end = after < 0 ? lines.length : after;
+  const base = [lines.slice(0, at).join('\n').trim(), lines.slice(end).join('\n').trim()].filter(Boolean).join('\n\n');
+  return { base, generated: lines.slice(at, end).join('\n').trim() };
 }
 
 /** Base guideline followed by the generated block, separated by a blank line. */

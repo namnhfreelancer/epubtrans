@@ -26,6 +26,24 @@ describe('detachEmptyElements', () => {
     expect(detachEmptyElements(source)).toEqual({ html: source, detached: [] });
   });
 
+  it('detaches a wrapper holding only empty elements as one unit, and never restores it inside a link', () => {
+    const source = 'Start <span class="pg"><a id="x"></a><a id="y"></a></span>middle <b>bold</b> end.';
+    const { html, detached } = detachEmptyElements(source);
+    expect(html).toBe('Start middle <b>bold</b> end.');
+    expect(detached.map((d) => [d.markup, d.name])).toEqual([['<span class="pg"><a id="x"></a><a id="y"></a></span>', 'span']]);
+    // Placed by the fraction alone it would fall inside the link; the inner <a> keeps it out.
+    const translation = '<a href="#n">Bắt đầu giữa</a> <b>đậm</b> hết.';
+    const restored = restoreDetachedElements(translation, detached);
+    expect(restored).not.toMatch(/<a href="#n">[^<]*<span/);
+    expect(restored).toContain('<span class="pg"><a id="x"></a><a id="y"></a></span>');
+    // A link around a marker is not merged with it: the marker alone is detached, so it can be restored outside.
+    expect(detachEmptyElements('A <a href="#n"><a id="p1"></a></a>b').detached.map((d) => d.markup)).toEqual(['<a id="p1"></a>']);
+    // Wrappers around text or a void element stay in the protocol.
+    for (const kept of ['<span><a id="x"></a>t</span>', '<span><a id="x"></a><br/></span>', '<span> <a id="x"></a></span>']) {
+      expect(detachEmptyElements(kept).html).toContain('<span>');
+    }
+  });
+
   it('leaves markup it cannot fully see untouched', () => {
     for (const source of ['A <!-- x --><a id="p1"></a>b', 'A <a id="p1"></a>b <i', 'A <script></script>b']) {
       expect(detachEmptyElements(source).detached).toEqual([]);

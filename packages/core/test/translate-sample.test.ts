@@ -3,6 +3,7 @@ import {
   estimateSampleCost,
   loadProjectFile,
   type Project,
+  ProviderError,
   saveProjectFile,
   selectSamplePassages,
   TOC_CHAPTER_TITLE,
@@ -35,6 +36,24 @@ describe('selectSamplePassages', () => {
     expect(selectSamplePassages(book, { seed: 42 })).toEqual(a);
     expect(a.seed).toBe(42);
     expect(selectSamplePassages(book, { seed: 43 })).not.toEqual(a);
+  });
+
+  it('avoids back matter such as the index, notes and acknowledgments', () => {
+    const book = makeBook(6);
+    const titles = ['Index', 'Notes.', 'Acknowledgments', 'Bibliography', 'Примечания'];
+    titles.forEach((title, i) => {
+      const chapter = book.chapters[i + 2];
+      if (chapter) chapter.title = title;
+    });
+    for (const seed of [1, 2, 3, 42]) {
+      const picked = selectSamplePassages(book, { seed, passages: 5 }).passages.map((p) => p.chapterTitle);
+      expect(picked.some((t) => titles.includes(t))).toBe(false);
+    }
+    // A book made only of such chapters still gets a sample.
+    const odd = makeBook(1);
+    const only = odd.chapters[2];
+    if (only) only.title = 'Notes';
+    expect(selectSamplePassages(odd, { seed: 1 }).passages[0]?.chapterTitle).toBe('Notes');
   });
 
   it('picks distinct chapters spread across the book, never the table of contents or a tiny chapter', () => {
@@ -105,9 +124,9 @@ describe('translateSample', () => {
     const provider = mockProvider(answerAll);
     const saved: string[] = [];
     const expected = selectSamplePassages(book, { seed: 7 });
-    const selection = await translateSample(book, provider, book.settings, { seed: 7, onSegment: (s) => saved.push(s.id) });
+    const result = await translateSample(book, provider, book.settings, { seed: 7, onSegment: (s) => saved.push(s.id) });
 
-    expect(selection).toEqual(expected);
+    expect(result).toEqual({ selection: expected, failed: [], keptEdited: [] });
     expect(book.lastSample).toEqual(expected);
     const ids = expected.passages.flatMap((p) => p.segmentIds);
     expect(requestedIds(provider.calls).sort()).toEqual([...ids].sort());
@@ -121,7 +140,7 @@ describe('translateSample', () => {
   it('translates the sample again with the same seed even though it is already translated', async () => {
     const book = makeBook();
     const first = mockProvider(answerAll);
-    const selection = await translateSample(book, first, book.settings, { seed: 11 });
+    const { selection } = await translateSample(book, first, book.settings, { seed: 11 });
     const ids = selection.passages.flatMap((p) => p.segmentIds);
 
     book.settings.guideline = 'New guideline';
@@ -131,7 +150,7 @@ describe('translateSample', () => {
     });
     const progress: number[] = [];
     const again = await translateSample(book, second, book.settings, { seed: 11, onProgress: (p) => progress.push(p.done) });
-    expect(again).toEqual(selection);
+    expect(again.selection).toEqual(selection);
     expect(requestedIds(second.calls).sort()).toEqual([...ids].sort());
     expect(second.calls[0]?.system).toContain('New guideline');
     expect(progress.at(-1)).toBe(ids.length);
@@ -140,7 +159,7 @@ describe('translateSample', () => {
 
   it('reuses a given selection and a following full run only sends the remaining segments', async () => {
     const book = makeBook(3);
-    const selection = await translateSample(book, mockProvider(answerAll), book.settings, { seed: 3, passages: 2 });
+    const { selection } = await translateSample(book, mockProvider(answerAll), book.settings, { seed: 3, passages: 2 });
     const done = new Set(selection.passages.flatMap((p) => p.segmentIds));
 
     const reuse = mockProvider(answerAll);
@@ -159,7 +178,7 @@ describe('translateSample', () => {
     const book = makeBook(2);
     book.settings.twoPass = true;
     const provider = mockProvider(answerAll);
-    const selection = await translateSample(book, provider, book.settings, { seed: 1, passages: 1 });
+    const { selection } = await translateSample(book, provider, book.settings, { seed: 1, passages: 1 });
     const ids = selection.passages.flatMap((p) => p.segmentIds);
     const sentIds = requestedIds(provider.calls);
     expect(sentIds.length).toBe(ids.length * 2);
@@ -182,6 +201,59 @@ describe('translateSample', () => {
     await translateSample(book, provider, book.settings, { seed: 4, passages: 1, onSegment: (s) => saved.push(s.id) });
     expect(victim?.translationHtml).toBe('edited by hand');
     expect(saved).not.toContain(victimId);
+  });
+
+  it('a failed sample run keeps existing translations and statuses and reports the failure', async () => {
+    const book = makeBook(2);
+    await translateProject(book, mockProvider(answerAll), book.settings);
+    const { selection } = await translateSample(book, mockProvider(answerAll), book.settings, { seed: 5, passages: 1 });
+    const ids = selection.passages.flatMap((p) => p.segmentIds);
+    const sampled = book.chapters.flatMap((c) => c.segments).filter((s) => ids.includes(s.id));
+    const [hand, ...rest] = sampled;
+    if (!hand) throw new Error('empty sample');
+    hand.translationHtml = '<p>MY CAREFUL EDIT</p>';
+    hand.status = 'reviewed';
+    const before = rest.map((s) => ({ ...s }));
+    // A model that drops the markup fails validation for every segment.
+    const broken = mockProvider((req) => {
+      const input = JSON.parse(req.user) as { segments: { id: string }[] };
+      return { text: JSON.stringify({ segments: input.segments.map((x) => ({ id: x.id, html: 'no tags' })) }) };
+    });
+    const saved: string[] = [];
+    const result = await translateSample(book, broken, book.settings, { selection, onSegment: (s) => saved.push(s.id) });
+    expect(result.failed.sort()).toEqual([...ids].sort());
+    expect(saved).toEqual([]);
+    expect(hand).toMatchObject({ status: 'reviewed', translationHtml: '<p>MY CAREFUL EDIT</p>' });
+    expect(hand.error).toBeUndefined();
+    expect(rest).toEqual(before);
+  });
+
+  it('a failed sample marks segments without a translation as errors', async () => {
+    const book = makeBook(2);
+    const outage = mockProvider(() => {
+      // Retryable, with a zero Retry-After so the test does not wait for the backoff.
+      throw new ProviderError('bad gateway', 502, 0);
+    });
+    const result = await translateSample(book, outage, book.settings, { seed: 6, passages: 1 });
+    const ids = result.selection.passages.flatMap((p) => p.segmentIds);
+    expect(result.failed.sort()).toEqual([...ids].sort());
+    for (const s of book.chapters.flatMap((c) => c.segments).filter((x) => ids.includes(x.id))) expect(s.status).toBe('error');
+  });
+
+  it('skips segments the user edited by hand, in the run and in the estimate', async () => {
+    const book = makeBook(2);
+    const selection = selectSamplePassages(book, { seed: 8, passages: 1 });
+    const ids = selection.passages.flatMap((p) => p.segmentIds);
+    const all = estimateSampleCost(book, book.settings, selection);
+    const edited = book.chapters.flatMap((c) => c.segments).find((s) => s.id === ids[0]);
+    if (!edited) throw new Error('empty sample');
+    Object.assign(edited, { status: 'translated', translationHtml: '<p>mine</p>', userEdited: true });
+    expect(estimateSampleCost(book, book.settings, selection).inputTokens).toBeLessThan(all.inputTokens);
+    const provider = mockProvider(answerAll);
+    const result = await translateSample(book, provider, book.settings, { selection });
+    expect(result.keptEdited).toEqual([edited.id]);
+    expect(requestedIds(provider.calls)).not.toContain(edited.id);
+    expect(edited).toMatchObject({ translationHtml: '<p>mine</p>', userEdited: true });
   });
 
   it('rejects when the stored selection does not match the book and when aborted', async () => {

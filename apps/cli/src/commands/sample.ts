@@ -7,6 +7,7 @@ import {
   type Project,
   type ProjectSettings,
   randomSampleSeed,
+  type SampleRunResult,
   type SampleSelection,
   selectSamplePassages,
   translateSample,
@@ -130,7 +131,9 @@ export async function sampleCommand(argv: string[], io: Io): Promise<number> {
   project.settings = settings;
   await writeProjectFile(project, projectPath);
   const looked = await lookupEstimatePrices(settings, io, flags['no-price-lookup'] !== true);
-  io.err(`${describeEstimate(project, { ...settings, ...looked }, selection)}\n`);
+  // Looked-up prices feed the estimate and the cost shown while running; like `translate`, they are not saved.
+  const priced: ProjectSettings = { ...settings, ...looked };
+  io.err(`${describeEstimate(project, priced, selection)}\n`);
   if (!(await confirmRun(io, flags.yes === true))) {
     io.err(`Cancelled. Project saved to ${projectPath}; no translation request was made.\n`);
     return EXIT.failure;
@@ -139,11 +142,12 @@ export async function sampleCommand(argv: string[], io: Io): Promise<number> {
   const stop = new AbortController();
   const signal = AbortSignal.any([io.signal, stop.signal]);
   const saver = createProjectSaver(project, projectPath, (err) => stop.abort(err));
-  const progress = createProgress(io, settings);
+  const progress = createProgress(io, priced);
   let usage = { input: 0, output: 0 };
   let failure: unknown;
+  let result: SampleRunResult | undefined;
   try {
-    await translateSample(project, chat, settings, {
+    result = await translateSample(project, chat, settings, {
       selection,
       signal,
       onSegment: () => saver.markDirty(),
@@ -159,7 +163,7 @@ export async function sampleCommand(argv: string[], io: Io): Promise<number> {
   // Persist whatever finished, even after an abort or a fatal error.
   await saver.flush();
 
-  const cost = usageCost(usage, settings.priceInPerM, settings.priceOutPerM);
+  const cost = usageCost(usage, priced.priceInPerM, priced.priceOutPerM);
   io.err(`Tokens used: ${formatTokens(usage.input)} in / ${formatTokens(usage.output)} out${cost === undefined ? '' : ` (${formatUsd(cost)})`}\n`);
   if (failure !== undefined) {
     if (!io.signal.aborted) throw failure;
@@ -167,14 +171,16 @@ export async function sampleCommand(argv: string[], io: Io): Promise<number> {
     return EXIT.interrupted;
   }
 
-  io.out(formatSampleReport(project, selection));
-  const failed = project.chapters.flatMap((c) => c.segments).filter((s) => s.status === 'error' && selection.passages.some((p) => p.segmentIds.includes(s.id)));
+  const failed = result?.failed ?? [];
+  const keptEdited = result?.keptEdited ?? [];
+  io.out(formatSampleReport(project, selection, { failed, keptEdited }));
   io.err(
     `Sample saved to ${projectPath}. To judge it again after changing the style, run the same command; ` +
       `"epubtrans translate ${input}" or "epubtrans resume ${projectPath}" translates the rest and keeps these segments.\n`,
   );
+  if (keptEdited.length > 0) io.err(`${keptEdited.length} edited segments kept (segments you edited by hand are never re-translated by a sample).\n`);
   if (failed.length > 0) {
-    io.err(`${failed.length} sample segments failed (see above); run the same command to retry.\n`);
+    io.err(`${failed.length} sample segments failed (see above; earlier translations were kept); run the same command to retry.\n`);
     return EXIT.incomplete;
   }
   return EXIT.ok;

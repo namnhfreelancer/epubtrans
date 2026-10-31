@@ -103,6 +103,21 @@ describe('epubtrans sample', () => {
     expect(existsSync(t.project)).toBe(true);
   });
 
+  test('looked-up prices are used for the cost after the run too, and are not saved', async () => {
+    const t = setup();
+    const catalog = (async (url: RequestInfo | URL) =>
+      String(url).startsWith('https://openrouter.ai/')
+        ? Response.json({ data: [{ id: 'mock-lab/mock-model', pricing: { prompt: '0.000002', completion: '0.00001' } }] })
+        : new Response('nope', { status: 404 })) as unknown as typeof fetch;
+    const io = createTestIo({ env, fetch: catalog });
+    const args = providerArgs(t.server).filter((a) => a !== '--yes');
+    expect(await run(['sample', t.input, '--to', 'vi', '--passages', '1', '--seed', '2', ...args, '--yes'], io)).toBe(0);
+    expect(io.stderr).toMatch(/Estimated usage: .* about \$/);
+    expect(io.stderr).toMatch(/Tokens used: .* \(\$\d/);
+    const { project } = await readProject(t.project);
+    expect(project.settings.priceInPerM).toBeUndefined();
+  });
+
   test('usage errors exit with 2', async () => {
     const t = setup();
     for (const argv of [

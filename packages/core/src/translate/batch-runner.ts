@@ -130,6 +130,8 @@ export async function runBatch(batch: Segment[], kind: BatchKind, ctx: BatchCont
     segment.translationHtml = result.html;
     segment.status = kind === 'translate' ? 'translated' : 'reviewed';
     delete segment.error;
+    // The stored translation is the model's now, no longer a hand edit.
+    delete segment.userEdited;
     ctx.commit(segment, false);
   }
   // A segment isolated from a larger batch starts its own count of single-segment attempts.
