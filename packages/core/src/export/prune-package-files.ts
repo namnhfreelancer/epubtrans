@@ -12,14 +12,15 @@ const XSL_MEDIA_TYPES = new Set(['application/xslt+xml', 'text/xsl']);
  * - XSLT stylesheets (by extension or media type), with their manifest items in every rendition:
  *   EPUB has no use for them and a browser runs the markup they generate;
  * - every file no package document references. Kept are `mimetype`, `META-INF/**`, every
- *   rootfile of `META-INF/container.xml` (`rootfiles`, including those that are not parsed OPFs),
- *   and for each parsed rendition its manifest items and the local targets of its OPF `<link>`
+ *   file `META-INF/container.xml` points to (`containerTargets`: its rootfiles, including those that
+ *   are not parsed OPFs, and its `<link>` targets such as the rendition mapping document, which no
+ *   manifest may list), and for each parsed rendition its manifest items and the local targets of its OPF `<link>`
  *   elements (EPUB 3 linked metadata records are not manifest items).
  * What is kept is then sanitized by content as well as by type (`stripActiveContentFromPackage`),
  * so no file escapes through an unusual extension or media type.
  */
-export function prunePackageFiles(files: FileMap, renditions: PackageInfo[], rootfiles: string[]): void {
-  const referenced = new Set(rootfiles);
+export function prunePackageFiles(files: FileMap, renditions: PackageInfo[], containerTargets: string[]): void {
+  const referenced = new Set(containerTargets);
   for (const pkg of renditions) {
     const xslIds = new Set(pkg.manifest.filter((m) => isXsl(m.path, m.mediaType)).map((m) => m.id));
     if (xslIds.size > 0) removeManifestItems(pkg, xslIds);

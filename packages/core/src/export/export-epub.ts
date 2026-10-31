@@ -1,7 +1,7 @@
 import { SEGMENT_ATTR } from '../dom/fragment-markup';
 import { ensureStylesheet, extractDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
 import { byLocalName, firstByLocalName, parseXml, textOf } from '../dom/xml-dom-helpers';
-import { type PackageInfo, parseOtherRenditions, parsePackage, readRootfiles, readText } from '../epub/package-document';
+import { type PackageInfo, parseOtherRenditions, parsePackage, readContainerLinks, readRootfiles, readText } from '../epub/package-document';
 import type { DomEnv, ExportMode, Project, Segment } from '../types';
 import { encodeUtf8 } from '../util/text-encoding';
 import { type FileMap, readZip, writeEpubZip } from '../util/zip-archive';
@@ -33,8 +33,8 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
   const files = readZip(project.sourceEpub);
   const pkg = parsePackage(files, env);
   const renditions = [pkg, ...parseOtherRenditions(files, env, pkg)];
-  const rootfiles = readRootfiles(files, env).map((r) => r.path);
-  prunePackageFiles(files, renditions, rootfiles);
+  const containerTargets = [...readRootfiles(files, env).map((r) => r.path), ...readContainerLinks(files, env)];
+  prunePackageFiles(files, renditions, containerTargets);
   const xmlLangOnly = (pkg.opf.documentElement.getAttribute('version') ?? '3').startsWith('2');
   const segments = new Map(project.chapters.flatMap((c) => c.segments).map((s) => [s.id, s]));
   const cssPath = `${dirname(pkg.opfPath) ? `${dirname(pkg.opfPath)}/` : ''}${STYLESHEET_NAME}`;

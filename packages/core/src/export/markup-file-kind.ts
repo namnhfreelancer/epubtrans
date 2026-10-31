@@ -24,6 +24,19 @@ export function markupKindOf(path: string, mediaType = ''): MarkupKind | undefin
   return undefined;
 }
 
+/**
+ * Extensions of stylesheets, scripts, images, fonts, audio, video, PDF, plain text and JSON. Static
+ * servers map them to non-markup media types, so a browser never parses such a file as HTML or XML
+ * whatever its bytes, while valid files may start with `<` (CSS with a leading `<!--`, an obfuscated
+ * font whose first stored byte happens to be `<`). Unknown extensions are not listed: a server may
+ * send those without a media type, and a browser then sniffs markup.
+ */
+const NON_MARKUP_PATH =
+  /\.(?:css|m?js|jpe?g|png|gif|webp|avif|bmp|ico|tiff?|ttf|otf|woff2?|eot|mp3|m4a|aac|og[ag]|opus|wav|flac|mp4|m4v|webm|ogv|pdf|txt|json)$/i;
+
+/** True for a path whose extension marks a non-markup resource (see `NON_MARKUP_PATH`). */
+export const isNonMarkupPath = (path: string): boolean => NON_MARKUP_PATH.test(path);
+
 /** Whitespace an XML or HTML parser skips before the first tag (XML S plus form feed). */
 const LEADING_SPACE = new Set([0x20, 0x09, 0x0a, 0x0d, 0x0c]);
 const LT = 0x3c;
@@ -31,8 +44,9 @@ const LT = 0x3c;
 /**
  * True when the first non-whitespace character of the file is `<` (after an optional UTF-8 or
  * UTF-16 byte order mark): a browser or static server may treat such a file as markup whatever
- * its extension or declared media type. Binary media never qualifies: no image, font, audio or
- * video signature begins with `<`, and CSS, JavaScript and plain text normally do not either.
+ * its declared media type. No image, font, audio or video signature begins with `<`, but an
+ * obfuscated font or a CSS file may, so callers skip those first (`isNonMarkupPath`, encrypted
+ * resources).
  */
 export function startsWithMarkup(data: Uint8Array): boolean {
   const byte = (k: number) => data[k] ?? -1;

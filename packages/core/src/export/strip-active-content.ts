@@ -1,11 +1,11 @@
 import { extractDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
 import { byLocalName, CDATA_SECTION_NODE, COMMENT_NODE, ELEMENT_NODE, isParserError, nameOf, PROCESSING_INSTRUCTION_NODE } from '../dom/xml-dom-helpers';
-import { type PackageInfo, readText } from '../epub/package-document';
+import { type PackageInfo, readEncryptedPaths, readText } from '../epub/package-document';
 import type { DomEnv } from '../types';
 import { encodeUtf8 } from '../util/text-encoding';
 import type { FileMap } from '../util/zip-archive';
 import { isActiveAttribute } from './active-attributes';
-import { type MarkupKind, markupKindOf, sniffMarkupKind, startsWithMarkup } from './markup-file-kind';
+import { isNonMarkupPath, type MarkupKind, markupKindOf, sniffMarkupKind, startsWithMarkup } from './markup-file-kind';
 import { cssStylesheetInstructions, hasStylesheetInstruction } from './xml-prolog';
 
 /**
@@ -79,8 +79,9 @@ function unwrapObject(el: Element): void {
  * markup hidden inside them would come alive. Processing instructions and comments inside the
  * document element are removed, CDATA sections become equivalent text (serialized escaped). None
  * changes the XML meaning, so none counts as a removal: the prolog of a re-serialized document is
- * never written (except validated CSS stylesheet instructions), and a file left as is stays
- * XML-parsed.
+ * never written (except validated CSS stylesheet instructions). A file left as is has an XML
+ * extension or media type, so it stays XML-parsed; a file recognized as markup by content only is
+ * always rewritten (`sanitizeMarkupFile`).
  */
 function neutralizeXmlOnlySyntax(doc: Document, parent: Node): void {
   for (let node = parent.firstChild; node; ) {
@@ -113,9 +114,12 @@ const EMPTY_XML = '<removed/>';
  * XHTML is always rebuilt (markup that is not well-formed is re-parsed as HTML and written as
  * XHTML); SVG and other XML that is not well-formed is replaced by an empty stand-in. A file with
  * any `xml-stylesheet` instruction is always rewritten, keeping only validated CSS instructions:
- * the rest of the prolog is dropped, and with it XSL stylesheets.
+ * the rest of the prolog is dropped, and with it XSL stylesheets. A file recognized as markup by
+ * content only (`byContent`) is always rewritten too: it may be served without a media type and
+ * sniffed as HTML, and only a re-serialized document is sure to carry no comment, processing
+ * instruction, CDATA section or doctype an HTML parser would misread.
  */
-export function sanitizeMarkupFile(env: DomEnv, kind: MarkupKind, markup: string): { text: string; doc: Document } | undefined {
+export function sanitizeMarkupFile(env: DomEnv, kind: MarkupKind, markup: string, byContent = false): { text: string; doc: Document } | undefined {
   const stylesheets = cssStylesheetInstructions(markup);
   if (kind === 'xhtml') {
     const doc = parseXhtmlDocument(env, markup);
@@ -132,27 +136,31 @@ export function sanitizeMarkupFile(env: DomEnv, kind: MarkupKind, markup: string
   if (isParserError(doc)) return standIn();
   const stripped = stripActiveContent(doc);
   if (!doc.documentElement) return standIn(); // the root element itself was active content
-  return stripped || hasStylesheetInstruction(markup) ? { text: serializeXmlDocument(env, doc, stylesheets), doc } : undefined;
+  return stripped || byContent || hasStylesheetInstruction(markup) ? { text: serializeXmlDocument(env, doc, stylesheets), doc } : undefined;
 }
 
 /**
  * Sanitizes every file of the package that the export does not write itself (`done` and the
  * package documents): manifest XHTML/SVG items such as covers and image pages, other XML items,
  * files under `META-INF/`, and any other file whose content starts with markup (`<`), whatever
- * its extension or declared media type. Run after `prunePackageFiles`, so no unreferenced file is
- * left. `mimetype` is skipped. `renditions` lists the primary package first; its media types win
- * for files several renditions share.
+ * its declared media type. Content is not checked for resources META-INF/encryption.xml lists
+ * (obfuscated fonts are opaque bytes) or whose extension marks them as non-markup
+ * (`isNonMarkupPath`: CSS, scripts, images, fonts, media, ...); unknown extensions are checked.
+ * Run after `prunePackageFiles`, so no unreferenced file is left. `mimetype` is skipped.
+ * `renditions` lists the primary package first; its media types win for files several renditions
+ * share.
  */
 export function stripActiveContentFromPackage(files: FileMap, renditions: PackageInfo[], done: Set<string>, env: DomEnv): void {
   const packageDocs = new Set(renditions.map((r) => r.opfPath));
   const mediaTypes = new Map<string, string>();
   for (const item of renditions.flatMap((r) => r.manifest)) if (!mediaTypes.has(item.path)) mediaTypes.set(item.path, item.mediaType);
+  const encrypted = readEncryptedPaths(files, env);
   for (const [path, data] of Array.from(files)) {
     if (done.has(path) || path === 'mimetype' || packageDocs.has(path)) continue;
     const declared = markupKindOf(path, mediaTypes.get(path));
-    if (!declared && !startsWithMarkup(data)) continue;
+    if (!declared && (encrypted.has(path) || isNonMarkupPath(path) || !startsWithMarkup(data))) continue;
     const markup = readText(files, path);
-    const result = sanitizeMarkupFile(env, declared ?? sniffMarkupKind(markup), markup);
+    const result = declared ? sanitizeMarkupFile(env, declared, markup) : sanitizeMarkupFile(env, sniffMarkupKind(markup), markup, true);
     if (!result) continue;
     for (const pkg of renditions) unmarkScripted(pkg, path, result.doc);
     files.set(path, encodeUtf8(result.text));

@@ -1,7 +1,7 @@
 import { XMLValidator } from 'fast-xml-parser';
 import { expect } from 'vitest';
 import { type DomEnv, importBook, type Project } from '../src';
-import { startsWithMarkup } from '../src/export/markup-file-kind';
+import { isNonMarkupPath, startsWithMarkup } from '../src/export/markup-file-kind';
 import { cssStylesheetInstruction } from '../src/export/xml-prolog';
 import { type FileMap, readZip, writeEpubZip } from '../src/util/zip-archive';
 import { env, fakeTranslate, readFixture } from './test-helpers';
@@ -55,11 +55,14 @@ export function addManifestItems(files: FileMap, items: string): void {
 const withoutCanonicalCss = (text: string) =>
   text.replace(/<\?xml-stylesheet([\s\S]*?)\?>/g, (pi, data: string) => (cssStylesheetInstruction(data) === pi ? '' : pi));
 
-/** Every markup file of the export (by extension or by content) is free of active content. */
+/**
+ * Every markup file of the export (by extension, or by content unless its extension marks a
+ * non-markup resource such as CSS or a font) is free of active content.
+ */
 export function expectNoActiveMarkup(out: Uint8Array): void {
   for (const [name, data] of readZip(out)) {
     if (name === 'mimetype') continue;
-    if (/\.(?:s?html?|xht(?:ml)?|svg|xml|ncx|dat|opf)$/.test(name) || startsWithMarkup(data)) {
+    if (/\.(?:s?html?|xht(?:ml)?|svg|xml|ncx|dat|opf)$/.test(name) || (!isNonMarkupPath(name) && startsWithMarkup(data))) {
       expect(withoutCanonicalCss(dec(data)), name).not.toMatch(ACTIVE);
     }
   }
