@@ -1,65 +1,18 @@
 import { XMLValidator } from 'fast-xml-parser';
 import { describe, expect, it } from 'vitest';
-import { type DomEnv, exportEpub, importBook, type Project } from '../src';
+import { exportEpub, importBook } from '../src';
 import { parsePackage } from '../src/epub/package-document';
-import { hasXslStylesheet, markupKindOf, sanitizeMarkupFile, stripActiveContent } from '../src/export/strip-active-content';
-import { type FileMap, readZip, writeEpubZip } from '../src/util/zip-archive';
-import { env, fakeTranslate, readFixture, unzipText } from './test-helpers';
-
-/** Any script vector, template or embedding element (with or without a namespace prefix), or XSL stylesheet. */
-const ACTIVE = /<(?:[\w.-]+:)?(?:script|template|iframe|frame|frameset|object|embed|applet|param)\b|\son\w+=|javascript:|srcdoc|<\?xml-stylesheet|<!\[CDATA\[/i;
-const XML_MIMES = new Set(['application/xml', 'text/xml', 'application/xhtml+xml', 'image/svg+xml']);
-const enc = (s: string) => new TextEncoder().encode(s);
-const dec = (b: Uint8Array) => new TextDecoder().decode(b);
-
-/**
- * Like Chromium's DOMParser: markup that is not well-formed XML yields a `parsererror` document
- * (linkedom parses it leniently instead).
- */
-class StrictDOMParser {
-  parseFromString(markup: string, mime: DOMParserSupportedType): Document {
-    const parser = new env.DOMParser();
-    if (XML_MIMES.has(mime) && XMLValidator.validate(markup) !== true) {
-      return parser.parseFromString('<parsererror xmlns="http://www.w3.org/1999/xhtml">not well-formed</parsererror>', mime);
-    }
-    return parser.parseFromString(markup, mime);
-  }
-}
-const browserLikeEnv: DomEnv = { ...env, DOMParser: StrictDOMParser as unknown as typeof globalThis.DOMParser };
+import { markupKindOf } from '../src/export/markup-file-kind';
+import { sanitizeMarkupFile, stripActiveContent } from '../src/export/strip-active-content';
+import { readZip } from '../src/util/zip-archive';
+import { ACTIVE, addManifestItems, browserLikeEnv, dec, editText, enc, expectNoActiveMarkup, poisonedProject } from './package-markup-test-helpers';
+import { env, readFixture, unzipText } from './test-helpers';
 
 const EMPTY_SVG_TEXT = '<svg xmlns="http://www.w3.org/2000/svg"/>';
 const MALFORMED_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><script>console.log("PWN")</script><g></svg>';
 const MALFORMED_XHTML = '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>x</title></head><body><p>kept text<script>alert(1)</script><br></body></html>';
 const EMBEDS =
   '<iframe src="extra.html"/><object data="extra.svg" type="image/svg+xml"><p>fallback</p></object><embed src="extra.svg"/><applet code="x"/><frameset><frame src="extra.html"/></frameset>';
-
-async function poisonedProject(edit: (files: FileMap) => void): Promise<Project> {
-  const project = await importBook(readFixture('a-modest-proposal.epub'), 'a.epub', env);
-  const files = readZip(project.sourceEpub);
-  edit(files);
-  project.sourceEpub = writeEpubZip(files);
-  for (const s of project.chapters.flatMap((c) => c.segments)) {
-    s.translationHtml = fakeTranslate(s.sourceHtml);
-    s.status = 'translated';
-  }
-  return project;
-}
-
-function editText(files: FileMap, path: string, fn: (s: string) => string): void {
-  const data = files.get(path);
-  if (!data) throw new Error(`fixture changed: ${path}`);
-  files.set(path, enc(fn(dec(data))));
-}
-
-function addManifestItems(files: FileMap, items: string): void {
-  editText(files, 'OEBPS/content.opf', (s) => s.replace('</manifest>', `${items}</manifest>`));
-}
-
-function expectNoActiveMarkup(out: Uint8Array): void {
-  for (const [name, data] of readZip(out)) {
-    if (/\.(?:s?html?|xht(?:ml)?|svg|xml|ncx|dat)$/.test(name)) expect(dec(data), name).not.toMatch(ACTIVE);
-  }
-}
 
 const xhtmlDoc = (body: string, ns = '') =>
   new env.DOMParser().parseFromString(
@@ -136,20 +89,6 @@ describe('markupKindOf', () => {
   });
 });
 
-describe('hasXslStylesheet', () => {
-  it.each([
-    ['<?xml-stylesheet type="text/xsl" href="x.xsl"?><a/>', true],
-    ["<?xml-stylesheet href='x' type='application/xslt+xml'?><a/>", true],
-    ['<?xml-stylesheet type=" TEXT/XSL; charset=utf-8" href="x"?><a/>', true],
-    ['<?xml-stylesheet type="text/xml" href="x.xml"?><a/>', true],
-    ['<?xml-stylesheet type="text/css" href="a.css"?><a/>', false],
-    ['<?xml-stylesheet href="a.css"?><a/>', false],
-    ['<a data-type="text/xsl"/>', false],
-  ] as const)('%s → %s', (markup, expected) => {
-    expect(hasXslStylesheet(markup)).toBe(expected);
-  });
-});
-
 describe('sanitizeMarkupFile with a browser-like strict XML parser', () => {
   it('replaces malformed SVG with an empty SVG', () => {
     const result = sanitizeMarkupFile(browserLikeEnv, 'svg', MALFORMED_SVG);
@@ -172,7 +111,6 @@ describe('sanitizeMarkupFile with a browser-like strict XML parser', () => {
     expect(sanitizeMarkupFile(browserLikeEnv, 'svg', '<svg xmlns="http://www.w3.org/2000/svg"><rect onlyclass="x"/></svg>')).toBeDefined();
     expect(sanitizeMarkupFile(browserLikeEnv, 'svg', '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1"/></svg>')).toBeUndefined();
     expect(sanitizeMarkupFile(browserLikeEnv, 'xml', '<container><rootfile full-path="a.opf"/></container>')).toBeUndefined();
-    expect(sanitizeMarkupFile(env, 'svg', '<?xml-stylesheet type="text/css" href="a.css"?><svg xmlns="http://www.w3.org/2000/svg"/>')).toBeUndefined();
   });
 
   it.each([

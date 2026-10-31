@@ -1,6 +1,7 @@
 import { parseXhtmlDocument } from '../dom/xhtml-document';
-import { byLocalName, elementChildren, firstByLocalName, getAttrLocal, nameOf, parseXml, textOf } from '../dom/xml-dom-helpers';
+import { byLocalName, elementChildren, firstByLocalName, getAttrLocal, isParserError, nameOf, parseXml, textOf } from '../dom/xml-dom-helpers';
 import type { DomEnv } from '../types';
+import { normalizeMediaType } from '../util/media-type';
 import { decodeMarkup } from '../util/text-encoding';
 import type { FileMap } from '../util/zip-archive';
 import { dirname, resolvePath } from '../util/zip-path';
@@ -36,10 +37,59 @@ export function readText(files: FileMap, path: string): string {
   return decodeMarkup(bytes);
 }
 
-/** Reads META-INF/container.xml and the OPF package document it points to. */
-export function parsePackage(files: FileMap, env: DomEnv): PackageInfo {
+export interface Rootfile {
+  /** Full path inside the container. */
+  path: string;
+  mediaType: string;
+}
+
+const OPF_MEDIA_TYPE = 'application/oebps-package+xml';
+
+/** Every rootfile META-INF/container.xml declares, in document order (the first is the primary rendition). */
+export function readRootfiles(files: FileMap, env: DomEnv): Rootfile[] {
   const container = parseXml(env, readText(files, 'META-INF/container.xml'), 'META-INF/container.xml');
-  const opfPath = firstByLocalName(container, 'rootfile')?.getAttribute('full-path');
+  return byLocalName(container, 'rootfile')
+    .map((el) => ({ path: el.getAttribute('full-path') ?? '', mediaType: el.getAttribute('media-type') ?? '' }))
+    .filter((r) => r.path !== '');
+}
+
+/** An absolute URL (`scheme:`) rather than a path inside the container. */
+const ABSOLUTE_URL = /^[A-Za-z][A-Za-z\d+.-]*:/;
+
+/**
+ * Local targets of the `<link>` elements of META-INF/container.xml, such as the rendition mapping
+ * document of a multi-rendition EPUB, which no package manifest may list. Paths in container.xml
+ * are relative to the container root; absolute URLs are left out.
+ */
+export function readContainerLinks(files: FileMap, env: DomEnv): string[] {
+  const container = parseXml(env, readText(files, 'META-INF/container.xml'), 'META-INF/container.xml');
+  return byLocalName(container, 'link')
+    .map((el) => el.getAttribute('href') ?? '')
+    .filter((href) => href !== '' && !ABSOLUTE_URL.test(href))
+    .map((href) => resolvePath('', href))
+    .filter(Boolean);
+}
+
+const ENCRYPTION_XML = 'META-INF/encryption.xml';
+
+/**
+ * Paths of the resources META-INF/encryption.xml lists (`CipherReference`, relative to the
+ * container root): obfuscated fonts and other bytes that are not what they appear to be. Empty when
+ * the file is missing or does not parse.
+ */
+export function readEncryptedPaths(files: FileMap, env: DomEnv): Set<string> {
+  if (!files.has(ENCRYPTION_XML)) return new Set();
+  const doc = new env.DOMParser().parseFromString(readText(files, ENCRYPTION_XML), 'application/xml');
+  if (isParserError(doc)) return new Set();
+  return new Set(
+    byLocalName(doc, 'CipherReference')
+      .map((el) => resolvePath('', el.getAttribute('URI') ?? ''))
+      .filter(Boolean),
+  );
+}
+
+/** Reads the OPF package document at `opfPath`, by default the primary rootfile of META-INF/container.xml. */
+export function parsePackage(files: FileMap, env: DomEnv, opfPath = readRootfiles(files, env)[0]?.path): PackageInfo {
   if (!opfPath) throw new Error('container.xml does not declare a rootfile');
   const opf = parseXml(env, readText(files, opfPath), opfPath);
   const base = dirname(opfPath);
@@ -59,6 +109,22 @@ export function parsePackage(files: FileMap, env: DomEnv): PackageInfo {
   const ncx = byId.get(spineEl?.getAttribute('toc') ?? '') ?? manifest.find((m) => m.mediaType === 'application/x-dtbncx+xml');
 
   return { opfPath, opf, metadata: readMetadata(opf), manifest, spine, nav, ncx };
+}
+
+/**
+ * Package documents of the renditions after the primary one (multi-rendition EPUBs). Rootfiles
+ * that are not OPF (another media type), are missing, or do not parse are left out; callers that
+ * keep files must still keep those rootfile paths (`readRootfiles`).
+ */
+export function parseOtherRenditions(files: FileMap, env: DomEnv, primary: PackageInfo): PackageInfo[] {
+  const others: PackageInfo[] = [];
+  for (const { path, mediaType } of readRootfiles(files, env)) {
+    if (path === primary.opfPath || !files.has(path) || others.some((o) => o.opfPath === path)) continue;
+    if (mediaType && normalizeMediaType(mediaType) !== OPF_MEDIA_TYPE) continue;
+    if (isParserError(new env.DOMParser().parseFromString(readText(files, path), 'application/xml'))) continue;
+    others.push(parsePackage(files, env, path));
+  }
+  return others;
 }
 
 function readMetadata(opf: Document): BookMetadata {
