@@ -1,10 +1,11 @@
-import { estimateCost, type Project } from '@epubtrans/core';
+import type { Project } from '@epubtrans/core';
 import { useMemo } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { formatNumber, formatUsd, parseOptionalPrice } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
 import { updateSettings } from '../../lib/project-store';
-import { type ActiveProvider, settingsForRun } from '../../lib/provider-config-store';
+import type { ActiveProvider } from '../../lib/provider-config-store';
+import { estimateRunCost, resolveRunPrices } from '../../lib/run-pricing';
 import { useModelPricing } from '../../lib/use-model-pricing';
 import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
@@ -16,27 +17,17 @@ const SOURCE_LABELS = { openrouter: 'OpenRouter', litellm: 'LiteLLM' } as const;
 export function CostEstimateCard({ project, version, active }: { project: Project; version: number; active: ActiveProvider }) {
   const { t, locale } = useI18n();
   const settings = project.settings;
-  const published = active.priceInPerM !== undefined && active.priceOutPerM !== undefined;
   const save = (patch: Parameters<typeof updateSettings>[1]) =>
     updateSettings(project, patch).catch((err: unknown) => pushNotice('error', t('common.saveFailed', { message: errorText(err) })));
 
   // Automatic price: the provider's own model list (OpenRouter "Test connection") wins, else the public catalogs.
   const lookup = useModelPricing(active.model, active.providerId);
-  const auto = published
-    ? { priceInPerM: active.priceInPerM, priceOutPerM: active.priceOutPerM }
-    : lookup.status === 'found'
-      ? { priceInPerM: lookup.pricing.priceInPerM, priceOutPerM: lookup.pricing.priceOutPerM }
-      : undefined;
-  // Manual prices saved with the book override the automatic one per field; nothing automatic is persisted,
-  // so changing the model looks up a fresh price instead of keeping the previous model's.
-  const priceInPerM = settings.priceInPerM ?? auto?.priceInPerM;
-  const priceOutPerM = settings.priceOutPerM ?? auto?.priceOutPerM;
-  const manual = settings.priceInPerM !== undefined || settings.priceOutPerM !== undefined;
+  const { auto, published, manual, priceInPerM, priceOutPerM } = resolveRunPrices(settings, active, lookup.status === 'found' ? lookup.pricing : undefined);
 
   const { providerId, baseURL, model } = active;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
   const estimate = useMemo(
-    () => estimateCost(project, { ...settingsForRun(settings, { providerId, baseURL, model }), priceInPerM, priceOutPerM }),
+    () => estimateRunCost(project, { providerId, baseURL, model }, { priceInPerM, priceOutPerM }),
     [project, settings, providerId, baseURL, model, priceInPerM, priceOutPerM, version],
   );
 

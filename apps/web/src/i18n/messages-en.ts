@@ -247,6 +247,12 @@ export const en = {
   'guide.skipped': '{n} candidate batches were skipped because the model answer was unusable.',
   'guide.sections': 'Guideline sections',
   'guide.cancel': 'Cancel',
+
+  'webmcp.agentAsks': 'An AI agent asks:\n\n{question}',
+  'webmcp.startConfirm':
+    'Translate “{title}” with {provider}, model {model}? {segments} segments remain; estimated cost: {cost} ({input} input / {output} output tokens). This uses your API key and is billed by the provider.',
+  'webmcp.costUnknown': 'unknown (no price for this model)',
+  'webmcp.importConfirm': 'Download a book into your library from {host}?\n\n{url}',
 } as const;
 
 export type MessageKey = keyof typeof en;

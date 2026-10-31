@@ -19,6 +19,7 @@ Static, bring-your-own-key web app for epubtrans: import a DRM-free EPUB, MOBI, 
 - `src/lib/` — persistence (`project-database.ts`, `project-repository.ts`), in-memory project store, translation jobs, provider configuration and API key storage.
 - `src/components/` — UI by screen: `library/`, `settings/`, `setup/`, `reader/`, `export/`, shared `ui/`.
 - `src/i18n/` — English and Vietnamese dictionaries; `messages-vi.ts` is typed against the English key set.
+- `src/webmcp/` — WebMCP tools for in-browser AI agents, registered by `useWebMcpTools` only when `document.modelContext` exists (see the root README). `model-context-adapter.ts` is the only file that touches the browser API; the tool handlers (`*-tools.ts`) reuse the UI's job stores and helpers. Unit tests drive them through a fake model context (`test/webmcp-*.test.ts`), and `e2e/webmcp.spec.ts` installs a `document.modelContext` stub with `page.addInitScript`.
 - `e2e/` — Playwright specs. Provider calls go to `https://mock-provider.test/v1`, intercepted with `page.route`.
 
 ## Reader: finding and fixing failed segments

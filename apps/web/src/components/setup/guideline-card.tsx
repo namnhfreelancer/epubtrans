@@ -1,15 +1,8 @@
-import {
-  composeGuideline,
-  DEFAULT_GLOSSARY_CAP,
-  GUIDELINE_PRESETS,
-  type GuidelinePresetId,
-  generateGuide,
-  type Project,
-  splitGuideline,
-} from '@epubtrans/core';
-import { useEffect, useRef, useState } from 'react';
+import { composeGuideline, DEFAULT_GLOSSARY_CAP, GUIDELINE_PRESETS, type GuidelinePresetId, type Project, splitGuideline } from '@epubtrans/core';
+import { useRef, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { guidelineSections } from '../../lib/glossary-view';
+import { cancelGuideJob, reportGuideProblem, runGuideJob, useGuideJob } from '../../lib/guide-jobs';
 import { errorText, pushNotice } from '../../lib/notices';
 import { updateSettings } from '../../lib/project-store';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
@@ -17,7 +10,7 @@ import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
 import { Card } from '../ui/layout-primitives';
 import { GlossaryTable } from './glossary-table';
-import { type GenerateState, GuideGenerationStatus } from './guide-generation-status';
+import { GuideGenerationStatus } from './guide-generation-status';
 
 /**
  * Style guideline (preset + free text) and glossary, with model-assisted generation. Generation keeps the
@@ -27,15 +20,13 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
   const { t } = useI18n();
   const [presetId, setPresetId] = useState<GuidelinePresetId>('general');
   const [maxEntries, setMaxEntries] = useState(String(DEFAULT_GLOSSARY_CAP));
-  const [state, setState] = useState<GenerateState>({ kind: 'idle' });
-  const abortRef = useRef<AbortController | null>(null);
+  // Kept in a store (not in this card) so a run started by an agent shows here too and outlives a tab switch.
+  const state = useGuideJob(project.id);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const save = (patch: Parameters<typeof updateSettings>[1]) =>
     updateSettings(project, patch).catch((err: unknown) => pushNotice('error', t('common.saveFailed', { message: errorText(err) })));
   const { generated } = splitGuideline(project.settings.guideline);
   const sections = guidelineSections(project.settings.guideline);
-
-  useEffect(() => () => abortRef.current?.abort(), []);
 
   const applyPreset = () => {
     const preset = GUIDELINE_PRESETS.find((p) => p.id === presetId);
@@ -46,35 +37,13 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
     void save({ guideline: composeGuideline(preset.guideline, generated) });
   };
 
-  const generate = async () => {
-    if (provider.problem) return setState({ kind: 'error', message: t(provider.problem) });
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setState({ kind: 'busy' });
-    try {
-      const { provider: chat, settings } = provider.prepare(project);
-      const cap = Number.parseInt(maxEntries, 10);
-      const guide = await generateGuide(project, chat, settings, {
-        signal: controller.signal,
-        maxEntries: Number.isFinite(cap) && cap > 0 ? cap : DEFAULT_GLOSSARY_CAP,
-        onProgress: (progress) => {
-          if (!controller.signal.aborted) setState({ kind: 'busy', progress });
-        },
-      });
-      await updateSettings(project, { guideline: guide.guideline, glossary: guide.glossary });
-      if (!controller.signal.aborted) {
-        setState({ kind: 'done', entries: guide.glossary.length, candidates: guide.candidates, skippedBatches: guide.skippedBatches });
-      }
-    } catch (err) {
-      if (!controller.signal.aborted) setState({ kind: 'error', message: errorText(err) });
-    }
+  const generate = () => {
+    if (provider.problem) return reportGuideProblem(project.id, t(provider.problem));
+    const cap = Number.parseInt(maxEntries, 10);
+    void runGuideJob(project, () => provider.prepare(project), Number.isFinite(cap) && cap > 0 ? cap : DEFAULT_GLOSSARY_CAP);
   };
 
-  const cancel = () => {
-    abortRef.current?.abort();
-    setState({ kind: 'idle' });
-  };
+  const cancel = () => cancelGuideJob(project.id);
 
   /** Moves the caret to a section heading and scrolls the textarea there. */
   const jumpTo = (offset: number) => {
@@ -94,7 +63,7 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
       actions={
         <>
           {busy && <Button onClick={cancel}>{t('guide.cancel')}</Button>}
-          <Button variant="primary" onClick={() => void generate()} disabled={busy}>
+          <Button variant="primary" onClick={generate} disabled={busy}>
             {busy ? t('setup.generating') : t('setup.generate')}
           </Button>
         </>

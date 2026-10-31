@@ -249,4 +249,10 @@ export const vi: Record<MessageKey, string> = {
   'guide.skipped': 'Đã bỏ qua {n} lô ứng viên vì câu trả lời của mô hình không dùng được.',
   'guide.sections': 'Các mục của hướng dẫn',
   'guide.cancel': 'Hủy',
+
+  'webmcp.agentAsks': 'Một tác tử AI yêu cầu:\n\n{question}',
+  'webmcp.startConfirm':
+    'Dịch “{title}” bằng {provider}, mô hình {model}? Còn {segments} đoạn; chi phí ước tính: {cost} ({input} token vào / {output} token ra). Việc này dùng khóa API của bạn và nhà cung cấp sẽ tính phí.',
+  'webmcp.costUnknown': 'chưa rõ (chưa có giá cho mô hình này)',
+  'webmcp.importConfirm': 'Tải một cuốn sách từ {host} vào thư viện?\n\n{url}',
 };

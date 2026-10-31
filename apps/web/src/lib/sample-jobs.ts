@@ -119,6 +119,21 @@ async function runSample(
   }
 }
 
+/** Resolves with the sample state once no sample is running for the project (right away when none is). */
+export function waitForSampleJob(projectId: string): Promise<SampleJobState> {
+  return new Promise((resolve) => {
+    const check = () => {
+      const state = getSampleJobState(projectId);
+      if (state.status === 'running') return false;
+      unsubscribe();
+      resolve(state);
+      return true;
+    };
+    const unsubscribe = subscribe(() => void check());
+    check();
+  });
+}
+
 /** Stops a running sample; segments that already finished stay translated and persisted. */
 export function cancelSampleJob(projectId: string): void {
   controllers.get(projectId)?.abort(CANCEL);
