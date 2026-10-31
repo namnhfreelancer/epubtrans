@@ -1,4 +1,4 @@
-import type { Project, SampleSelection, Segment } from '@epubtrans/core';
+import { type Project, redactSecrets, type SampleSelection, type Segment } from '@epubtrans/core';
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
@@ -50,7 +50,7 @@ export function formatSampleReport(project: Project, selection: SampleSelection,
         translationLabel(segment, outcome),
         segment.translationHtml !== undefined && segment.status !== 'error'
           ? htmlToPlainText(segment.translationHtml)
-          : `(not translated${segment.error ? `: ${segment.error}` : ''})`,
+          : `(not translated${segment.error ? `: ${redactSecrets(segment.error)}` : ''})`,
       );
     }
     lines.push('');

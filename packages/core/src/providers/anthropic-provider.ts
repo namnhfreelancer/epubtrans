@@ -28,7 +28,7 @@ export function createAnthropicProvider(opts: AnthropicOptions): ChatProvider {
       let after: string | undefined;
       for (let page = 0; page < 20; page++) {
         const query = `v1/models?limit=1000${after ? `&after_id=${encodeURIComponent(after)}` : ''}`;
-        const json = await requestJson(opts.fetchImpl, joinUrl(opts.baseURL, query), { method: 'GET', headers: headers(), signal });
+        const json = await requestJson(opts.fetchImpl, joinUrl(opts.baseURL, query), { method: 'GET', headers: headers(), signal, secrets: [opts.apiKey] });
         const data = isRecord(json) && Array.isArray(json.data) ? json.data : [];
         for (const m of data) if (isRecord(m) && typeof m.id === 'string') ids.push(m.id);
         if (!isRecord(json) || json.has_more !== true || typeof json.last_id !== 'string') break;
@@ -46,7 +46,13 @@ export function createAnthropicProvider(opts: AnthropicOptions): ChatProvider {
         messages: [{ role: 'user', content: req.user }],
       };
       if (req.temperature !== undefined) body.temperature = req.temperature;
-      const json = await requestJson(opts.fetchImpl, joinUrl(opts.baseURL, 'v1/messages'), { method: 'POST', headers: headers(), body, signal: req.signal });
+      const json = await requestJson(opts.fetchImpl, joinUrl(opts.baseURL, 'v1/messages'), {
+        method: 'POST',
+        headers: headers(),
+        body,
+        signal: req.signal,
+        secrets: [opts.apiKey],
+      });
       const content = isRecord(json) && Array.isArray(json.content) ? json.content : undefined;
       if (!content) throw new ProviderError('Response has no content', 502);
       const text = content.map((b) => (isRecord(b) && b.type === 'text' && typeof b.text === 'string' ? b.text : '')).join('');
