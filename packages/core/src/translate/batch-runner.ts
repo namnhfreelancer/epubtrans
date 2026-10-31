@@ -1,7 +1,14 @@
 import { isAbortError, ProviderError } from '../providers/provider-http';
 import type { ChatProvider, ProjectSettings, Segment, TokenUsage } from '../types';
 import { validateTranslationMarkup } from './markup-validation';
-import { buildReviewSystemPrompt, buildReviewUserMessage, buildTranslateSystemPrompt, buildTranslateUserMessage, parseSegmentsAnswer } from './prompt-protocol';
+import {
+  batchGlossary,
+  buildReviewSystemPrompt,
+  buildReviewUserMessage,
+  buildTranslateSystemPrompt,
+  buildTranslateUserMessage,
+  parseSegmentsAnswer,
+} from './prompt-protocol';
 import { withRetry } from './retry-with-backoff';
 import { estimateTokens } from './token-estimate';
 
@@ -44,12 +51,13 @@ export async function runBatch(batch: Segment[], kind: BatchKind, ctx: BatchCont
   const segments = current(batch, ctx);
   if (segments.length === 0) return;
   let answer: Map<string, string>;
+  const glossary = batchGlossary(ctx.settings.glossary, segments, kind);
   try {
     const res = await withRetry(
       () =>
         ctx.provider.chat({
           system: kind === 'translate' ? buildTranslateSystemPrompt(ctx.settings) : buildReviewSystemPrompt(ctx.settings),
-          user: kind === 'translate' ? buildTranslateUserMessage(segments) : buildReviewUserMessage(segments),
+          user: kind === 'translate' ? buildTranslateUserMessage(segments, glossary) : buildReviewUserMessage(segments, glossary),
           maxTokens: outputBudget(segments),
           signal: ctx.signal,
         }),

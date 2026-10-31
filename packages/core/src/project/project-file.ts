@@ -1,4 +1,5 @@
 import { strFromU8, strToU8 } from 'fflate';
+import { isGlossaryTermType } from '../glossary/glossary-entry';
 import type { Chapter, GlossaryEntry, Project, ProjectSettings, Segment, SegmentStatus } from '../types';
 import { readZip, writeZip } from '../util/zip-archive';
 
@@ -92,13 +93,24 @@ function validateSettings(s: Json): ProjectSettings {
     concurrency,
     twoPass: s.twoPass as boolean,
     guideline: str(s, 'guideline', path),
-    glossary: arr(s, 'glossary', path).map((g, i): GlossaryEntry => {
-      const e = obj(g, `${path}.glossary[${i}]`);
-      const note = optStr(e, 'note', `${path}.glossary[${i}]`);
-      return { term: str(e, 'term', `glossary[${i}]`), translation: str(e, 'translation', `glossary[${i}]`), ...(note !== undefined ? { note } : {}) };
-    }),
+    glossary: arr(s, 'glossary', path).map((g, i) => validateGlossaryEntry(obj(g, `${path}.glossary[${i}]`), `${path}.glossary[${i}]`)),
     ...(priceInPerM !== undefined ? { priceInPerM } : {}),
     ...(priceOutPerM !== undefined ? { priceOutPerM } : {}),
+  };
+}
+
+/** `type` and `count` are optional (absent in v3.0 files); an unknown future `type` is dropped rather than rejected. */
+function validateGlossaryEntry(e: Json, path: string): GlossaryEntry {
+  const note = optStr(e, 'note', path);
+  const type = optStr(e, 'type', path);
+  const count = optNum(e, 'count', path);
+  if (count !== undefined && (count < 0 || !Number.isInteger(count))) fail(`${path}.count`, 'a non-negative integer');
+  return {
+    term: str(e, 'term', path),
+    translation: str(e, 'translation', path),
+    ...(note !== undefined ? { note } : {}),
+    ...(type !== undefined && isGlossaryTermType(type) ? { type } : {}),
+    ...(count !== undefined ? { count } : {}),
   };
 }
 

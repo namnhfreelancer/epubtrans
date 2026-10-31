@@ -26,10 +26,17 @@ export interface Chapter {
   segments: Segment[];
 }
 
+/** Kind of a glossary term, assigned by glossary generation (or by the user). */
+export type GlossaryTermType = 'person' | 'place' | 'organization' | 'term' | 'other';
+
 export interface GlossaryEntry {
   term: string;
   translation: string;
   note?: string;
+  /** Absent on hand-written entries and on projects from before typed glossaries. */
+  type?: GlossaryTermType;
+  /** Occurrences of the term in the source book, when known (set by glossary generation). */
+  count?: number;
 }
 
 export interface ProjectSettings {
