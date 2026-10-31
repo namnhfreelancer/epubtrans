@@ -71,10 +71,17 @@ function htmlToXhtmlDocument(env: DomEnv, markup: string, strict: boolean): Docu
   return doc;
 }
 
-/** Serializes an XHTML document with an XML declaration and a doctype (HTML5 unless given). */
-export function serializeXhtmlDocument(env: DomEnv, doc: Document, doctype = '<!DOCTYPE html>'): string {
+/** Prolog lines between the XML declaration and the doctype or document element. */
+const prologLines = (instructions: readonly string[]) => instructions.map((pi) => `${pi}\n`).join('');
+
+/**
+ * Serializes an XHTML document with an XML declaration and a doctype (HTML5 unless given).
+ * `instructions` are prolog processing instructions written verbatim after the declaration;
+ * callers pass only instructions they have validated.
+ */
+export function serializeXhtmlDocument(env: DomEnv, doc: Document, doctype = '<!DOCTYPE html>', instructions: readonly string[] = []): string {
   const markup = new env.XMLSerializer().serializeToString(doc.documentElement);
-  return `<?xml version="1.0" encoding="utf-8"?>\n${doctype}\n${markup}\n`;
+  return `<?xml version="1.0" encoding="utf-8"?>\n${prologLines(instructions)}${doctype}\n${markup}\n`;
 }
 
 /** The document type declaration of a markup string (without internal subset), if any. */
@@ -83,10 +90,10 @@ export function extractDoctype(markup: string): string | undefined {
   return m?.[0];
 }
 
-/** Serializes a generic XML document (OPF, NCX, container) with an XML declaration. */
-export function serializeXmlDocument(env: DomEnv, doc: Document): string {
+/** Serializes a generic XML document (OPF, NCX, container) with an XML declaration and optional validated prolog instructions. */
+export function serializeXmlDocument(env: DomEnv, doc: Document, instructions: readonly string[] = []): string {
   const markup = new env.XMLSerializer().serializeToString(doc.documentElement);
-  return `<?xml version="1.0" encoding="utf-8"?>\n${markup}\n`;
+  return `<?xml version="1.0" encoding="utf-8"?>\n${prologLines(instructions)}${markup}\n`;
 }
 
 /** Adds a stylesheet link to the head unless one with the same href exists. */

@@ -1,6 +1,7 @@
 import { parseXhtmlDocument } from '../dom/xhtml-document';
-import { byLocalName, elementChildren, firstByLocalName, getAttrLocal, nameOf, parseXml, textOf } from '../dom/xml-dom-helpers';
+import { byLocalName, elementChildren, firstByLocalName, getAttrLocal, isParserError, nameOf, parseXml, textOf } from '../dom/xml-dom-helpers';
 import type { DomEnv } from '../types';
+import { normalizeMediaType } from '../util/media-type';
 import { decodeMarkup } from '../util/text-encoding';
 import type { FileMap } from '../util/zip-archive';
 import { dirname, resolvePath } from '../util/zip-path';
@@ -36,10 +37,24 @@ export function readText(files: FileMap, path: string): string {
   return decodeMarkup(bytes);
 }
 
-/** Reads META-INF/container.xml and the OPF package document it points to. */
-export function parsePackage(files: FileMap, env: DomEnv): PackageInfo {
+export interface Rootfile {
+  /** Full path inside the container. */
+  path: string;
+  mediaType: string;
+}
+
+const OPF_MEDIA_TYPE = 'application/oebps-package+xml';
+
+/** Every rootfile META-INF/container.xml declares, in document order (the first is the primary rendition). */
+export function readRootfiles(files: FileMap, env: DomEnv): Rootfile[] {
   const container = parseXml(env, readText(files, 'META-INF/container.xml'), 'META-INF/container.xml');
-  const opfPath = firstByLocalName(container, 'rootfile')?.getAttribute('full-path');
+  return byLocalName(container, 'rootfile')
+    .map((el) => ({ path: el.getAttribute('full-path') ?? '', mediaType: el.getAttribute('media-type') ?? '' }))
+    .filter((r) => r.path !== '');
+}
+
+/** Reads the OPF package document at `opfPath`, by default the primary rootfile of META-INF/container.xml. */
+export function parsePackage(files: FileMap, env: DomEnv, opfPath = readRootfiles(files, env)[0]?.path): PackageInfo {
   if (!opfPath) throw new Error('container.xml does not declare a rootfile');
   const opf = parseXml(env, readText(files, opfPath), opfPath);
   const base = dirname(opfPath);
@@ -59,6 +74,22 @@ export function parsePackage(files: FileMap, env: DomEnv): PackageInfo {
   const ncx = byId.get(spineEl?.getAttribute('toc') ?? '') ?? manifest.find((m) => m.mediaType === 'application/x-dtbncx+xml');
 
   return { opfPath, opf, metadata: readMetadata(opf), manifest, spine, nav, ncx };
+}
+
+/**
+ * Package documents of the renditions after the primary one (multi-rendition EPUBs). Rootfiles
+ * that are not OPF (another media type), are missing, or do not parse are left out; callers that
+ * keep files must still keep those rootfile paths (`readRootfiles`).
+ */
+export function parseOtherRenditions(files: FileMap, env: DomEnv, primary: PackageInfo): PackageInfo[] {
+  const others: PackageInfo[] = [];
+  for (const { path, mediaType } of readRootfiles(files, env)) {
+    if (path === primary.opfPath || !files.has(path) || others.some((o) => o.opfPath === path)) continue;
+    if (mediaType && normalizeMediaType(mediaType) !== OPF_MEDIA_TYPE) continue;
+    if (isParserError(new env.DOMParser().parseFromString(readText(files, path), 'application/xml'))) continue;
+    others.push(parsePackage(files, env, path));
+  }
+  return others;
 }
 
 function readMetadata(opf: Document): BookMetadata {
