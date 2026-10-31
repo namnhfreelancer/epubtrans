@@ -88,6 +88,9 @@ Progress is saved continuously to `book.epub.epubtrans`. After Ctrl-C or a crash
 | `epubtrans export <file.epubtrans> --mode <mode> --out <file>` | Write the EPUB from a project (no key needed) |
 | `epubtrans models [--provider <id>] [--base-url <url>]` | List models from `/models` |
 | `epubtrans presets` | List providers, guideline presets and export modes |
+| `epubtrans sample <input or file.epubtrans> [--passages N] [--words N] [--seed S] [--new]` | Translate a few passages from different chapters and print them as source/translation pairs, before the full run |
+
+**Sample translation.** To check quality before paying for a whole book, translate a sample first: in the web app use the "Sample translation" card on the setup page, on the command line run `epubtrans sample book.epub --to vi --model <id>`. It picks 5 passages of about 350 words from different chapters spread across the book (seeded, so the same seed picks the same passages), translates them with your guideline and glossary, and shows source and translation side by side. Change the guideline or glossary and run it again to compare ("Translate samples again" in the app, the same command in the CLI); "New random samples" or `--new` picks other passages. The sampled segments count as translated, so the full run skips them. The selection is stored in the project file.
 
 Common options: `--from <lang>` (default auto), `--provider <preset id>`, `--base-url <url>`, `--model <id>`, `--concurrency <1-16>`, `--two-pass`, `--guideline-preset general|fiction|technical|psychology`, `--guideline-file <path>`, `--generate-guide`, `--mode bilingual|bilingual-translation-first|translation-only`, `--out <file.epub>`, `--project <file>`, `--price-in/--price-out <USD per 1M tokens>`, `--yes`. Run `epubtrans <command> --help` for details.
 

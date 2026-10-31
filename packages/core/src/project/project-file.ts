@@ -1,5 +1,5 @@
 import { strFromU8, strToU8 } from 'fflate';
-import type { Chapter, GlossaryEntry, Project, ProjectSettings, Segment, SegmentStatus } from '../types';
+import type { Chapter, GlossaryEntry, Project, ProjectSettings, SampleSelection, Segment, SegmentStatus } from '../types';
 import { readZip, writeZip } from '../util/zip-archive';
 
 /**
@@ -65,6 +65,7 @@ export function validateProjectState(input: unknown): Omit<Project, 'sourceEpub'
   const p = obj(input, 'project');
   if (p.schemaVersion !== 1) throw new Error(`Unsupported project schema version: ${String(p.schemaVersion)}`);
   const author = optStr(p, 'author', 'project');
+  const lastSample = p.lastSample === undefined ? undefined : validateSample(obj(p.lastSample, 'project.lastSample'));
   return {
     schemaVersion: 1,
     id: str(p, 'id', 'project'),
@@ -74,6 +75,24 @@ export function validateProjectState(input: unknown): Omit<Project, 'sourceEpub'
     updatedAt: str(p, 'updatedAt', 'project'),
     settings: validateSettings(obj(p.settings, 'project.settings')),
     chapters: arr(p, 'chapters', 'project').map((c, i) => validateChapter(obj(c, `chapters[${i}]`), `chapters[${i}]`)),
+    ...(lastSample !== undefined ? { lastSample } : {}),
+  };
+}
+
+function validateSample(s: Json): SampleSelection {
+  const path = 'lastSample';
+  const seed = optNum(s, 'seed', path) ?? fail(`${path}.seed`, 'a number');
+  return {
+    seed,
+    passages: arr(s, 'passages', path).map((raw, i) => {
+      const p = obj(raw, `${path}.passages[${i}]`);
+      const pp = `${path}.passages[${i}]`;
+      return {
+        chapterHref: str(p, 'chapterHref', pp),
+        chapterTitle: str(p, 'chapterTitle', pp),
+        segmentIds: arr(p, 'segmentIds', pp).map((id) => (typeof id === 'string' ? id : fail(`${pp}.segmentIds`, 'an array of strings'))),
+      };
+    }),
   };
 }
 

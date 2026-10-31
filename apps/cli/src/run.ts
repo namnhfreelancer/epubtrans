@@ -4,6 +4,7 @@ import { exportCommand } from './commands/export';
 import { modelsCommand } from './commands/models';
 import { presetsCommand } from './commands/presets';
 import { resumeCommand } from './commands/resume';
+import { sampleCommand } from './commands/sample';
 import { translateCommand } from './commands/translate';
 import { COMMAND_HELP, MAIN_HELP } from './help';
 import type { Io } from './io';
@@ -15,6 +16,7 @@ type Command = (argv: string[], io: Io) => Promise<number> | number;
 const COMMANDS: Record<string, Command> = {
   translate: translateCommand,
   resume: resumeCommand,
+  sample: sampleCommand,
   export: exportCommand,
   models: modelsCommand,
   presets: presetsCommand,

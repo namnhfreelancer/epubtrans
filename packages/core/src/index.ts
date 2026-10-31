@@ -18,4 +18,15 @@ export { GUIDELINE_PRESETS, type GuidelinePreset, type GuidelinePresetId, getGui
 export { retranslateSegment } from './translate/retranslate-segment';
 export { estimateTokens, languageName } from './translate/token-estimate';
 export { MAX_BATCH_TOKENS, MAX_CONCURRENCY, makeBatches, translateProject } from './translate/translate-project';
+export {
+  DEFAULT_SAMPLE_PASSAGES,
+  DEFAULT_SAMPLE_WORDS,
+  estimateSampleCost,
+  MAX_SAMPLE_PASSAGES,
+  randomSampleSeed,
+  type SampleSelectionOptions,
+  selectSamplePassages,
+  type TranslateSampleOptions,
+  translateSample,
+} from './translate/translate-sample';
 export type * from './types';

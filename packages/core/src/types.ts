@@ -60,6 +60,21 @@ export interface Project {
   chapters: Chapter[];
   /** Normalized EPUB package; its documents carry `data-et-id` segment markers. */
   sourceEpub: Uint8Array;
+  /** The passages picked by the last sample translation; absent in projects that never ran one. */
+  lastSample?: SampleSelection;
+}
+
+/** A contiguous run of segments of one chapter, translated as a quality check before the full run. */
+export interface SamplePassage {
+  chapterHref: string;
+  chapterTitle: string;
+  segmentIds: string[];
+}
+
+export interface SampleSelection {
+  /** Seed of the pseudo-random generator that picked the passages; the same seed picks the same passages. */
+  seed: number;
+  passages: SamplePassage[];
 }
 
 export type BookFormat = 'epub' | 'mobi' | 'azw3' | 'fb2';

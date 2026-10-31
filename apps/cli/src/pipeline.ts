@@ -47,7 +47,7 @@ async function prefillPrices(settings: ProjectSettings, provider: ChatProvider, 
   }
 }
 
-async function confirmRun(io: Io, yes: boolean): Promise<boolean> {
+export async function confirmRun(io: Io, yes: boolean): Promise<boolean> {
   if (yes) return true;
   if (!io.interactive) throw new UsageError('Not running in a terminal: pass --yes to start without confirmation.');
   return /^y(es)?$/i.test((await io.prompt('Proceed? [y/N] ')).trim());
