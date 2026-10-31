@@ -78,6 +78,24 @@ describe('Markdown front matter keys', () => {
     ).toContain('HAMLET: To be, or not to be');
   });
 
+  it('accepts capitalized keys such as `Cover-Image` next to a well-known key', async () => {
+    expect(splitFrontMatter(['---', 'title: X', 'Cover-Image: a.png', 'Layout: book', '---', 'Body.'])).toEqual({ meta: { title: 'X' }, body: ['Body.'] });
+    const project = await importBook(encode('---\ntitle: X\nCover-Image: a.png\n---\n\nBody text.\n'), 'cover.md', env);
+    expect(project.title).toBe('X');
+    expect(segments(project).map((s) => s.sourceText)).toEqual(['Body text.']);
+  });
+
+  it('keeps a block without any well-known key, or with an all-caps key, as content', () => {
+    for (const block of [
+      ['Hamlet: To be, or not to be.', 'Ophelia: Good my lord.'],
+      ['title: Interview', 'Q: Where were you?', 'A: At home.'],
+      ['layout: post', 'permalink: /x'],
+    ]) {
+      const lines = ['---', ...block, '---', 'Exit.'];
+      expect(splitFrontMatter(lines)).toEqual({ meta: {}, body: lines });
+    }
+  });
+
   it('still reads lower-case keys and capitalized well-known keys', () => {
     expect(splitFrontMatter(['---', 'Title: Book', 'Author: Someone', 'cover-image: c.jpg', 'date_published: 2020', '---', 'Text.'])).toEqual({
       meta: { title: 'Book', author: 'Someone' },

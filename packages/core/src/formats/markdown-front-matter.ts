@@ -10,15 +10,14 @@ export interface FrontMatter {
 }
 
 const FRONT_MATTER_MAX_LINES = 60;
-/** Metadata keys recognized in any case (`Title:`); every other key must be a simple lower-case YAML identifier. */
-const KNOWN_KEYS = 'title|subtitle|author|authors|creator|lang|language|date|description|publisher|rights|subject|tags|keywords|identifier|series';
-const LOWER_CASE_KEY = /^[a-z_][a-z0-9_-]*[ \t]*:(?:[ \t]|$)/;
-const KNOWN_KEY = new RegExp(`^(?:${KNOWN_KEYS})[ \\t]*:(?:[ \\t]|$)`, 'i');
-/**
- * A front-matter key: `title`, `cover-image`, `date_published`, `Title`. Script lines such as `HAMLET: To be…` or
- * `Ophelia: …` are not keys, so a play that opens with a `---` line keeps its text.
- */
-const isYamlKey = (line: string) => LOWER_CASE_KEY.test(line) || KNOWN_KEY.test(line);
+/** Metadata keys (in any case) of which a front-matter block must contain at least one. */
+const KNOWN_KEYS = new Set(
+  'title|subtitle|author|authors|creator|lang|language|date|description|publisher|rights|subject|tags|keywords|identifier|series'.split('|'),
+);
+/** A `key: value` line whose key is a YAML identifier: `title`, `Cover-Image`, `date_published`. */
+const YAML_KEY_LINE = /^([A-Za-z_][A-Za-z0-9_-]*)[ \t]*:(?:[ \t]|$)/;
+/** An all-caps key (`HAMLET:`, `Q:`) is a speaker in a script or an interview, never front matter. */
+const isAllCaps = (key: string) => /[A-Z]/.test(key) && !/[a-z]/.test(key);
 const YAML_ITEM_OR_CONTINUATION = /^(?:[ \t]*-(?:[ \t]|$)|[ \t]+\S|[ \t]*#)/;
 
 const isBlank = (line: string) => line.trim() === '';
@@ -40,15 +39,24 @@ function yamlScalar(raw: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-/** True when every non-blank line looks like YAML: `key: value` lines, with list items or indented lines under a key. */
+/**
+ * True when the block is YAML front matter: every non-blank line is a `key: value` line (or a list item, indented line
+ * or comment under a key), at least one key is a well-known metadata key and no key is all caps. Script lines such as
+ * `HAMLET: To be…` or `Ophelia: …` fail this, so a play that opens with a `---` line keeps its text.
+ */
 function looksLikeYaml(lines: string[]): boolean {
   let keys = 0;
+  let known = false;
   for (const line of lines) {
     if (isBlank(line)) continue;
-    if (isYamlKey(line)) keys++;
-    else if (keys === 0 || !YAML_ITEM_OR_CONTINUATION.test(line)) return false;
+    const key = YAML_KEY_LINE.exec(line)?.[1];
+    if (key) {
+      if (isAllCaps(key)) return false;
+      known ||= KNOWN_KEYS.has(key.toLowerCase());
+      keys++;
+    } else if (keys === 0 || !YAML_ITEM_OR_CONTINUATION.test(line)) return false;
   }
-  return keys > 0;
+  return known;
 }
 
 /**

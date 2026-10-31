@@ -19,6 +19,18 @@ const DROPPED_CONTENT = new Set(['script', 'style', 'template', 'iframe', 'objec
 /** A link destination longer than this, or nested deeper than CommonMark's limit, is not a destination. */
 const MAX_DESTINATION_CHARS = 2048;
 const MAX_DESTINATION_PARENS = 32;
+/** Characters that may start markup; text between them is copied in one slice. */
+const MARKUP_START = new Uint8Array(128);
+for (const ch of '\\\n`![]<*_~') MARKUP_START[ch.charCodeAt(0)] = 1;
+/** The end of the run of text without markup characters that starts after `start`. */
+function plainRunEnd(text: string, start: number): number {
+  let end = start + 1;
+  for (; end < text.length; end++) {
+    const code = text.charCodeAt(end);
+    if (code < 128 && MARKUP_START[code]) break;
+  }
+  return end;
+}
 
 /** An href that is safe and meaningful in an exported book, or undefined. */
 export function safeHref(raw: string): string | undefined {
@@ -65,7 +77,11 @@ type Entry = string | Node;
 /** Renders inline Markdown into nodes owned by `doc`. */
 export function renderInline(doc: Document, text: string): Node[] {
   const entries: Entry[] = [];
+  // Literal text since the last entry. The spaces at its end are only counted, and written once more text follows: a
+  // newline drops them, and cutting them off a long string at every soft line break would make a long hard-wrapped
+  // paragraph quadratic.
   let buffer = '';
+  let trailingSpaces = 0;
   // Unclosed emphasis delimiters by run (`*`, `**`, `***`, `_`, `__`, `___`, `~~`): indexes of their text in `entries`.
   const openers = new Map<string, number[]>();
   // Unclosed `[` and `![`, innermost last.
@@ -77,7 +93,24 @@ export function renderInline(doc: Document, text: string): Node[] {
   let missingCommentEnd = false;
   let lowerText: string | undefined;
 
+  const writeSpaces = () => {
+    if (trailingSpaces) buffer += trailingSpaces === 1 ? ' ' : ' '.repeat(trailingSpaces);
+    trailingSpaces = 0;
+  };
+  /** Appends text that does not end with a space (markup characters left literal). */
+  const append = (piece: string) => {
+    writeSpaces();
+    buffer += piece;
+  };
+  /** Appends `text` from `start` to `end`, keeping the spaces at its end aside. */
+  const appendPlain = (start: number, end: number) => {
+    let last = end;
+    while (last > start && text.charCodeAt(last - 1) === 32) last--;
+    if (last > start) append(last === start + 1 ? (text[start] as string) : text.slice(start, last));
+    trailingSpaces += end - last;
+  };
   const flush = () => {
+    writeSpaces();
     if (buffer) entries.push(buffer);
     buffer = '';
   };
@@ -137,17 +170,17 @@ export function renderInline(doc: Document, text: string): Node[] {
         continue;
       }
       if (ESCAPABLE.test(next)) {
-        buffer += next;
+        append(next);
         i += 2;
         continue;
       }
     }
     if (ch === '\n') {
       // Two trailing spaces before a newline are a hard break; otherwise the newline is a space.
-      if (buffer.endsWith('  ')) {
-        buffer = buffer.replace(/ +$/, '');
+      if (trailingSpaces >= 2) {
+        trailingSpaces = 0;
         pushNode(doc.createElementNS(NS.XHTML, 'br'));
-      } else buffer = `${buffer.replace(/ +$/, '')} `;
+      } else trailingSpaces = 1;
       i++;
       continue;
     }
@@ -157,7 +190,7 @@ export function renderInline(doc: Document, text: string): Node[] {
       const end = missingCodeCloser.has(length) ? -1 : text.indexOf(run, i + length);
       if (end < 0) {
         missingCodeCloser.add(length);
-        buffer += run;
+        append(run);
         i += length;
         continue;
       }
@@ -190,7 +223,7 @@ export function renderInline(doc: Document, text: string): Node[] {
       if (!opener || !dest) {
         // An unmatched `]` is text, and so is the `[` it fails to close.
         if (opener) brackets.pop();
-        buffer += ']';
+        append(']');
         i++;
         continue;
       }
@@ -249,7 +282,7 @@ export function renderInline(doc: Document, text: string): Node[] {
       const run = text.slice(i, i + length);
       const valid = ch === '~' ? length === 2 : length <= 3;
       if (!valid) {
-        buffer += run;
+        append(run);
         i += length;
         continue;
       }
@@ -259,15 +292,17 @@ export function renderInline(doc: Document, text: string): Node[] {
       const canClose = !isSpace(before) && !(ch === '_' && isWordChar(after));
       const opener = openers.get(run)?.at(-1);
       // A closer never reaches across an unclosed bracket: link labels bind tighter than emphasis.
-      const closes = canClose && opener !== undefined && opener > (brackets.at(-1)?.at ?? -1) && (buffer !== '' || entries.length > opener + 1);
+      const closes =
+        canClose && opener !== undefined && opener > (brackets.at(-1)?.at ?? -1) && (buffer !== '' || trailingSpaces > 0 || entries.length > opener + 1);
       if (closes) pushNode(wrapEmphasis(run, takeFrom(opener)));
       else if (canOpen) open(run);
-      else buffer += run;
+      else append(run);
       i += length;
       continue;
     }
-    buffer += ch;
-    i++;
+    const end = plainRunEnd(text, i);
+    appendPlain(i, end);
+    i = end;
   }
   flush();
   return toNodes(entries);

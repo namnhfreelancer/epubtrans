@@ -118,6 +118,25 @@ describe('Markdown without blank lines', () => {
     expect(chapter?.segments[1]?.sourceHtml).toBe('Line 1 of the story goes on with a <em>few</em> more words in it.');
   });
 
+  it('imports a title and one hard-wrapped paragraph of 4000 and 16000 lines in linear time', async () => {
+    // One blank line after the title makes every later line hard wrapping of one huge paragraph, cut after inline rendering.
+    const book = (lines: number) =>
+      encode(`# Title\n\n${Array.from({ length: lines }, (_, i) => `Line ${i + 1} of one long hard-wrapped paragraph goes on.`).join('\n')}\n`);
+    const inputs = { 1: book(4000), 4: book(16_000) };
+    await expectLinear('lines of one hard-wrapped Markdown paragraph imported', (scale) => importBook(inputs[scale], 'wrapped.md', env));
+    const [title, ...parts] = sources(await importBook(inputs[4], 'wrapped.md', env));
+    expect(title).toBe('Title');
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts[0]).toMatch(/^Line 1 of one long hard-wrapped paragraph goes on\. Line 2 /);
+    expect(parts.join(' ')).toContain('Line 16000 of one long hard-wrapped paragraph goes on.');
+    for (const part of parts) expect(estimateTokens(part)).toBeLessThanOrEqual(MAX_SEGMENT_TOKENS);
+  });
+
+  it('turns a soft line break into one space and two trailing spaces into a hard break', () => {
+    expect(inline('one \ntwo   \nthree\nfour')).toBe('one two<br />three four');
+    expect(inline('*one*  \n  two')).toBe('<em>one</em><br />  two');
+  });
+
   it('keeps hard-wrapped paragraphs whole when blank lines separate them', async () => {
     const project = await importBook(encode('First line\nsecond line.\n\nThird line\nfourth line.\n'), 'wrap.md', env);
     expect(sources(project)).toEqual(['First line second line.', 'Third line fourth line.']);
