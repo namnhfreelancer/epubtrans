@@ -134,6 +134,7 @@ export const en = {
   'run.needKey': 'Add an API key in Settings first.',
   'run.needModel': 'Choose a model in Settings first.',
   'run.allDone': 'All segments are translated.',
+  'run.busyElsewhere': 'This book is being translated in another tab. Pause it there or wait until it finishes to start here.',
 
   'reader.chapters': 'Chapters',
   'reader.view': 'View',
@@ -147,6 +148,7 @@ export const en = {
   'reader.retranslate': 'Retranslate',
   'reader.retranslating': 'Retranslating…',
   'reader.lockedDuringJob': 'Editing and retranslating are paused while this book is being translated. Pause the translation to make changes.',
+  'reader.lockedInOtherTab': 'Editing and retranslating are paused while this book is being translated in another tab.',
   'reader.retranslateFailed': 'Retranslation failed: {message}',
   'reader.notTranslated': 'Not translated yet',
   'reader.emptyChapter': 'This chapter has no text.',
