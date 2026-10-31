@@ -11,6 +11,7 @@ import {
 } from '@epubtrans/core';
 import { UsageError } from './args';
 import { domEnv } from './dom-env';
+import { createGuideProgressPrinter } from './guide-progress';
 import type { Io } from './io';
 import { countStatuses, createProgress, formatTokens, formatUsd, usageCost } from './progress';
 import { createProjectSaver, writeFileAtomic, writeProjectFile } from './project-store';
@@ -63,7 +64,7 @@ function describeEstimate(project: Project, settings: ProjectSettings, todo: num
         })`;
   return [
     `Segments to translate: ${todo}${settings.twoPass ? ' (+ review pass)' : ''}`,
-    ...(withGuide ? ['Plus one extra request to generate the style guideline and glossary (not included in the estimate)'] : []),
+    ...(withGuide ? ['Plus a few extra requests to generate the style guideline and glossary (not included in the estimate)'] : []),
     `Model: ${settings.model} via ${settings.baseURL}`,
     `Estimated usage: ~${formatTokens(estimate.inputTokens)} input / ~${formatTokens(estimate.outputTokens)} output tokens, ${cost}`,
   ].join('\n');
@@ -90,9 +91,10 @@ export async function translateAndExport(opts: PipelineOptions): Promise<number>
     let settings = await prefillPrices(opts.settings, provider, io);
     if (opts.generateGuide) {
       io.err('Generating style guideline and glossary ...\n');
-      const guide = await generateGuide(project, provider, settings, io.signal);
+      const guide = await generateGuide(project, provider, settings, { signal: io.signal, onProgress: createGuideProgressPrinter(io) });
       settings = { ...settings, guideline: guide.guideline, glossary: guide.glossary };
-      io.err(`Guide ready: ${guide.glossary.length} glossary entries\n`);
+      const skipped = guide.skippedBatches ? `; ${guide.skippedBatches} candidate batches skipped (unusable model answer)` : '';
+      io.err(`Guide ready: ${guide.glossary.length} glossary entries from ${guide.candidates} candidates${skipped}\n`);
     }
     project.settings = settings;
     await writeProjectFile(project, projectPath);
