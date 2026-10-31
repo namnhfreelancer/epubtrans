@@ -12,6 +12,7 @@ const FILE_SUFFIX: Record<ExportMode, string> = {
   bilingual: 'bilingual',
   'bilingual-translation-first': 'bilingual-translation-first',
   'translation-only': 'translated',
+  original: 'original',
 };
 
 /** Builds the EPUB in the chosen layout, and offers the `.epubtrans` project file. */

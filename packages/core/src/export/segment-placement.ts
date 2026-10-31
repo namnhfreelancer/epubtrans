@@ -26,7 +26,7 @@ export function setLang(el: Element, ctx: PlacementContext): void {
   if (!ctx.xmlLangOnly) el.setAttribute('lang', ctx.targetLang);
 }
 
-function addClass(el: Element, cls: string): void {
+export function addClass(el: Element, cls: string): void {
   const current = el.getAttribute('class');
   el.setAttribute('class', current ? `${current} ${cls}` : cls);
 }
@@ -81,6 +81,7 @@ function stripIds(node: Node): void {
 
 /** Plain-text label for contexts that cannot hold markup (NCX). */
 export function textLabel(sourceText: string, translationHtml: string, ctx: Pick<PlacementContext, 'env' | 'mode'>): string {
+  if (ctx.mode === 'original') return sourceText;
   const translated = textOf(parseHtmlFragment(ctx.env, translationHtml));
   if (ctx.mode === 'translation-only') return translated;
   return ctx.mode === 'bilingual' ? `${sourceText} / ${translated}` : `${translated} / ${sourceText}`;

@@ -31,7 +31,7 @@ export function validateSettings(settings: ProjectSettings): void {
   if (!Number.isFinite(settings.concurrency) || settings.concurrency < 1) throw new Error('Concurrency must be at least 1');
 }
 
-const concurrencyOf = (settings: ProjectSettings) => Math.min(MAX_CONCURRENCY, Math.max(1, Math.floor(settings.concurrency)));
+export const concurrencyOf = (settings: Pick<ProjectSettings, 'concurrency'>) => Math.min(MAX_CONCURRENCY, Math.max(1, Math.floor(settings.concurrency)));
 
 /** What a user edit or a retranslation changes; compared against the state when the phase started. */
 const revisionOf = (s: Segment) => `${s.status}\u0000${s.translationHtml ?? ''}`;
@@ -100,7 +100,7 @@ export async function translateProject(project: Project, provider: ChatProvider,
  * shared controller so other workers stop, and the pool only settles once every worker has
  * stopped (no callbacks fire after the returned promise settles).
  */
-async function runPool<T>(items: T[], limit: number, worker: (item: T) => Promise<void>, controller: AbortController): Promise<void> {
+export async function runPool<T>(items: T[], limit: number, worker: (item: T) => Promise<void>, controller: AbortController): Promise<void> {
   let next = 0;
   let firstError: unknown;
   const loop = async () => {

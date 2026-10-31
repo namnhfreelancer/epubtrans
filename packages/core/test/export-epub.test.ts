@@ -33,8 +33,10 @@ function expectValidContainer(bytes: Uint8Array): Map<string, Uint8Array> {
   return files;
 }
 
+const TRANSLATED_MODES = EXPORT_MODES.filter((m) => m !== 'original');
+
 describe('exportEpub', () => {
-  for (const mode of EXPORT_MODES) {
+  for (const mode of TRANSLATED_MODES) {
     it(`exports ${mode} as a valid, re-importable EPUB`, async () => {
       const project = await translatedProject('a-modest-proposal.epub');
       const out = await exportEpub(project, mode, env);
@@ -101,8 +103,23 @@ describe('exportEpub', () => {
       const holder = /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*id="p1"/.exec(html)?.[0] ?? '';
       // The source keeps the link target in bilingual modes; translation-only has only the translated paragraph.
       if (mode === 'translation-only') expect(holder).toContain('[vi] ');
+      else if (mode === 'original') expect(holder).not.toContain('[vi] ');
       else expect(holder).toContain('class="et-src"');
     }
+  });
+
+  it('exports original as the source text only, without the bilingual stylesheet', async () => {
+    const project = await translatedProject('a-modest-proposal.epub');
+    const out = await exportEpub(project, 'original', env);
+    const files = expectValidContainer(out);
+    const html = unzipText(out, project.chapters[2]?.href ?? '');
+    expect(html).toContain('It is a melancholy object');
+    expect(html).not.toContain('[vi]');
+    expect(html).not.toContain('et-src');
+    expect([...files.keys()].some((k) => k.endsWith('epubtrans.css'))).toBe(false);
+    expect(unzipText(out, 'OEBPS/toc.ncx')).not.toContain('[vi]');
+    expect(unzipText(out, 'OEBPS/content.opf')).toMatch(/<dc:language[^>]*>en<\/dc:language>/);
+    await expect(importBook(out, 'out.epub', env)).resolves.toBeTruthy();
   });
 
   it('keeps untranslated segments as source and keeps list structure intact', async () => {

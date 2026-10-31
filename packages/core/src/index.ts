@@ -3,7 +3,7 @@
  * DOM access goes through an injected DomEnv; HTTP goes through an injectable fetch.
  */
 
-export { EXPORT_MODES, exportEpub } from './export/export-epub';
+export { EXPORT_MODES, exportEpub, HINT_EXPORT_MODES } from './export/export-epub';
 export { detectFormat } from './formats/detect-format';
 export { type ExtractCandidatesOptions, extractGlossaryCandidates, type GlossaryCandidate } from './glossary/extract-candidates';
 export { foldGlossaryKey, GLOSSARY_TERM_TYPES } from './glossary/glossary-entry';
@@ -20,7 +20,7 @@ export { loadProjectFile, saveProjectFile, validateProjectState } from './projec
 export { createProvider } from './providers/create-provider';
 export { ProviderError } from './providers/provider-http';
 export { getProviderPreset, PROVIDER_PRESETS } from './providers/provider-presets';
-export { estimateCost } from './translate/estimate-cost';
+export { estimateCost, priceEstimate } from './translate/estimate-cost';
 export type { GeneratedGuide, GenerateGuideOptions, GuidePhase, GuideProgress } from './translate/generate-guide';
 export { generateGuide } from './translate/generate-guide';
 export { composeGuideline, GENERATED_GUIDELINE_HEADING, GUIDELINE_SECTIONS, type GuidelineSection, splitGuideline } from './translate/generate-guide-guideline';
@@ -40,3 +40,37 @@ export {
   translateSample,
 } from './translate/translate-sample';
 export type * from './types';
+export { lemmatizeEnglish } from './word-hints/english-lemmatizer';
+export { estimateWordHintsCost, type WordHintsEstimate } from './word-hints/estimate-word-hints-cost';
+export {
+  type FrequencyList,
+  parseFrequencyList,
+  UNLISTED_RANK,
+  WORD_FREQUENCY_ATTRIBUTION,
+  WORD_HINT_LANGUAGES,
+  type WordHintLanguage,
+  wordHintLanguage,
+} from './word-hints/frequency-list';
+export {
+  type GenerateWordHintsOptions,
+  type GenerateWordHintsResult,
+  GLOSS_BATCH_SIZE,
+  generateWordHints,
+  type WordHintProgress,
+} from './word-hints/generate-word-hints';
+export {
+  clampHintLevel,
+  DEFAULT_HINT_LEVEL,
+  defaultWordHintSettings,
+  glossLanguageOf,
+  HINT_LEVEL_CEFR,
+  hintRankThreshold,
+  MAX_HINT_LEVEL,
+  MAX_HINTS_PER_CHAPTER_LIMIT,
+  MAX_HINTS_PER_PARAGRAPH_LIMIT,
+  MIN_HINT_LEVEL,
+  WORD_HINT_STYLES,
+  wordHintSettingsOf,
+} from './word-hints/hint-levels';
+export { type HintCandidate, type HintCandidateOccurrence, hintContext, selectHintCandidates } from './word-hints/select-hint-candidates';
+export { type GenerateProjectWordHintsOptions, generateProjectWordHints, planWordHints, type WordHintsPlan } from './word-hints/word-hints-state';
