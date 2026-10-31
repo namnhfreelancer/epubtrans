@@ -14,6 +14,7 @@ import {
 import type { ReactNode } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import {
+  choicesWith,
   DEFAULT_PICKER_COLOR,
   formatByteSize,
   optionalFont,
@@ -117,7 +118,7 @@ function SizeField({
   return (
     <SelectField id={id} label={s('style.size')} value={value === undefined ? '' : String(value)} onChange={onChange}>
       <option value="">{s('style.default')}</option>
-      {choices.map((n) => (
+      {choicesWith(choices, value).map((n) => (
         <option key={n} value={n}>
           {n}%
         </option>
@@ -184,7 +185,7 @@ export function ExportStyleEditor({ project, mode }: { project: Project; mode: E
           onChange={(v) => edit(() => patchStyleGroup(style, 'source', 'opacity', optionalNumber(v)))}
         >
           <option value="">{s('style.default')} (0.55)</option>
-          {STYLE_CHOICES.opacity.map((n) => (
+          {choicesWith(STYLE_CHOICES.opacity, style?.source?.opacity).map((n) => (
             <option key={n} value={n}>
               {n}
             </option>
@@ -242,7 +243,7 @@ export function ExportStyleEditor({ project, mode }: { project: Project; mode: E
           onChange={(v) => edit(() => patchStyleGroup(style, 'translation', 'fontWeight', optionalWeight(v)))}
         >
           <option value="">{s('style.inherit')}</option>
-          {STYLE_CHOICES.weight.map((w) => (
+          {choicesWith(STYLE_CHOICES.weight, style?.translation?.fontWeight).map((w) => (
             <option key={w} value={w}>
               {w === 'normal' || w === 'bold' ? s(`style.weight.${w}`) : w}
             </option>
@@ -268,7 +269,7 @@ export function ExportStyleEditor({ project, mode }: { project: Project; mode: E
         onChange={(v) => edit(() => patchBlockSpacing(style, optionalNumber(v)))}
       >
         <option value="">{s('style.inherit')}</option>
-        {STYLE_CHOICES.spacing.map((n) => (
+        {choicesWith(STYLE_CHOICES.spacing, style?.blockSpacingEm).map((n) => (
           <option key={n} value={n}>
             {n} em
           </option>

@@ -6,7 +6,6 @@ import {
   type GuidelinePresetId,
   getGuidelinePreset,
   importBook,
-  loadProjectFile,
   type Project,
   type ProjectSettings,
 } from '@epubtrans/core';
@@ -18,7 +17,7 @@ import type { Io } from '../io';
 import { translateAndExport } from '../pipeline';
 import { countStatuses } from '../progress';
 import { applyRunFlags, parseExportMode, parseLanguage, selectProvider } from '../settings';
-import { applyStyleFlags } from '../style-flags';
+import { applyStyleFlags, loadProjectFileWithWarnings } from '../style-flags';
 import { assertOutputIsSeparate, defaultOutPath, PROJECT_EXTENSION } from './output-paths';
 import { buildProvider } from './provider-setup';
 
@@ -60,7 +59,7 @@ export async function translateCommand(argv: string[], io: Io): Promise<number> 
   let project: Project;
   let settings: ProjectSettings;
   if (existingBytes) {
-    project = await loadProjectFile(existingBytes);
+    project = await loadProjectFileWithWarnings(existingBytes, projectPath, io);
     const c = countStatuses(project);
     io.err(`Resuming ${projectPath}: ${c.done}/${c.total} segments already translated\n`);
     if (flags.to !== undefined && parseLanguage(flags.to, '--to').toLowerCase() !== project.settings.targetLang.toLowerCase()) {
@@ -92,7 +91,7 @@ export async function translateCommand(argv: string[], io: Io): Promise<number> 
   }
 
   const selection = selectProvider(flags, existingBytes ? project.settings : undefined);
-  settings = await applyStyleFlags(applyWordWiseFlags(applyRunFlags(settings, flags, selection), flags), flags);
+  settings = await applyStyleFlags(applyWordWiseFlags(applyRunFlags(settings, flags, selection), flags), flags, io);
   if (!settings.model) throw new UsageError('--model <id> is required. List the available models with: epubtrans models --provider <id>');
   const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io);
 

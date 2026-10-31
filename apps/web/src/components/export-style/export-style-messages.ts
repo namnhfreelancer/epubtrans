@@ -61,6 +61,7 @@ const en = {
   'templates.exportAll': 'Export all',
   'templates.import': 'Import…',
   'templates.imported': 'Imported {n} templates.',
+  'templates.ignoredKeys': 'Skipped settings this version does not know (the file is from a newer version): {keys}',
   'templates.duplicate': 'A template named “{name}” already exists.',
   'templates.failed': 'Template action failed: {message}',
 } as const;
@@ -122,6 +123,7 @@ const vi: Record<StyleMessageKey, string> = {
   'templates.exportAll': 'Xuất tất cả',
   'templates.import': 'Nhập…',
   'templates.imported': 'Đã nhập {n} mẫu.',
+  'templates.ignoredKeys': 'Đã bỏ qua các thiết lập mà phiên bản này chưa biết (tệp đến từ phiên bản mới hơn): {keys}',
   'templates.duplicate': 'Đã có mẫu tên “{name}”.',
   'templates.failed': 'Thao tác với mẫu thất bại: {message}',
 };

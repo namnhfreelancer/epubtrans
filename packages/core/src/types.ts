@@ -76,7 +76,10 @@ export type ExportFontId = 'serif' | 'sans-serif' | 'monospace' | 'literata' | '
 /** `normal` or `bold`, or a numeric CSS weight (100–900 in steps of 100). */
 export type ExportFontWeight = 'normal' | 'bold' | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
 
-/** Look of the original text in bilingual and `original` exports. Every field is optional: absent inherits. */
+/**
+ * Look of the original text in the bilingual exports (`original` exports keep the book's own look: their text carries no
+ * `et-src` class). Every field is optional: absent inherits.
+ */
 export interface SourceBlockStyle {
   /** `#rrggbb` (validated and normalized; `#rgb` and `rgb(r, g, b)` are accepted as input). */
   color?: string;

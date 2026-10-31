@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { ExportStyleError, exportStylePreset, serializeStyleTemplates } from '@epubtrans/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { STYLE_MESSAGES } from '../src/components/export-style/export-style-messages';
-import { formatByteSize, optionalWeight, patchBlockSpacing, patchStyleGroup } from '../src/lib/export-style-edit';
+import { choicesWith, formatByteSize, ignoredKeysText, optionalWeight, patchBlockSpacing, patchStyleGroup } from '../src/lib/export-style-edit';
 import { ProjectDatabase } from '../src/lib/project-database';
 import { createStyleTemplateStore, DuplicateTemplateNameError, type StyleTemplateStore } from '../src/lib/style-template-store';
 
@@ -48,15 +48,34 @@ describe('style template store', () => {
   it('exports and imports template files, renaming taken names', async () => {
     await store.save('Mine', { translation: { fontWeight: 'bold' } });
     const file = await store.exportJson();
-    const added = await store.importJson(file);
+    const { added, ignoredKeys } = await store.importJson(file);
     expect(added.map((t) => t.name)).toEqual(['Mine (2)']);
+    expect(ignoredKeys).toEqual([]);
     expect((await store.findByName('Mine (2)'))?.style).toEqual({ translation: { fontWeight: 'bold' } });
-    await expect(store.importJson('{"format":"epubtrans-style-templates","version":1,"templates":[{"name":"x","style":{"css":"}"}}]}')).rejects.toBeInstanceOf(
-      ExportStyleError,
-    );
+    await expect(
+      store.importJson('{"format":"epubtrans-style-templates","version":1,"templates":[{"name":"x","style":{"source":{"color":"}"}}}]}'),
+    ).rejects.toBeInstanceOf(ExportStyleError);
     await expect(store.importJson('{}')).rejects.toThrow(/Not an epubtrans style template file/);
     const one = await store.exportJson([(await store.findByName('Mine'))?.id ?? '']);
     expect(one).toBe(serializeStyleTemplates([{ name: 'Mine', style: { translation: { fontWeight: 'bold' } } }]));
+  });
+
+  it('imports files from a newer version without the keys it does not know, and names them', async () => {
+    const newer = `\uFEFF{"format":"epubtrans-style-templates","version":1,"templates":[{"name":"New","style":{"css":"}","hint":{"color":"#000"}}}]}`;
+    const { added, ignoredKeys } = await store.importJson(newer);
+    expect(added.map((t) => t.style)).toEqual([{ hint: { color: '#000000' } }]);
+    expect(ignoredKeys).toEqual(['templates[0].style.css']);
+    expect(ignoredKeysText(['a', 'b', 'c'], 2)).toBe('a, b (+1)');
+  });
+});
+
+describe('style editor choices', () => {
+  it('include a valid value set elsewhere, so the select does not fall back to "Default"', () => {
+    expect(choicesWith([90, 100, 110], 113)).toEqual([90, 100, 110, 113]);
+    expect(choicesWith([90, 100, 110], 95)).toEqual([90, 95, 100, 110]);
+    expect(choicesWith([90, 100], 100)).toEqual([90, 100]);
+    expect(choicesWith([90, 100], undefined)).toEqual([90, 100]);
+    expect(choicesWith<string | number>(['normal', 'bold', 300], 800)).toEqual(['normal', 'bold', 300, 800]);
   });
 });
 

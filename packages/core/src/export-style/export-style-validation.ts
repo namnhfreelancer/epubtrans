@@ -2,8 +2,10 @@ import type { ExportFontId, ExportFontWeight, ExportStyle, ExportStylePresetId, 
 import { EXPORT_FONT_IDS } from './embedded-fonts';
 
 /**
- * Strict validation of untrusted export styles (project files, IndexedDB, template files, `--style-file`, agent input).
- * Unknown keys, wrong types and out-of-range values are rejected with a message naming the field; nothing is clamped.
+ * Validation of untrusted export styles (project files, IndexedDB, template files, `--style-file`, agent input). Wrong
+ * types and out-of-range values are always rejected with a message naming the field; nothing is clamped. Unknown keys
+ * are rejected too, unless the caller passes an {@link IgnoredKeyHandler}: files a newer version wrote (project files,
+ * template files, `--style-file`) then lose only the keys this version does not know, and the caller tells the user.
  * Colors are normalized to `#rrggbb`, so only digits and letters a–f ever reach the stylesheet: a value cannot close a
  * CSS rule, start a comment or reference a URL.
  */
@@ -21,6 +23,9 @@ export const STYLE_LIMITS = {
   blockSpacingEm: { min: 0, max: 3 },
 } as const;
 
+/** Receives the path (like `style.source.shadow`) of each unknown key that was dropped instead of rejected. */
+export type IgnoredKeyHandler = (path: string) => void;
+
 type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -28,9 +33,16 @@ function fail(path: string, expected: string): never {
   throw new ExportStyleError(`Invalid export style: ${path} must be ${expected}`);
 }
 
-function object(v: unknown, path: string, keys: readonly string[]): Json {
+/** Shortens an untrusted key for messages. */
+export const keyLabel = (key: string): string => key.slice(0, 40);
+
+function object(v: unknown, path: string, keys: readonly string[], onIgnoredKey: IgnoredKeyHandler | undefined): Json {
   if (!isObj(v)) fail(path, 'an object');
-  for (const key of Object.keys(v)) if (!keys.includes(key)) fail(`${path}.${key.slice(0, 40)}`, `one of the known keys (${keys.join(', ')})`);
+  for (const key of Object.keys(v)) {
+    if (keys.includes(key)) continue;
+    if (!onIgnoredKey) fail(`${path}.${keyLabel(key)}`, `one of the known keys (${keys.join(', ')})`);
+    onIgnoredKey(`${path}.${keyLabel(key)}`);
+  }
   return v;
 }
 
@@ -84,8 +96,8 @@ function compact<T extends object>(o: T): T | undefined {
   return entries.length > 0 ? (Object.fromEntries(entries) as T) : undefined;
 }
 
-function sourceStyle(v: unknown, path: string): SourceBlockStyle | undefined {
-  const o = object(v, path, ['color', 'opacity', 'fontSizePercent', 'italic', 'font']);
+function sourceStyle(v: unknown, path: string, onIgnoredKey: IgnoredKeyHandler | undefined): SourceBlockStyle | undefined {
+  const o = object(v, path, ['color', 'opacity', 'fontSizePercent', 'italic', 'font'], onIgnoredKey);
   return compact<SourceBlockStyle>({
     color: color(o, 'color', path),
     opacity: number(o, 'opacity', path, STYLE_LIMITS.opacity, false),
@@ -95,8 +107,8 @@ function sourceStyle(v: unknown, path: string): SourceBlockStyle | undefined {
   });
 }
 
-function translationStyle(v: unknown, path: string): TranslationBlockStyle | undefined {
-  const o = object(v, path, ['color', 'font', 'fontWeight', 'fontSizePercent']);
+function translationStyle(v: unknown, path: string, onIgnoredKey: IgnoredKeyHandler | undefined): TranslationBlockStyle | undefined {
+  const o = object(v, path, ['color', 'font', 'fontWeight', 'fontSizePercent'], onIgnoredKey);
   return compact<TranslationBlockStyle>({
     color: color(o, 'color', path),
     font: oneOf<ExportFontId>(o, 'font', path, EXPORT_FONT_IDS),
@@ -105,8 +117,8 @@ function translationStyle(v: unknown, path: string): TranslationBlockStyle | und
   });
 }
 
-function hintStyle(v: unknown, path: string): HintBlockStyle | undefined {
-  const o = object(v, path, ['color', 'fontSizePercent']);
+function hintStyle(v: unknown, path: string, onIgnoredKey: IgnoredKeyHandler | undefined): HintBlockStyle | undefined {
+  const o = object(v, path, ['color', 'fontSizePercent'], onIgnoredKey);
   return compact<HintBlockStyle>({
     color: color(o, 'color', path),
     fontSizePercent: number(o, 'fontSizePercent', path, STYLE_LIMITS.hintFontSizePercent, true),
@@ -115,16 +127,17 @@ function hintStyle(v: unknown, path: string): HintBlockStyle | undefined {
 
 /**
  * Validates an untrusted export style and returns a clean copy (colors normalized, empty groups dropped). Throws
- * {@link ExportStyleError} naming the first invalid field. `path` prefixes the field names in messages.
+ * {@link ExportStyleError} naming the first invalid field. `path` prefixes the field names in messages. With
+ * `onIgnoredKey`, unknown keys are dropped and reported instead of rejected.
  */
-export function validateExportStyle(input: unknown, path = 'style'): ExportStyle {
-  const o = object(input, path, ['preset', 'source', 'translation', 'blockSpacingEm', 'hint']);
+export function validateExportStyle(input: unknown, path = 'style', onIgnoredKey?: IgnoredKeyHandler): ExportStyle {
+  const o = object(input, path, ['preset', 'source', 'translation', 'blockSpacingEm', 'hint'], onIgnoredKey);
   const style = compact<ExportStyle>({
     preset: oneOf<ExportStylePresetId>(o, 'preset', path, EXPORT_STYLE_PRESET_IDS),
-    source: o.source === undefined ? undefined : sourceStyle(o.source, `${path}.source`),
-    translation: o.translation === undefined ? undefined : translationStyle(o.translation, `${path}.translation`),
+    source: o.source === undefined ? undefined : sourceStyle(o.source, `${path}.source`, onIgnoredKey),
+    translation: o.translation === undefined ? undefined : translationStyle(o.translation, `${path}.translation`, onIgnoredKey),
     blockSpacingEm: number(o, 'blockSpacingEm', path, STYLE_LIMITS.blockSpacingEm, false),
-    hint: o.hint === undefined ? undefined : hintStyle(o.hint, `${path}.hint`),
+    hint: o.hint === undefined ? undefined : hintStyle(o.hint, `${path}.hint`, onIgnoredKey),
   });
   return style ?? {};
 }

@@ -1,6 +1,7 @@
 import { repository } from '../lib/app-services';
 import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
 import { deleteBookFromDevice } from '../lib/delete-book-from-device';
+import { ignoredKeysText } from '../lib/export-style-edit';
 import { dialogText } from '../lib/format';
 import { BookImportError, isProjectFileName, readProjectFromFile } from '../lib/import-book-file';
 import { pushNotice } from '../lib/notices';
@@ -54,8 +55,9 @@ export function libraryTools(ctx: ToolContext): ToolSpec[] {
         const file = await fetchBookFromUrl(ctx, url, signal);
         if (isFailure(file)) return file;
         let project: Awaited<ReturnType<typeof readProjectFromFile>>;
+        const ignoredKeys: string[] = [];
         try {
-          project = await readProjectFromFile(file);
+          project = await readProjectFromFile(file, { onIgnoredKey: (key) => ignoredKeys.push(key) });
         } catch (err) {
           const kind = err instanceof BookImportError ? err.kind : 'generic';
           return fail(`${englishMessage(`import.error.${kind}`)} (${clip(err instanceof Error ? err.message : String(err), 200)})`);
@@ -65,6 +67,7 @@ export function libraryTools(ctx: ToolContext): ToolSpec[] {
         }
         await addProject(project);
         pushNotice('success', ctx.t('library.imported', { title: project.title }));
+        if (ignoredKeys.length > 0) pushNotice('info', ctx.t('library.ignoredStyleKeys', { title: project.title, keys: ignoredKeysText(ignoredKeys) }), 10_000);
         ctx.navigate({ name: 'book', id: project.id, tab: 'setup' });
         return ok({
           bookId: project.id,

@@ -2,6 +2,7 @@ import { MAX_STYLE_FILE_BYTES, MAX_TEMPLATE_NAME_LENGTH, type Project } from '@e
 import { useRef, useState } from 'react';
 import { styleTemplates } from '../../lib/app-services';
 import { downloadBytes } from '../../lib/download-file';
+import { ignoredKeysText } from '../../lib/export-style-edit';
 import { dialogText } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
 import { updateSettings } from '../../lib/project-store';
@@ -74,8 +75,9 @@ export function StyleTemplateManager({ project }: { project: Project }) {
     act(async () => {
       if (!file) return;
       if (file.size > MAX_STYLE_FILE_BYTES) throw new Error(`larger than ${MAX_STYLE_FILE_BYTES / 1024} KB`);
-      const added = await styleTemplates.importJson(await file.text());
+      const { added, ignoredKeys } = await styleTemplates.importJson(await file.text());
       pushNotice('success', s('templates.imported', { n: added.length }));
+      if (ignoredKeys.length > 0) pushNotice('info', s('templates.ignoredKeys', { keys: ignoredKeysText(ignoredKeys) }), 10_000);
     });
 
   return (

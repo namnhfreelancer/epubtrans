@@ -54,7 +54,7 @@ export async function hintsCommand(argv: string[], io: Io): Promise<number> {
   const { project, projectPath } = opened;
 
   const selection = selectProvider(flags, opened.existing ? project.settings : undefined);
-  const settings = await applyStyleFlags(applyHintsCommandFlags(applyRunFlags(opened.settings, flags, selection), flags), flags);
+  const settings = await applyStyleFlags(applyHintsCommandFlags(applyRunFlags(opened.settings, flags, selection), flags), flags, io);
   if (!settings.model) throw new UsageError('--model <id> is required. List the available models with: epubtrans models --provider <id>');
   const lang = wordHintLanguage(settings.sourceLang);
   if (!lang) {

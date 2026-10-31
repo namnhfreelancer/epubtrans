@@ -27,14 +27,28 @@ export function addManifestItem(pkg: PackageInfo, id: string, path: string, medi
   manifest.appendChild(item);
 }
 
-/** Appends a linear spine entry for manifest item `id` (cloned from an existing itemref, like manifest items). */
-export function appendSpineItem(pkg: PackageInfo, id: string): boolean {
+/**
+ * Appends a linear spine entry for manifest item `id` (cloned from an existing itemref, like manifest items), with the
+ * given `properties` when set.
+ */
+export function appendSpineItem(pkg: PackageInfo, id: string, properties?: string): boolean {
   const spine = firstByLocalName(pkg.opf, 'spine');
   const sample = spine ? byLocalName(spine, 'itemref')[0] : undefined;
   if (!spine || !sample) return false;
   const ref = sample.cloneNode(false) as Element;
   for (const attr of Array.from(ref.attributes)) ref.removeAttribute(attr.name);
   ref.setAttribute('idref', id);
+  if (properties) ref.setAttribute('properties', properties);
   spine.appendChild(ref);
   return true;
+}
+
+/** Removes manifest item `id` and every spine entry pointing at it, from the package document and from `pkg`. */
+export function removePackageItem(pkg: PackageInfo, id: string): void {
+  const manifest = firstByLocalName(pkg.opf, 'manifest');
+  const spine = firstByLocalName(pkg.opf, 'spine');
+  for (const item of manifest ? byLocalName(manifest, 'item') : []) if (item.getAttribute('id') === id) item.parentNode?.removeChild(item);
+  for (const ref of spine ? byLocalName(spine, 'itemref') : []) if (ref.getAttribute('idref') === id) ref.parentNode?.removeChild(ref);
+  pkg.manifest = pkg.manifest.filter((m) => m.id !== id);
+  pkg.spine = pkg.spine.filter((m) => m.id !== id);
 }

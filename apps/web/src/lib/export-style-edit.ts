@@ -60,3 +60,20 @@ export function formatByteSize(bytes: number, locale: string): string {
   const value = mb ? bytes / 1_000_000 : Math.max(1, Math.round(bytes / 1000));
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: mb ? 1 : 0 }).format(value)} ${mb ? 'MB' : 'KB'}`;
 }
+
+/**
+ * The editor's choices plus the current value when it is not one of them (a template, a project file or the CLI may
+ * set any valid value, like 113%), so the `<select>` shows that value instead of falling back to "Default". Numbers
+ * stay sorted; other values are appended.
+ */
+export function choicesWith<T extends string | number>(choices: readonly T[], value: T | undefined): readonly T[] {
+  if (value === undefined || choices.includes(value)) return choices;
+  if (typeof value !== 'number' || choices.some((c) => typeof c !== 'number')) return [...choices, value];
+  return [...choices, value].sort((a, b) => (a as number) - (b as number));
+}
+
+/** Unknown keys left out of an imported file, for a notice: the first few, then how many more. */
+export function ignoredKeysText(keys: readonly string[], max = 6): string {
+  const shown = keys.slice(0, max).join(', ');
+  return keys.length > max ? `${shown} (+${keys.length - max})` : shown;
+}

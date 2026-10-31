@@ -1,5 +1,5 @@
 import { strFromU8, strToU8 } from 'fflate';
-import { ExportStyleError, validateExportStyle } from '../export-style/export-style-validation';
+import { ExportStyleError, type IgnoredKeyHandler, validateExportStyle } from '../export-style/export-style-validation';
 import { isGlossaryTermType } from '../glossary/glossary-entry';
 import type {
   Chapter,
@@ -41,7 +41,16 @@ export async function saveProjectFile(project: Project): Promise<Uint8Array> {
   );
 }
 
-export async function loadProjectFile(bytes: Uint8Array): Promise<Project> {
+/** Options for reading project state. */
+export interface LoadProjectOptions {
+  /**
+   * Called with the path of each unknown key dropped from `settings.exportStyle` (a newer version may add style fields;
+   * the project still loads). Invalid style values still fail the load.
+   */
+  onIgnoredKey?: IgnoredKeyHandler;
+}
+
+export async function loadProjectFile(bytes: Uint8Array, options: LoadProjectOptions = {}): Promise<Project> {
   const files = readZip(bytes);
   const json = files.get(PROJECT_JSON);
   const sourceEpub = files.get(SOURCE_EPUB);
@@ -52,7 +61,7 @@ export async function loadProjectFile(bytes: Uint8Array): Promise<Project> {
   } catch {
     throw new Error('project.json is not valid JSON');
   }
-  return { ...validateProjectState(state), sourceEpub };
+  return { ...validateProjectState(state, options), sourceEpub };
 }
 
 type Json = Record<string, unknown>;
@@ -82,7 +91,7 @@ function obj(v: unknown, path: string): Json {
 }
 
 /** Validates untrusted project state (project file, IndexedDB) and returns a clean copy. */
-export function validateProjectState(input: unknown): Omit<Project, 'sourceEpub'> {
+export function validateProjectState(input: unknown, options: LoadProjectOptions = {}): Omit<Project, 'sourceEpub'> {
   const p = obj(input, 'project');
   if (p.schemaVersion !== 1) throw new Error(`Unsupported project schema version: ${String(p.schemaVersion)}`);
   const author = optStr(p, 'author', 'project');
@@ -95,7 +104,7 @@ export function validateProjectState(input: unknown): Omit<Project, 'sourceEpub'
     ...(author !== undefined ? { author } : {}),
     createdAt: str(p, 'createdAt', 'project'),
     updatedAt: str(p, 'updatedAt', 'project'),
-    settings: validateSettings(obj(p.settings, 'project.settings')),
+    settings: validateSettings(obj(p.settings, 'project.settings'), options.onIgnoredKey),
     chapters: arr(p, 'chapters', 'project').map((c, i) => validateChapter(obj(c, `chapters[${i}]`), `chapters[${i}]`)),
     ...(lastSample !== undefined ? { lastSample } : {}),
     ...(wordHints !== undefined ? { wordHints } : {}),
@@ -119,14 +128,14 @@ function validateSample(s: Json): SampleSelection {
   };
 }
 
-function validateSettings(s: Json): ProjectSettings {
+function validateSettings(s: Json, onIgnoredKey: IgnoredKeyHandler | undefined): ProjectSettings {
   const path = 'settings';
   if (typeof s.twoPass !== 'boolean') fail(`${path}.twoPass`, 'a boolean');
   const concurrency = optNum(s, 'concurrency', path) ?? fail(`${path}.concurrency`, 'a number');
   const priceInPerM = optNum(s, 'priceInPerM', path);
   const priceOutPerM = optNum(s, 'priceOutPerM', path);
   const wordHints = s.wordHints === undefined || s.wordHints === null ? undefined : validateWordHintSettings(obj(s.wordHints, `${path}.wordHints`));
-  const exportStyle = s.exportStyle === undefined || s.exportStyle === null ? undefined : validateStyleSetting(s.exportStyle);
+  const exportStyle = s.exportStyle === undefined || s.exportStyle === null ? undefined : validateStyleSetting(s.exportStyle, onIgnoredKey);
   if (s.attribution !== undefined && typeof s.attribution !== 'boolean') fail(`${path}.attribution`, 'a boolean');
   return {
     sourceLang: str(s, 'sourceLang', path),
@@ -147,10 +156,13 @@ function validateSettings(s: Json): ProjectSettings {
   };
 }
 
-/** Export styles are validated strictly (they end up in the book's CSS); the message names the bad field. */
-function validateStyleSetting(value: unknown): ExportStyle {
+/**
+ * Export style values are validated strictly (they end up in the book's CSS); the message names the bad field. Unknown
+ * keys are dropped instead, so a project saved by a newer version still opens (its translations stay reachable).
+ */
+function validateStyleSetting(value: unknown, onIgnoredKey: IgnoredKeyHandler | undefined): ExportStyle {
   try {
-    return validateExportStyle(value, 'settings.exportStyle');
+    return validateExportStyle(value, 'settings.exportStyle', onIgnoredKey ?? (() => {}));
   } catch (err) {
     if (err instanceof ExportStyleError) throw new Error(`Invalid project file: ${err.message.replace(/^Invalid export style: /, '')}`);
     throw err;

@@ -21,6 +21,7 @@ export const WORD_WISE_FLAGS = {
 export const STYLE_FLAGS = {
   'style-file': { type: 'string' },
   attribution: { type: 'boolean' },
+  'no-attribution': { type: 'boolean' },
 } as const satisfies FlagSpecs;
 
 export const RUN_FLAGS = {

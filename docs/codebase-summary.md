@@ -63,7 +63,7 @@ Bun workspaces monorepo (`packages/*`, `apps/*`), TypeScript strict, Biome for l
 
 ## Test fixtures
 
-`packages/core/test/fixtures` holds public-domain books used by core and CLI tests: `a-modest-proposal.epub` (Project Gutenberg #1080), the same book as `.mobi` and `.azw3`, and `aesop-fables.fb2`. `test/epub2-fixture.ts` generates a small valid EPUB 2 book (OPF 2.0, NCX, XHTML 1.1); `export:samples` exports all of them, including every style preset and a styled export with embedded fonts and the attribution page, for epubcheck in CI. The CLI tests start a local OpenAI-compatible HTTP server (`Bun.serve` on an ephemeral port) and drive `translate`, interruption, `resume` and `export` against it.
+`packages/core/test/fixtures` holds public-domain books used by core and CLI tests: `a-modest-proposal.epub` (Project Gutenberg #1080), the same book as `.mobi` and `.azw3`, and `aesop-fables.fb2`. `test/epub2-fixture.ts` generates a small valid EPUB 2 book (OPF 2.0, NCX, XHTML 1.1) and `test/fixed-layout-fixture.ts` a fixed-layout EPUB 3 book; `export:samples` exports all of them, including every style preset and a styled export with embedded fonts and the attribution page, for epubcheck in CI. The CLI tests start a local OpenAI-compatible HTTP server (`Bun.serve` on an ephemeral port) and drive `translate`, interruption, `resume` and `export` against it.
 
 ## Key dependencies
 

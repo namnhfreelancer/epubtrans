@@ -45,8 +45,11 @@ export interface StyleTemplateStore {
   save(name: string, style: ExportStyle, options?: { overwrite?: boolean }): Promise<SavedStyleTemplate>;
   rename(id: string, name: string): Promise<void>;
   remove(id: string): Promise<void>;
-  /** Adds the templates of a template file (validated); taken names get a " (2)" suffix. Returns what was added. */
-  importJson(text: string): Promise<SavedStyleTemplate[]>;
+  /**
+   * Adds the templates of a template file (validated); taken names get a " (2)" suffix. Returns what was added, and the
+   * keys this version does not know that were left out (the file came from a newer version), for the user to see.
+   */
+  importJson(text: string): Promise<{ added: SavedStyleTemplate[]; ignoredKeys: string[] }>;
   /** A template file with the given templates (all when `ids` is omitted). */
   exportJson(ids?: readonly string[]): Promise<string>;
 }
@@ -98,18 +101,19 @@ export function createStyleTemplateStore(db: ProjectDatabase): StyleTemplateStor
       await db.styleTemplates.delete(id);
     },
     async importJson(text) {
-      const templates = parseStyleTemplatesJson(text);
-      return db.transaction('rw', db.styleTemplates, async () => {
+      const { templates, ignoredKeys } = parseStyleTemplatesJson(text);
+      const added = await db.transaction('rw', db.styleTemplates, async () => {
         const taken = (await db.styleTemplates.toArray()).map((t) => t.name);
-        const added: SavedStyleTemplate[] = [];
+        const rows: SavedStyleTemplate[] = [];
         for (const t of templates) {
           const row: StyleTemplateRow = { id: randomId(), name: freeName(t.name, taken), style: t.style, updatedAt: new Date().toISOString() };
           taken.push(row.name);
           await db.styleTemplates.put(row);
-          added.push({ ...row });
+          rows.push({ ...row });
         }
-        return added;
+        return rows;
       });
+      return { added, ignoredKeys };
     },
     async exportJson(ids) {
       const all = await list();

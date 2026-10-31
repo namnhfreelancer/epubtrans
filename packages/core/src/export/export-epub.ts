@@ -121,7 +121,7 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
   stripActiveContentFromPackage(files, renditions, sanitized, env);
   // Added after sanitizing: the attribution page and the font files are generated here, never taken from the book.
   const attribution = wantsAttribution(project, mode);
-  if (attribution) addAttributionPage(files, pkg, project, cssPath, xmlLangOnly);
+  if (attribution) addAttributionPage(files, pkg, project, cssPath, env);
   const withCss = bilingual || linked.size > 0 || attribution;
   updateOpf(pkg, project, mode, withCss ? cssPath : undefined);
   // Other renditions that share a document linking the stylesheet list it, and the fonts it loads, too.

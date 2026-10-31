@@ -10,13 +10,39 @@ import { freePackageId } from './manifest-items';
 /** Namespace of epubtrans export identifiers (a fixed random UUID; changing it would change every exported id). */
 const EXPORT_ID_NAMESPACE = '6f0d3c9e-2b1a-4e57-9c8d-5a4b3e2f1d07';
 
-/** The package's unique identifier: the `dc:identifier` its `unique-identifier` names, else the first one. */
-export function sourceIdentifier(pkg: PackageInfo): string | undefined {
+const ID_ELEMENT_NAME = 'epubtrans-uid';
+const GENERATED_ID_ELEMENT = /^epubtrans-uid(?:-\d+)?$/;
+
+const identifiersOf = (pkg: PackageInfo): Element[] => {
   const metadata = firstByLocalName(pkg.opf, 'metadata');
-  const ids = metadata ? byLocalName(metadata, 'identifier') : [];
+  return metadata ? byLocalName(metadata, 'identifier') : [];
+};
+
+/** The `dc:identifier` the package's `unique-identifier` names, else the first one. */
+function uniqueIdentifierElement(pkg: PackageInfo): Element | undefined {
+  const ids = identifiersOf(pkg);
   const uid = pkg.opf.documentElement.getAttribute('unique-identifier');
-  const named = uid ? ids.find((el) => el.getAttribute('id') === uid) : undefined;
-  return textOf(named ?? ids[0]).trim() || undefined;
+  return (uid ? ids.find((el) => el.getAttribute('id') === uid) : undefined) ?? ids[0];
+}
+
+/** An identifier an earlier epubtrans export generated (the book being exported is itself an epubtrans export). */
+const isGeneratedIdentifier = (el: Element): boolean => GENERATED_ID_ELEMENT.test(el.getAttribute('id') ?? '') && textOf(el).trim().startsWith('urn:uuid:');
+
+/**
+ * The source book's identifier: the `dc:identifier` its `unique-identifier` names, else the first one. When that is an
+ * identifier an earlier epubtrans export generated, the original book's identifier is used instead (the one that
+ * export recorded as `dc:source`, else the first identifier it kept), so exporting an export again stays stable.
+ */
+export function sourceIdentifier(pkg: PackageInfo): string | undefined {
+  const unique = uniqueIdentifierElement(pkg);
+  if (!unique || !isGeneratedIdentifier(unique)) return textOf(unique).trim() || undefined;
+  const kept = identifiersOf(pkg)
+    .filter((el) => !isGeneratedIdentifier(el))
+    .map((el) => textOf(el).trim())
+    .filter(Boolean);
+  const metadata = firstByLocalName(pkg.opf, 'metadata');
+  const sources = new Set((metadata ? byLocalName(metadata, 'source') : []).map((el) => textOf(el).trim()));
+  return kept.find((id) => sources.has(id)) ?? kept[0];
 }
 
 /**
@@ -31,16 +57,16 @@ export function exportIdentifier(sourceId: string, targetLang: string, mode: Exp
 /**
  * Gives every rendition the export's own `dc:identifier` and points `unique-identifier` (and the NCX `dtb:uid`) at it.
  * The source identifiers stay as additional `dc:identifier`s, and the source id is added as `dc:source` unless one
- * already says so. Books with obfuscated fonts (anything listed in META-INF/encryption.xml) keep their identifier:
+ * already says so. An identifier an earlier epubtrans export generated is reused (given the new value), not repeated. Books with obfuscated fonts (anything listed in META-INF/encryption.xml) keep their identifier:
  * the obfuscation key is derived from it, so a new one would turn the fonts into garbage. Returns the identifier the
  * export carries.
  */
 export function applyExportIdentifier(files: FileMap, renditions: readonly PackageInfo[], project: Project, mode: ExportMode, env: DomEnv): string | undefined {
   const primary = renditions[0];
   if (!primary) return undefined;
-  const sourceId = sourceIdentifier(primary);
-  if (readEncryptedPaths(files, env).size > 0) return sourceId;
-  const id = exportIdentifier(sourceId ?? project.title, project.settings.targetLang, mode);
+  // The obfuscation key is derived from the package's actual unique identifier, whatever made it.
+  if (readEncryptedPaths(files, env).size > 0) return textOf(uniqueIdentifierElement(primary)).trim() || undefined;
+  const id = exportIdentifier(sourceIdentifier(primary) ?? project.title, project.settings.targetLang, mode);
   for (const pkg of renditions) setPackageIdentifier(pkg, id);
   for (const pkg of renditions) if (pkg.ncx && files.has(pkg.ncx.path)) setNcxUid(files, pkg.ncx.path, id, env);
   return id;
@@ -54,12 +80,14 @@ function setPackageIdentifier(pkg: PackageInfo, id: string): void {
   // A dc element with the package's own prefix binding, so EPUB 2 and EPUB 3 serializations stay alike.
   const sample = byLocalName(metadata, 'identifier')[0] ?? byLocalName(metadata, 'title')[0];
   const qualified = (local: string) => (sample?.prefix ? `${sample.prefix}:${local}` : `dc:${local}`);
-  const element = doc.createElementNS(NS.DC, qualified('identifier'));
-  const elementId = freePackageId(pkg, 'epubtrans-uid');
-  element.setAttribute('id', elementId);
+  let element = identifiersOf(pkg).find(isGeneratedIdentifier);
+  if (!element) {
+    element = doc.createElementNS(NS.DC, qualified('identifier'));
+    element.setAttribute('id', freePackageId(pkg, ID_ELEMENT_NAME));
+    metadata.insertBefore(element, metadata.firstChild);
+  }
   element.textContent = id;
-  metadata.insertBefore(element, metadata.firstChild);
-  doc.documentElement.setAttribute('unique-identifier', elementId);
+  doc.documentElement.setAttribute('unique-identifier', element.getAttribute('id') as string);
   if (previous && !byLocalName(metadata, 'source').some((s) => textOf(s).trim() === previous)) {
     const source = doc.createElementNS(NS.DC, qualified('source'));
     source.textContent = previous;

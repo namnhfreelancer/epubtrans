@@ -17,6 +17,7 @@ export const vi: Record<MessageKey, string> = {
   'library.choose': 'Chọn tệp',
   'library.importing': 'Đang nhập {name}…',
   'library.imported': 'Đã nhập “{title}”',
+  'library.ignoredStyleKeys': '“{title}”: đã bỏ qua các thiết lập kiểu trình bày mà phiên bản này chưa biết (dự án đến từ phiên bản mới hơn): {keys}',
   'library.empty': 'Chưa có sách nào. Hãy thêm một cuốn để bắt đầu.',
   'library.open': 'Mở',
   'library.exportProject': 'Xuất dự án',

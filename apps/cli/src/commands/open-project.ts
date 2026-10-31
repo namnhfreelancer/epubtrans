@@ -1,9 +1,10 @@
-import { createDefaultSettings, detectLanguage, importBook, loadProjectFile, type Project, type ProjectSettings } from '@epubtrans/core';
+import { createDefaultSettings, detectLanguage, importBook, type Project, type ProjectSettings } from '@epubtrans/core';
 import { UsageError } from '../args';
 import { domEnv } from '../dom-env';
 import type { Io } from '../io';
 import { countStatuses } from '../progress';
 import { parseLanguage } from '../settings';
+import { loadProjectFileWithWarnings } from '../style-flags';
 import { PROJECT_EXTENSION } from './output-paths';
 import { readBytes } from './translate';
 
@@ -32,7 +33,7 @@ export async function openProject(
   if (existingBytes) {
     let project: Project;
     try {
-      project = await loadProjectFile(existingBytes);
+      project = await loadProjectFileWithWarnings(existingBytes, projectPath, io);
     } catch (err) {
       throw new UsageError(`${projectPath} is not a valid epubtrans project: ${err instanceof Error ? err.message : String(err)}`);
     }

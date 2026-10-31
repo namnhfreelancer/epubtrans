@@ -15,6 +15,7 @@ export const en = {
   'library.choose': 'Choose a file',
   'library.importing': 'Importing {name}…',
   'library.imported': 'Imported “{title}”',
+  'library.ignoredStyleKeys': '“{title}”: skipped book style settings this version does not know (the project is from a newer version): {keys}',
   'library.empty': 'No books yet. Add one to get started.',
   'library.open': 'Open',
   'library.exportProject': 'Export project',

@@ -24,6 +24,7 @@ export {
   EXPORT_FONT_WEIGHTS,
   EXPORT_STYLE_PRESET_IDS,
   ExportStyleError,
+  type IgnoredKeyHandler,
   normalizeColor,
   STYLE_LIMITS,
   validateExportStyle,
@@ -32,6 +33,8 @@ export {
   MAX_STYLE_FILE_BYTES,
   MAX_TEMPLATE_NAME_LENGTH,
   MAX_TEMPLATES_PER_FILE,
+  type ParsedStyleFile,
+  type ParsedStyleTemplates,
   parseStyleFile,
   parseStyleTemplatesJson,
   serializeStyleTemplates,
@@ -50,7 +53,7 @@ export { lookupModelPricing } from './pricing/lookup-model-pricing';
 export { DEFAULT_PRICING_SOURCES, liteLlmSource, openRouterSource } from './pricing/pricing-sources';
 export type { LookupModelPricingOptions, ModelPricing, PricingEntry, PricingSource, PricingSourceId } from './pricing/pricing-types';
 export { createDefaultSettings, DEFAULT_CONCURRENCY } from './project/default-settings';
-export { loadProjectFile, saveProjectFile, validateProjectState } from './project/project-file';
+export { type LoadProjectOptions, loadProjectFile, saveProjectFile, validateProjectState } from './project/project-file';
 export { createProvider } from './providers/create-provider';
 export { ProviderError } from './providers/provider-http';
 export { getProviderPreset, PROVIDER_PRESETS } from './providers/provider-presets';

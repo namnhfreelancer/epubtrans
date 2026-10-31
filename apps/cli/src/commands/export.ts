@@ -13,7 +13,7 @@ import { assertOutputIsSeparate, defaultOutPath } from './output-paths';
 import { readProjectFile } from './resume';
 
 const USAGE =
-  'epubtrans export <file.epubtrans> [--mode bilingual|bilingual-translation-first|translation-only|original] [--out file.epub] [--word-wise] [hint options] [--style-file style.json] [--attribution]';
+  'epubtrans export <file.epubtrans> [--mode bilingual|bilingual-translation-first|translation-only|original] [--out file.epub] [--word-wise] [hint options] [--style-file style.json] [--attribution | --no-attribution]';
 
 /**
  * Builds the EPUB from a project as it stands; untranslated segments keep their source text. Word Wise and style flags
@@ -23,8 +23,8 @@ export async function exportCommand(argv: string[], io: Io): Promise<number> {
   const { positionals, flags } = parseArgs(argv, EXPORT_FLAGS);
   const [file] = expectPositionals(positionals, 1, USAGE) as [string];
   const mode = parseExportMode(flags.mode);
-  const project = await readProjectFile(file);
-  const settings = await applyStyleFlags(applyWordWiseFlags(project.settings, flags), flags);
+  const project = await readProjectFile(file, io);
+  const settings = await applyStyleFlags(applyWordWiseFlags(project.settings, flags), flags, io);
   const outPath = flags.out ?? defaultOutPath(file, mode === 'original' ? 'original' : project.settings.targetLang);
   assertOutputIsSeparate(outPath, file);
   const note = wordWiseExportNote(project, settings, mode, file);

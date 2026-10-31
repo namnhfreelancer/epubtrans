@@ -1,9 +1,9 @@
 /**
- * Writes every fixture book (plus a generated EPUB 2 book), translated by the echo test translator, in every export mode
+ * Writes every fixture book (plus a generated EPUB 2 book and a generated fixed-layout EPUB 3 book), translated by the echo test translator, in every export mode
  * to `test-output/`, plus the hint-capable modes with Word Wise hints (glossed by a mock model) in the ruby and the
  * inline style, with an XML-invalid character planted in one gloss and one translation (raw and as character
  * references). Styled exports follow: every preset, and a custom style with two embedded fonts and the attribution page
- * in every mode. CI runs epubcheck over the result to prove exported EPUBs are valid.
+ * in every mode, and one such export exported again. CI runs epubcheck over the result to prove exported EPUBs are valid.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -20,11 +20,13 @@ import {
   translateProject,
 } from '../src';
 import { buildEpub2Book } from '../test/epub2-fixture';
+import { buildFixedLayoutBook } from '../test/fixed-layout-fixture';
 import { answerAll, env, glossProvider, loadFontFile, mockProvider, readFixture, readFrequencyList } from '../test/test-helpers';
 
 const FIXTURES: [string, Uint8Array][] = [
   ...['a-modest-proposal.epub', 'a-modest-proposal.mobi', 'a-modest-proposal.azw3', 'aesop-fables.fb2'].map((n): [string, Uint8Array] => [n, readFixture(n)]),
   ['epub2-sample.epub', buildEpub2Book()],
+  ['fixed-layout-sample.epub', buildFixedLayoutBook()],
 ];
 
 /** Every style field set, with a bundled font for each block (two fonts embedded). */
@@ -54,10 +56,10 @@ for (const [name, bytes] of FIXTURES) {
   await generateProjectWordHints(project, plan, glossProvider(), project.settings);
   // XML-invalid characters, as a crafted project file or a misbehaving model could store them: export must drop them.
   const glossed = project.wordHints?.entries.find((e) => e.senses.length > 0);
-  if (glossed?.senses[0]) glossed.senses[0].gloss += '￿';
+  if (glossed?.senses[0]) glossed.senses[0].gloss += '\uFFFF';
   const translated = project.chapters.flatMap((c) => c.segments).find((s) => s.translationHtml);
   // Also as character references, which the HTML parser decodes into raw characters.
-  if (translated) translated.translationHtml = `${translated.translationHtml}￾&#xFFFE;<span title="a&#1;b">c&#1;d</span>`;
+  if (translated) translated.translationHtml = `${translated.translationHtml}\uFFFE&#xFFFE;<span title="a&#1;b">c&#1;d</span>`;
   for (const style of ['ruby', 'inline'] as const) {
     const wordHints = { enabled: true, level: 5, style, maxPerParagraph: 3, perChapter: 2 };
     for (const mode of HINT_EXPORT_MODES) {
@@ -78,4 +80,12 @@ for (const [name, bytes] of FIXTURES) {
     writeFileSync(file, await exportEpub(styled, mode, env, { loadFontFile }));
     console.log(`wrote ${file}`);
   }
+
+  // An epubtrans export translated and exported again: its attribution page and identifier are replaced, not repeated.
+  const reimported = await importBook(await exportEpub(styled, 'bilingual', env, { loadFontFile }), `${name}.vi.epub`, env);
+  await translateProject(reimported, mockProvider(answerAll), { ...reimported.settings, ...settings, targetLang: 'fr' });
+  const again = { ...reimported, settings: { ...reimported.settings, ...settings, targetLang: 'fr', exportStyle: CUSTOM_STYLE, attribution: true } };
+  const file = `${base}.reexport.styled-fonts-attribution.epub`;
+  writeFileSync(file, await exportEpub(again, 'bilingual', env, { loadFontFile }));
+  console.log(`wrote ${file}`);
 }
