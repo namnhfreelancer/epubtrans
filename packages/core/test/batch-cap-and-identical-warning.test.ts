@@ -92,4 +92,17 @@ describe('identical translation warning', () => {
     expect(fine.warning).toBeUndefined();
     expect(fine.translationHtml).toContain('[vi]');
   });
+
+  it('clears a stale warning when a later run of the batch translator translates the segment for real', async () => {
+    const echoed = segment('c0-0', 'This sentence was never translated at all.');
+    const project = makeProject([[echoed]]);
+    await translateProject(project, mockProvider(echoAll), project.settings);
+    expect(echoed.warning).toBe('identical');
+    // A reset sends the segment through the batch runner again (not through single-segment retranslation).
+    echoed.status = 'pending';
+    await translateProject(project, mockProvider(answerAll), project.settings);
+    expect(echoed).toMatchObject({ status: 'translated' });
+    expect(echoed.translationHtml).toContain('[vi]');
+    expect(echoed).not.toHaveProperty('warning');
+  });
 });

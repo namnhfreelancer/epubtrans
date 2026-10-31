@@ -1,6 +1,6 @@
 import type { ChatProvider, ChatRequest, ChatResponse, ReasoningLevel, TokenUsage } from '../types';
 import { isRecord, joinUrl, ProviderError, requestJson } from './provider-http';
-import { withReasoningFallback } from './reasoning-fallback';
+import { sendsReasoningField, withReasoningFallback } from './reasoning-fallback';
 
 export interface AnthropicOptions {
   baseURL: string;
@@ -77,11 +77,12 @@ export function createAnthropicProvider(opts: AnthropicOptions): ChatProvider {
       };
       if (req.temperature !== undefined) body.temperature = req.temperature;
       const url = joinUrl(opts.baseURL, 'v1/messages');
-      const json = await withReasoningFallback(`${url}\u0000${opts.model}`, opts.reasoning, (withField) =>
+      const variants = sendsReasoningField(opts.reasoning) ? [withThinking(body, opts.reasoning, maxTokens)] : [];
+      const json = await withReasoningFallback(`${url}\u0000${opts.model}\u0000${opts.reasoning}`, variants, (withField) =>
         requestJson(opts.fetchImpl, url, {
           method: 'POST',
           headers: headers(),
-          body: withField ? withThinking(body, opts.reasoning, maxTokens) : body,
+          body: withField ?? body,
           signal: req.signal,
           secrets: [opts.apiKey],
         }),

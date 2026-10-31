@@ -13,21 +13,34 @@ export interface OpenAICompatibleOptions {
   reasoning?: ReasoningLevel;
 }
 
-/** The reasoning field for `low`/`off`: top-level `reasoning_effort` (OpenAI, Gemini, most servers) or OpenRouter's object. */
-function reasoningField(param: OpenAICompatibleOptions['reasoningParam'], level: ReasoningLevel | undefined): Record<string, unknown> {
-  if (level !== 'low' && level !== 'off') return {};
-  const effort = level === 'low' ? 'low' : 'none';
-  return param === 'reasoning' ? { reasoning: { effort } } : { reasoning_effort: effort };
+/**
+ * Reasoning field variants for `low`/`off`, most faithful first: top-level `reasoning_effort` (OpenAI, Gemini, most
+ * servers) or OpenRouter's object. "Off" asks for `none`, then `minimal` for models that cannot switch reasoning off
+ * (gpt-5, o-series, Gemini 2.5 Pro): the least effort they accept is closer to the user's choice than their default.
+ */
+function reasoningVariants(param: OpenAICompatibleOptions['reasoningParam'], level: ReasoningLevel | undefined): Record<string, unknown>[] {
+  const efforts = level === 'low' ? ['low'] : level === 'off' ? ['none', 'minimal'] : [];
+  return efforts.map((effort) => (param === 'reasoning' ? { reasoning: { effort } } : { reasoning_effort: effort }));
 }
 
 const count = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
 
-/** Usage of a Chat Completions answer; cached prompt tokens come from `prompt_tokens_details` (DeepSeek: `prompt_cache_hit_tokens`). */
+/**
+ * Usage of a Chat Completions answer; cached prompt tokens come from `prompt_tokens_details` (DeepSeek:
+ * `prompt_cache_hit_tokens`), and prompt tokens written to the cache from `cache_write_tokens` (OpenRouter, for models
+ * with explicit caching). `prompt_tokens` counts both.
+ */
 export function parseOpenAIUsage(usage: Record<string, unknown>): TokenUsage {
   const details = isRecord(usage.prompt_tokens_details) ? usage.prompt_tokens_details : undefined;
   const input = count(usage.prompt_tokens);
   const cached = Math.min(input, count(details?.cached_tokens) || count(usage.prompt_cache_hit_tokens));
-  return { input, output: count(usage.completion_tokens), ...(cached > 0 ? { cachedInput: cached } : {}) };
+  const written = Math.min(input - cached, count(details?.cache_write_tokens));
+  return {
+    input,
+    output: count(usage.completion_tokens),
+    ...(cached > 0 ? { cachedInput: cached } : {}),
+    ...(written > 0 ? { cacheWriteInput: written } : {}),
+  };
 }
 
 /** Chat Completions adapter for OpenAI and compatible endpoints (Gemini, OpenRouter, DeepSeek, custom). */
@@ -66,11 +79,12 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleOptions): C
       if (req.maxTokens !== undefined) body[opts.maxTokensParam ?? 'max_tokens'] = req.maxTokens;
       if (req.temperature !== undefined) body.temperature = req.temperature;
       const url = joinUrl(opts.baseURL, 'chat/completions');
-      const json = await withReasoningFallback(`${url}\u0000${opts.model}`, opts.reasoning, (withField) =>
+      const variants = reasoningVariants(opts.reasoningParam, opts.reasoning);
+      const json = await withReasoningFallback(`${url}\u0000${opts.model}\u0000${opts.reasoning}`, variants, (field) =>
         requestJson(opts.fetchImpl, url, {
           method: 'POST',
           headers: headers(),
-          body: withField ? { ...body, ...reasoningField(opts.reasoningParam, opts.reasoning) } : body,
+          body: field ? { ...body, ...field } : body,
           signal: req.signal,
           secrets: [opts.apiKey],
         }),

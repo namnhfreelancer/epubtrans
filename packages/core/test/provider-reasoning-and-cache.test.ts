@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cachePriceRatios, createProvider, getProviderPreset, translateProject, usageCostUsd } from '../src';
+import { parseOpenAIUsage } from '../src/providers/openai-compatible-provider';
 import { clearReasoningRejections } from '../src/providers/reasoning-fallback';
 import { makeProject, segment } from './test-helpers';
 
@@ -81,7 +82,48 @@ describe('reasoning setting', () => {
     const provider = createProvider(getProviderPreset('openai'), 'k', undefined, 'gpt-x', fetchImpl, { reasoning: 'off' });
     await expect(provider.chat({ system: 's', user: 'u' })).rejects.toMatchObject({ status: 400 });
     await expect(provider.chat({ system: 's', user: 'u' })).rejects.toMatchObject({ status: 400 });
-    expect(calls.map((c) => 'reasoning_effort' in c.body)).toEqual([true, false, true, false]);
+    expect(calls.map((c) => c.body.reasoning_effort ?? null)).toEqual(['none', 'minimal', null, 'none', 'minimal', null]);
+  });
+
+  it('tries minimal effort when an endpoint rejects none, and remembers it', async () => {
+    const { calls, fetchImpl } = recordingFetch((body) =>
+      body.reasoning_effort === 'none' ? badRequest("Unsupported value: 'reasoning_effort' does not support 'none'") : openAiAnswer('hi'),
+    );
+    const provider = createProvider(getProviderPreset('openai'), 'k', undefined, 'gpt-5', fetchImpl, { reasoning: 'off' });
+    expect((await provider.chat({ system: 's', user: 'u' })).text).toBe('hi');
+    expect((await provider.chat({ system: 's', user: 'u' })).text).toBe('hi');
+    expect(calls.map((c) => c.body.reasoning_effort)).toEqual(['none', 'minimal', 'minimal']);
+    // OpenRouter's reasoning object steps down the same way.
+    const openRouter = recordingFetch((body) =>
+      (body.reasoning as { effort?: string } | undefined)?.effort === 'none' ? badRequest('effort none not supported') : openAiAnswer('hi'),
+    );
+    await createProvider(getProviderPreset('openrouter'), 'k', undefined, 'or', openRouter.fetchImpl, { reasoning: 'off' }).chat({ system: 's', user: 'u' });
+    expect(openRouter.calls.map((c) => c.body.reasoning)).toEqual([{ effort: 'none' }, { effort: 'minimal' }]);
+  });
+
+  it('drops the field after minimal is rejected too, and remembers that', async () => {
+    const { calls, fetchImpl } = recordingFetch((body) => ('reasoning_effort' in body ? badRequest('Unrecognized request argument') : openAiAnswer('hi')));
+    const provider = createProvider(getProviderPreset('custom'), '', 'https://llm.example/v1', 'local', fetchImpl, { reasoning: 'off' });
+    expect((await provider.chat({ system: 's', user: 'u' })).text).toBe('hi');
+    expect((await provider.chat({ system: 's', user: 'u' })).text).toBe('hi');
+    expect(calls.map((c) => c.body.reasoning_effort ?? null)).toEqual(['none', 'minimal', null, null]);
+  });
+
+  it.each([401, 403, 404, 429, 500, 503])('never retries without the field on a %i answer, and remembers nothing', async (status) => {
+    const { calls, fetchImpl } = recordingFetch(() => new Response(JSON.stringify({ error: { message: 'nope' } }), { status }));
+    const provider = createProvider(getProviderPreset('custom'), '', 'https://llm.example/v1', `local-${status}`, fetchImpl, { reasoning: 'low' });
+    await expect(provider.chat({ system: 's', user: 'u' })).rejects.toMatchObject({ status });
+    await expect(provider.chat({ system: 's', user: 'u' })).rejects.toMatchObject({ status });
+    expect(calls.map((c) => 'reasoning_effort' in c.body)).toEqual([true, true]);
+  });
+
+  it('falls back on a 422 answer like on a 400', async () => {
+    const { calls, fetchImpl } = recordingFetch((body) =>
+      'reasoning_effort' in body ? new Response(JSON.stringify({ detail: 'extra fields not permitted' }), { status: 422 }) : openAiAnswer('hi'),
+    );
+    const provider = createProvider(getProviderPreset('custom'), '', 'https://llm.example/v1', 'strict', fetchImpl, { reasoning: 'low' });
+    expect((await provider.chat({ system: 's', user: 'u' })).text).toBe('hi');
+    expect(calls.map((c) => 'reasoning_effort' in c.body)).toEqual([true, false]);
   });
 
   it('never lets a rejected reasoning field count toward the five consecutive client errors that stop a run', async () => {
@@ -110,6 +152,20 @@ describe('cached input tokens', () => {
     const provider = createProvider(getProviderPreset('openai'), 'k', undefined, 'gpt-x', fetchImpl);
     expect((await provider.chat({ system: 's', user: 'u' })).usage).toEqual({ input: 1000, output: 10, cachedInput: 800 });
     expect((await provider.chat({ system: 's', user: 'u' })).usage).toEqual({ input: 500, output: 5, cachedInput: 300 });
+  });
+
+  it('reads cache writes from OpenRouter usage, never more than the uncached prompt', () => {
+    expect(parseOpenAIUsage({ prompt_tokens: 1000, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 900 } })).toEqual({
+      input: 1000,
+      output: 5,
+      cacheWriteInput: 900,
+    });
+    expect(parseOpenAIUsage({ prompt_tokens: 1000, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 800, cache_write_tokens: 900 } })).toEqual({
+      input: 1000,
+      output: 5,
+      cachedInput: 800,
+      cacheWriteInput: 200,
+    });
   });
 
   it('reads cache reads and writes from Anthropic usage', async () => {
