@@ -8,8 +8,7 @@
   "packages": {
     ".": {
       "package-name": "epubtrans",
-      "changelog-path": "CHANGELOG.md",
-      "release-as": "3.0.0"
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }
