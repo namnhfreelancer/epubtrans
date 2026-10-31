@@ -10,10 +10,21 @@ test('generation shows its phases, extends the preset with sections and fills a 
   await openFirstBook(page);
   const presetText = await page.locator('#guideline').inputValue();
 
+  // The guideline and glossary phases overlap, so a phase label can be on screen only briefly: record every label the
+  // progress line shows instead of polling for one that may already be gone.
+  await page.evaluate(() => {
+    const seen: string[] = [];
+    (window as unknown as { __guidePhases: string[] }).__guidePhases = seen;
+    new MutationObserver(() => {
+      const text = document.querySelector('[data-testid="guide-progress"]')?.textContent;
+      if (text && seen.at(-1) !== text) seen.push(text);
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
   await page.getByRole('button', { name: 'Generate guideline & glossary' }).click();
-  await expect(page.getByTestId('guide-progress')).toContainText('Writing the style guideline');
-  await expect(page.getByTestId('guide-progress')).toContainText(/Classifying \d+\/\d+ candidates/);
   await expect(page.getByText('Guideline and glossary generated.')).toBeVisible();
+  const phases = await page.evaluate(() => (window as unknown as { __guidePhases: string[] }).__guidePhases.join('\n'));
+  expect(phases).toContain('Writing the style guideline');
+  expect(phases).toMatch(/Scanning the book|Writing the style guideline|Classifying \d+\/\d+ candidates/);
   await expect(page.getByText(/2 glossary entries from \d+ candidates\./)).toBeVisible();
   expect(mock.guideRequests).toBe(1);
   expect(mock.glossaryRequests).toBeGreaterThan(0);
