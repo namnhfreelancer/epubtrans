@@ -63,9 +63,12 @@ describe('content-based markup detection leaves opaque and non-markup resources 
     }
   });
 
-  it('rewrites a file recognized only by content so it carries no comment, PI or CDATA section', async () => {
-    const dat =
-      '<?x a="><img src=x onerror=alert(3)>"?><div><style><!--</style><img src="x" onerror="alert(1)"/>--></style><p><![CDATA[ a > <img src=y onerror=alert(2)> ]]></p></div>';
+  // The second input has no element the sanitizer would remove anyway, so only the rewrite of
+  // content-sniffed files can neutralize its comment trick.
+  it.each([
+    '<?x a="><img src=x onerror=alert(3)>"?><div><style><!--</style><img src="x" onerror="alert(1)"/>--></style><p><![CDATA[ a > <img src=y onerror=alert(2)> ]]></p></div>',
+    '<div><style><!--</style><img src="x" onerror="alert(1)"/>--></style></div>',
+  ])('rewrites a file recognized only by content so it carries no comment, PI or CDATA section (%#)', async (dat) => {
     // The repro is real: an HTML parser reading the source file creates the event handlers.
     expect(liveHandlers(dat)).toBeGreaterThan(0);
     const project = await poisonedProject((files) => {

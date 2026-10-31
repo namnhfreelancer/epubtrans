@@ -38,6 +38,11 @@ export function LibraryPage() {
             continue;
           }
           if (!window.confirm(t('library.replaceConfirm', { title: project.title }))) continue;
+          // A job may have started in another tab while the dialog was open.
+          if (await isJobRunningElsewhere(project.id)) {
+            pushNotice('error', t('library.busyElsewhere'));
+            continue;
+          }
           await discardJob(project.id);
         }
         await addProject(project);
@@ -65,6 +70,8 @@ export function LibraryPage() {
       // The card disables Delete from a polled snapshot; re-check at click time.
       if (await isJobRunningElsewhere(book.id)) return pushNotice('error', t('library.busyElsewhere'));
       if (!window.confirm(t('library.deleteConfirm', { title: book.title }))) return;
+      // A job may have started in another tab while the dialog was open.
+      if (await isJobRunningElsewhere(book.id)) return pushNotice('error', t('library.busyElsewhere'));
       await discardJob(book.id);
       await removeProject(book.id);
       pushNotice('info', t('library.deleted', { title: book.title }));
