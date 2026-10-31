@@ -16,6 +16,7 @@ import { domEnv } from '../dom-env';
 import { SAMPLE_FLAGS } from '../flag-specs';
 import type { Io } from '../io';
 import { confirmRun, EXIT } from '../pipeline';
+import { lookupEstimatePrices } from '../price-lookup';
 import { countStatuses, createProgress, formatTokens, formatUsd, usageCost } from '../progress';
 import { createProjectSaver, writeProjectFile } from '../project-store';
 import { formatSampleReport } from '../sample-report';
@@ -128,7 +129,8 @@ export async function sampleCommand(argv: string[], io: Io): Promise<number> {
 
   project.settings = settings;
   await writeProjectFile(project, projectPath);
-  io.err(`${describeEstimate(project, settings, selection)}\n`);
+  const looked = await lookupEstimatePrices(settings, io, flags['no-price-lookup'] !== true);
+  io.err(`${describeEstimate(project, { ...settings, ...looked }, selection)}\n`);
   if (!(await confirmRun(io, flags.yes === true))) {
     io.err(`Cancelled. Project saved to ${projectPath}; no translation request was made.\n`);
     return EXIT.failure;

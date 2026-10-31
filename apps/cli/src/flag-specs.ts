@@ -38,6 +38,7 @@ export const SAMPLE_FLAGS = {
   'two-pass': { type: 'boolean' },
   'price-in': { type: 'number' },
   'price-out': { type: 'number' },
+  'no-price-lookup': { type: 'boolean' },
   yes: { type: 'boolean', short: 'y' },
   project: { type: 'string' },
   to: { type: 'string' },
