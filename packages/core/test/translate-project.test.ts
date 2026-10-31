@@ -239,7 +239,10 @@ describe('retranslateSegment', () => {
     const updated = await retranslateSegment(project, 'a', ok, project.settings);
     expect(updated.translationHtml).toBe('Chào <b>bạn</b>');
     const broken = mockProvider(() => ({ text: '{"segments":[{"id":"a","html":"no tags"}]}' }));
-    await expect(retranslateSegment(project, 'a', broken, project.settings)).rejects.toThrow(/Retranslation failed/);
+    const failure = retranslateSegment(project, 'a', broken, project.settings);
+    // The reason names the lost tag and carries no prefix: the UI adds its own "Retranslation failed".
+    await expect(failure).rejects.toThrow(/missing <b>/);
+    await expect(failure).rejects.not.toThrow(/Retranslation failed/);
     expect(project.chapters[0]?.segments[0]?.translationHtml).toBe('Chào <b>bạn</b>');
     await expect(retranslateSegment(project, 'missing', ok, project.settings)).rejects.toThrow(/Unknown segment/);
   });
@@ -256,5 +259,59 @@ describe('estimateCost', () => {
     expect(priced.usd).toBeCloseTo((priced.inputTokens * 3 + priced.outputTokens * 15) / 1e6, 4);
     const twoPass = estimateCost(project, { ...project.settings, twoPass: true });
     expect(twoPass.inputTokens).toBeGreaterThan(noPrice.inputTokens);
+  });
+});
+
+/** Simulates a real model: it drops empty page anchors when it restructures a sentence. */
+function droppingModel(req: Parameters<typeof answerAll>[0]) {
+  const input = JSON.parse(req.user) as { segments: { id: string; html?: string; draft?: string }[] };
+  const drop = (html: string) => html.replace(/<a id="[^"]*"><\/a>/g, '');
+  const segments = input.segments.map((s) => ({ id: s.id, html: s.draft !== undefined ? drop(s.draft) : fakeTranslate(drop(s.html ?? '')) }));
+  return { text: JSON.stringify({ segments }) };
+}
+
+describe('empty page markers', () => {
+  const source =
+    'Nor would <a id="p49"></a>people who earn to give <sup class="endnote"><a href="notes.htm#en4-11" id="nr4-11">11</a></sup> be wrong.<a id="p50"></a>';
+
+  it('are kept away from the model and restored in the translation', async () => {
+    const project = makeProject([[segment('m', source)]]);
+    const provider = mockProvider(droppingModel);
+    await translateProject(project, provider, project.settings);
+    const m = project.chapters[0]?.segments[0];
+    expect(m?.status).toBe('translated');
+    expect(provider.calls).toHaveLength(1);
+    expect(provider.calls[0]?.user).not.toContain('p49');
+    expect(provider.calls[0]?.user).toContain('id=\\"nr4-11\\"');
+    const html = m?.translationHtml ?? '';
+    expect(html.match(/<a id="p49"><\/a>/g)).toHaveLength(1);
+    // "[vi] Nor would people…": the marker lands at the word start nearest its source position.
+    expect(html).toContain('would <a id="p49"></a>people');
+    expect(html.endsWith('<a id="p50"></a>')).toBe(true);
+    expect(html).toContain('<sup class="endnote"><a href="notes.htm#en4-11" id="nr4-11">');
+  });
+
+  it('survive the review pass, which sees neither the source nor the draft markers', async () => {
+    const project = makeProject([[segment('m', source)]]);
+    const provider = mockProvider(droppingModel);
+    await translateProject(project, provider, { ...project.settings, twoPass: true });
+    const m = project.chapters[0]?.segments[0];
+    expect(m?.status).toBe('reviewed');
+    expect(m?.error).toBeUndefined();
+    const review = provider.calls[1]?.user ?? '';
+    expect(review).toContain('"draft"');
+    expect(review).not.toMatch(/p49|p50/);
+    // The reviewer returned the draft unchanged, so the markers come back exactly where the draft had them.
+    const draft = makeProject([[segment('m', source)]]);
+    await translateProject(draft, mockProvider(droppingModel), draft.settings);
+    expect(m?.translationHtml).toBe(draft.chapters[0]?.segments[0]?.translationHtml);
+  });
+
+  it('are restored by retranslateSegment', async () => {
+    const project = makeProject([[{ ...segment('m', source, 'translated'), translationHtml: 'old' }]]);
+    const updated = await retranslateSegment(project, 'm', mockProvider(droppingModel), project.settings);
+    expect(updated.status).toBe('translated');
+    expect(updated.translationHtml).toContain('<a id="p49"></a>');
+    expect(updated.translationHtml).toContain('<a id="p50"></a>');
   });
 });

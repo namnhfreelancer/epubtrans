@@ -56,6 +56,16 @@ describe('validateTranslationMarkup', () => {
     expect(validateTranslationMarkup('Hi', '<script>x</script>Hi')).toBeDefined();
     expect(validateTranslationMarkup('Hi', '  ')).toBe('empty translation');
   });
+  it('names the missing and unexpected tag signatures', () => {
+    const note = 'Hi <sup class="endnote"><a href="notes.htm#en4-11" id="nr4-11">11</a></sup> <i>x</i>';
+    expect(validateTranslationMarkup(note, 'Chào <sup class="endnote">11</sup> <b>x</b> <b>y</b>')).toBe(
+      'inline tags or attributes were not preserved: missing <a href="notes.htm#en4-11" id="nr4-11">; missing <i>; unexpected <b> ×2',
+    );
+    const long = `<a href="${'x'.repeat(60)}">y</a>`;
+    expect(validateTranslationMarkup(long, 'y')).toBe(`inline tags or attributes were not preserved: missing <a href="${'x'.repeat(40)}…">`);
+    const many = Array.from({ length: 8 }, (_, i) => `<i class="c${i}">w</i>`).join(' ');
+    expect(validateTranslationMarkup(many, 'w')).toMatch(/missing <i class="c5">; … \(2 more\)$/);
+  });
 });
 
 describe('protocol parsing', () => {

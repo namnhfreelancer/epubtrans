@@ -16,6 +16,10 @@ export interface HtmlTag {
   selfClosing: boolean;
   /** Lower-cased attribute names with decoded values, in source order (duplicates kept). */
   attrs: [string, string][];
+  /** Index of the tag's `<` in the input. */
+  from: number;
+  /** Index just after the tag's `>`. */
+  to: number;
 }
 
 const isSpace = (c: string | undefined) => c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f';
@@ -49,7 +53,7 @@ export function tokenizeTags(html: string): HtmlTag[] | undefined {
       i = lt + 1;
       continue;
     }
-    const tag = readTag(html, j, end);
+    const tag = readTag(html, lt, j, end);
     if (!tag) return undefined;
     tags.push(tag.tag);
     i = tag.next;
@@ -57,22 +61,26 @@ export function tokenizeTags(html: string): HtmlTag[] | undefined {
   return tags;
 }
 
-/** Reads a tag whose name starts at `start`; returns the tag and the index after its `>`. */
-function readTag(html: string, start: number, end: boolean): { tag: HtmlTag; next: number } | undefined {
+/** Reads a tag opened at `from` whose name starts at `start`; returns the tag and the index after its `>`. */
+function readTag(html: string, from: number, start: number, end: boolean): { tag: HtmlTag; next: number } | undefined {
   let i = start;
   while (i < html.length && !isSpace(html[i]) && html[i] !== '/' && html[i] !== '>') i++;
-  const tag: HtmlTag = { name: html.slice(start, i).toLowerCase(), end, selfClosing: false, attrs: [] };
+  const tag: HtmlTag = { name: html.slice(start, i).toLowerCase(), end, selfClosing: false, attrs: [], from, to: from };
   while (i < html.length) {
     const c = html[i];
     if (isSpace(c)) {
       i++;
       continue;
     }
-    if (c === '>') return { tag, next: i + 1 };
+    if (c === '>') {
+      tag.to = i + 1;
+      return { tag, next: tag.to };
+    }
     if (c === '/') {
       if (html[i + 1] === '>') {
         tag.selfClosing = true;
-        return { tag, next: i + 2 };
+        tag.to = i + 2;
+        return { tag, next: tag.to };
       }
       i++;
       continue;
