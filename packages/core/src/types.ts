@@ -10,6 +10,12 @@ export type DomEnv = {
 
 export type SegmentStatus = 'pending' | 'translated' | 'reviewed' | 'error';
 
+/**
+ * Non-blocking flag on a finished segment. `identical`: the translation's text equals the source text (an untranslated
+ * echo is likely). The translation is still used by export; the flag only draws the user's attention.
+ */
+export type SegmentWarning = 'identical';
+
 export interface Segment {
   id: string;
   sourceHtml: string;
@@ -22,6 +28,8 @@ export interface Segment {
    * never overwrite such a segment unless asked to; a successful `retranslateSegment` clears the flag.
    */
   userEdited?: boolean;
+  /** Set by automatic runs after a translation validated; absent on segments without a warning and in older files. */
+  warning?: SegmentWarning;
 }
 
 export interface Chapter {
@@ -59,7 +67,24 @@ export interface ProjectSettings {
   priceInPerM?: number;
   /** USD per 1M output tokens. */
   priceOutPerM?: number;
+  /**
+   * Price of cached input tokens as a fraction of `priceInPerM` (0.1 = 90% discount). Absent: the provider's known
+   * ratio, or 1 (no discount) when it is unknown.
+   */
+  cachedInputRatio?: number;
+  /** Most segments sent in one request, on top of the token budget (default `DEFAULT_MAX_BATCH_SEGMENTS`). */
+  maxSegmentsPerBatch?: number;
+  /**
+   * A translation identical to its source is flagged only when the text has at least this many letters
+   * (default `DEFAULT_IDENTICAL_MIN_LETTERS`); 0 turns the check off.
+   */
+  identicalMinLetters?: number;
+  /** Reasoning effort asked of reasoning models (default: the provider's default). */
+  reasoning?: ReasoningLevel;
 }
+
+/** `default`: send nothing; `low`: ask for little reasoning; `off`: ask to switch reasoning off where the API allows it. */
+export type ReasoningLevel = 'default' | 'low' | 'off';
 
 export interface Project {
   schemaVersion: 1;
@@ -89,7 +114,7 @@ export interface SampleSelection {
   passages: SamplePassage[];
 }
 
-export type BookFormat = 'epub' | 'mobi' | 'azw3' | 'fb2';
+export type BookFormat = 'epub' | 'mobi' | 'azw3' | 'fb2' | 'txt' | 'md';
 
 export type ExportMode = 'bilingual' | 'bilingual-translation-first' | 'translation-only';
 
@@ -102,8 +127,13 @@ export interface ChatRequest {
 }
 
 export interface TokenUsage {
+  /** Every input token, cached ones included. */
   input: number;
   output: number;
+  /** Part of `input` read from the provider's prompt cache (billed at a discount), when the provider reports it. */
+  cachedInput?: number;
+  /** Part of `input` written to the prompt cache (Anthropic bills it at a premium), when the provider reports it. */
+  cacheWriteInput?: number;
 }
 
 export interface ChatResponse {
@@ -136,6 +166,12 @@ export interface ProviderPreset {
   docsUrl: string;
   /** Name of the output-token limit field for OpenAI-compatible endpoints. */
   maxTokensParam?: 'max_tokens' | 'max_completion_tokens';
+  /** How the reasoning setting is sent to OpenAI-compatible endpoints: top-level `reasoning_effort` or OpenRouter's `reasoning` object. */
+  reasoningParam?: 'reasoning_effort' | 'reasoning';
+  /** Cached input price as a fraction of the input price, when the provider documents one for all its models. */
+  cachedInputRatio?: number;
+  /** Cache-write input price as a fraction of the input price (Anthropic). */
+  cacheWriteRatio?: number;
 }
 
 export type TranslationPhase = 'translate' | 'review';

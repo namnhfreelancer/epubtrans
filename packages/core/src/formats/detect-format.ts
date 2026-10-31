@@ -28,7 +28,22 @@ export function detectFormat(bytes: Uint8Array, fileName: string): DetectedInput
   if (ascii(bytes, 60, 68) === 'TEXtREAd') throw new Error('Plain PalmDOC files are not supported');
   const head = decodeMarkup(bytes.subarray(0, 4096));
   if (/<FictionBook[\s>]/.test(head)) return { format: 'fb2', bytes };
-  throw new Error(`Unsupported file format: ${fileName}. Supported: EPUB, MOBI, AZW3, FB2`);
+  // Plain text has no signature: the extension decides, and binary content is refused.
+  const textFormat = MARKDOWN_NAME.test(fileName) ? 'md' : TEXT_NAME.test(fileName) ? 'txt' : undefined;
+  if (textFormat) {
+    if (looksBinary(bytes)) throw new Error(`Unsupported file format: ${fileName} is not a text file`);
+    return { format: textFormat, bytes };
+  }
+  throw new Error(`Unsupported file format: ${fileName}. Supported: EPUB, MOBI, AZW3, FB2, TXT, Markdown`);
+}
+
+const MARKDOWN_NAME = /\.(?:md|markdown)$/i;
+const TEXT_NAME = /\.txt$/i;
+
+/** NUL bytes in the first 8 KB mean binary data (UTF-16 text with a BOM is allowed: it has NULs by design). */
+function looksBinary(bytes: Uint8Array): boolean {
+  if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff)) return false;
+  return bytes.subarray(0, 8192).includes(0);
 }
 
 /** KF8 when the MOBI header version is >= 8 (the file may also be a MOBI6/KF8 combo). */

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { EXPORT_MODES, exportEpub, importBook, translateProject } from '../src';
 import { answerAll, env, mockProvider, readFixture } from '../test/test-helpers';
 
-const FIXTURES = ['a-modest-proposal.epub', 'a-modest-proposal.mobi', 'a-modest-proposal.azw3', 'aesop-fables.fb2'];
+const FIXTURES = ['a-modest-proposal.epub', 'a-modest-proposal.mobi', 'a-modest-proposal.azw3', 'aesop-fables.fb2', 'aesop-fables.txt', 'aesop-fables.md'];
 const outDir = fileURLToPath(new URL('../test-output/', import.meta.url));
 mkdirSync(outDir, { recursive: true });
 

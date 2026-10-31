@@ -2,6 +2,7 @@ import { isAbortError, ProviderError } from '../providers/provider-http';
 import type { ChatProvider, ProjectSettings, Segment, TokenUsage } from '../types';
 import { redactSecrets } from '../util/redact-secrets';
 import { type DetachedElement, detachEmptyElements, restoreDetachedElements } from './empty-element-markers';
+import { isIdenticalTranslation } from './identical-translation';
 import { validateTranslationMarkup } from './markup-validation';
 import {
   batchGlossary,
@@ -13,6 +14,7 @@ import {
 } from './prompt-protocol';
 import { withRetry } from './retry-with-backoff';
 import { estimateTokens } from './token-estimate';
+import { addUsage } from './usage-cost';
 
 export type BatchKind = 'translate' | 'review';
 
@@ -98,10 +100,7 @@ export async function runBatch(batch: Segment[], kind: BatchKind, ctx: BatchCont
       ctx.signal,
     );
     ctx.clientErrors = 0;
-    if (res.usage) {
-      ctx.usage.input += res.usage.input;
-      ctx.usage.output += res.usage.output;
-    }
+    if (res.usage) addUsage(ctx.usage, res.usage);
     answer = parseSegmentsAnswer(res.text);
   } catch (err) {
     if (isAbortError(err) || ctx.signal.aborted) throw err;
@@ -131,6 +130,8 @@ export async function runBatch(batch: Segment[], kind: BatchKind, ctx: BatchCont
     segment.translationHtml = result.html;
     segment.status = kind === 'translate' ? 'translated' : 'reviewed';
     delete segment.error;
+    if (isIdenticalTranslation(segment.sourceHtml, result.html, ctx.settings)) segment.warning = 'identical';
+    else delete segment.warning;
     // The stored translation is the model's now, no longer a hand edit.
     delete segment.userEdited;
     ctx.commit(segment, false);

@@ -104,7 +104,7 @@ describe('Anthropic adapter', () => {
     );
     const provider = createProvider(getProviderPreset('anthropic'), 'sk-ant', undefined, 'claude-x', fetchImpl);
     const res = await provider.chat({ system: 'sys', user: 'usr' });
-    expect(res).toEqual({ text: 'Xin chào', usage: { input: 100, output: 4 } });
+    expect(res).toEqual({ text: 'Xin chào', usage: { input: 100, output: 4, cachedInput: 90 } });
     expect(calls[0]?.url).toBe('https://api.anthropic.com/v1/messages');
     const headers = headersOf(calls[0]);
     expect(headers['x-api-key']).toBe('sk-ant');

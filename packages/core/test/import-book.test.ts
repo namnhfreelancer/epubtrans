@@ -56,6 +56,6 @@ describe('importBook', () => {
   });
 
   it('rejects unsupported input', async () => {
-    await expect(importBook(new TextEncoder().encode('hello world, not a book'), 'x.txt', env)).rejects.toThrow(/Unsupported/);
+    await expect(importBook(new TextEncoder().encode('hello world, not a book'), 'x.bin', env)).rejects.toThrow(/Unsupported/);
   });
 });

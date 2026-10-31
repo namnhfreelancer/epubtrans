@@ -1,4 +1,4 @@
-import type { Chapter, ChatProvider, Project, ProjectSettings, Segment, TranslateOptions, TranslationPhase } from '../types';
+import type { Chapter, ChatProvider, Project, ProjectSettings, Segment, TokenUsage, TranslateOptions, TranslationPhase } from '../types';
 import { type BatchContext, type BatchKind, runBatch } from './batch-runner';
 import { abortError } from './retry-with-backoff';
 import { estimateTokens } from './token-estimate';
@@ -6,22 +6,37 @@ import { estimateTokens } from './token-estimate';
 /** Source-token budget per request. */
 export const MAX_BATCH_TOKENS = 1500;
 export const MAX_CONCURRENCY = 16;
+/**
+ * Default cap on segments per request, on top of the token budget. Short lines (table of contents, verse, dialogue,
+ * index entries) would otherwise put 100+ segments in one request, where models start to drop or shift answers.
+ */
+export const DEFAULT_MAX_BATCH_SEGMENTS = 32;
+/** Largest configurable segment cap. */
+export const MAX_BATCH_SEGMENTS_LIMIT = 200;
+
+/** The segment cap a run uses: `settings.maxSegmentsPerBatch` when valid, else the default. */
+export function maxSegmentsOf(settings: Pick<ProjectSettings, 'maxSegmentsPerBatch'>): number {
+  const n = settings.maxSegmentsPerBatch;
+  return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= MAX_BATCH_SEGMENTS_LIMIT ? n : DEFAULT_MAX_BATCH_SEGMENTS;
+}
 
 /**
- * Splits consecutive segments into batches of at most `maxTokens` source tokens (one oversized segment per batch).
- * `tokensOf` lets a caller that already knows the source token counts (the cost estimate) reuse them.
+ * Splits consecutive segments into batches of at most `maxTokens` source tokens (one oversized segment per batch)
+ * and at most `maxSegments` segments. `tokensOf` lets a caller that already knows the source token counts (the cost
+ * estimate) reuse them.
  */
 export function makeBatches(
   segments: Segment[],
   maxTokens = MAX_BATCH_TOKENS,
   tokensOf: (s: Segment) => number = (s) => estimateTokens(s.sourceHtml),
+  maxSegments = DEFAULT_MAX_BATCH_SEGMENTS,
 ): Segment[][] {
   const batches: Segment[][] = [];
   let current: Segment[] = [];
   let tokens = 0;
   for (const s of segments) {
     const t = tokensOf(s);
-    if (current.length && tokens + t > maxTokens) {
+    if (current.length && (tokens + t > maxTokens || current.length >= maxSegments)) {
       batches.push(current);
       current = [];
       tokens = 0;
@@ -36,6 +51,10 @@ export function makeBatches(
 export function validateSettings(settings: ProjectSettings): void {
   if (!settings.targetLang?.trim()) throw new Error('Target language is required');
   if (!Number.isFinite(settings.concurrency) || settings.concurrency < 1) throw new Error('Concurrency must be at least 1');
+  const cap = settings.maxSegmentsPerBatch;
+  if (cap !== undefined && (!Number.isInteger(cap) || cap < 1 || cap > MAX_BATCH_SEGMENTS_LIMIT)) {
+    throw new Error(`Segments per request must be an integer between 1 and ${MAX_BATCH_SEGMENTS_LIMIT}`);
+  }
 }
 
 /**
@@ -65,7 +84,7 @@ export async function translateProject(project: Project, provider: ChatProvider,
   const onAbort = () => controller.abort(opts.signal?.reason);
   if (opts.signal?.aborted) throw abortError(opts.signal);
   opts.signal?.addEventListener('abort', onAbort, { once: true });
-  const usage = { input: 0, output: 0 };
+  const usage: TokenUsage = { input: 0, output: 0 };
   try {
     const editable = (s: Segment) => !keepsUserEdit(s, opts.overwriteUserEdited);
     await runPhase(project, 'translate', (s) => (s.status === 'pending' || s.status === 'error') && editable(s));
@@ -84,7 +103,7 @@ export async function translateProject(project: Project, provider: ChatProvider,
         chapterOf.set(s.id, chapter);
         revisions.set(s, revisionOf(s));
       }
-      batches.push(...makeBatches(selected));
+      batches.push(...makeBatches(selected, MAX_BATCH_TOKENS, undefined, maxSegmentsOf(settings)));
     }
     const total = chapterOf.size;
     let done = 0;

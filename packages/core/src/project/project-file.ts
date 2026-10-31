@@ -1,6 +1,9 @@
 import { strFromU8, strToU8 } from 'fflate';
 import { isGlossaryTermType } from '../glossary/glossary-entry';
-import type { Chapter, GlossaryEntry, Project, ProjectSettings, SampleSelection, Segment, SegmentStatus } from '../types';
+import { MAX_IDENTICAL_MIN_LETTERS } from '../translate/identical-translation';
+import { MAX_BATCH_SEGMENTS_LIMIT } from '../translate/translate-project';
+import { MAX_CACHED_INPUT_RATIO } from '../translate/usage-cost';
+import type { Chapter, GlossaryEntry, Project, ProjectSettings, ReasoningLevel, SampleSelection, Segment, SegmentStatus } from '../types';
 import { redactSecrets } from '../util/redact-secrets';
 import { readZip, writeZip } from '../util/zip-archive';
 
@@ -11,6 +14,7 @@ import { readZip, writeZip } from '../util/zip-archive';
 const PROJECT_JSON = 'project.json';
 const SOURCE_EPUB = 'source.epub';
 const STATUSES: SegmentStatus[] = ['pending', 'translated', 'reviewed', 'error'];
+export const REASONING_LEVELS: readonly ReasoningLevel[] = ['default', 'low', 'off'];
 
 export async function saveProjectFile(project: Project): Promise<Uint8Array> {
   const { sourceEpub, ...state } = project;
@@ -109,6 +113,14 @@ function validateSettings(s: Json): ProjectSettings {
   const concurrency = optNum(s, 'concurrency', path) ?? fail(`${path}.concurrency`, 'a number');
   const priceInPerM = optNum(s, 'priceInPerM', path);
   const priceOutPerM = optNum(s, 'priceOutPerM', path);
+  const cachedInputRatio = optNum(s, 'cachedInputRatio', path);
+  if (cachedInputRatio !== undefined && (cachedInputRatio < 0 || cachedInputRatio > MAX_CACHED_INPUT_RATIO)) {
+    fail(`${path}.cachedInputRatio`, `a number between 0 and ${MAX_CACHED_INPUT_RATIO}`);
+  }
+  const maxSegmentsPerBatch = optInt(s, 'maxSegmentsPerBatch', path, 1, MAX_BATCH_SEGMENTS_LIMIT);
+  const identicalMinLetters = optInt(s, 'identicalMinLetters', path, 0, MAX_IDENTICAL_MIN_LETTERS);
+  // An unknown future reasoning level falls back to the provider default rather than rejecting the file.
+  const reasoning = REASONING_LEVELS.find((level) => level === s.reasoning);
   return {
     sourceLang: str(s, 'sourceLang', path),
     targetLang: str(s, 'targetLang', path),
@@ -121,7 +133,17 @@ function validateSettings(s: Json): ProjectSettings {
     glossary: arr(s, 'glossary', path).map((g, i) => validateGlossaryEntry(obj(g, `${path}.glossary[${i}]`), `${path}.glossary[${i}]`)),
     ...(priceInPerM !== undefined ? { priceInPerM } : {}),
     ...(priceOutPerM !== undefined ? { priceOutPerM } : {}),
+    ...(cachedInputRatio !== undefined ? { cachedInputRatio } : {}),
+    ...(maxSegmentsPerBatch !== undefined ? { maxSegmentsPerBatch } : {}),
+    ...(identicalMinLetters !== undefined ? { identicalMinLetters } : {}),
+    ...(reasoning !== undefined ? { reasoning } : {}),
   };
+}
+
+function optInt(o: Json, key: string, path: string, min: number, max: number): number | undefined {
+  const v = optNum(o, key, path);
+  if (v !== undefined && (!Number.isInteger(v) || v < min || v > max)) fail(`${path}.${key}`, `an integer between ${min} and ${max}`);
+  return v;
 }
 
 /** `type` and `count` are optional (absent in v3.0 files); an unknown future `type` is dropped rather than rejected. */
@@ -160,6 +182,8 @@ function validateChapter(c: Json, path: string): Chapter {
         ...(translationHtml !== undefined ? { translationHtml } : {}),
         ...(error !== undefined ? { error: redactSecrets(error) } : {}),
         ...(seg.userEdited === true ? { userEdited: true } : {}),
+        // Optional; an unknown future warning is dropped (it never affects export).
+        ...(seg.warning === 'identical' ? { warning: 'identical' as const } : {}),
       };
     }),
   };
