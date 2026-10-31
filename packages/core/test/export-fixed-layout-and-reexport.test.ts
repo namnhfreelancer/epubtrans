@@ -88,6 +88,17 @@ describe('exporting an epubtrans export again', () => {
     const original = await exportEpub(again, 'original', env);
     expect(unzipText(original, 'OEBPS/epubtrans-attribution.xhtml')).toContain('model-one');
   });
+
+  it('drops the earlier page when a translating export has attribution switched off', async () => {
+    const first = await exportEpub(await translated(buildEpub2Book(), 'b.epub', 'model-one'), 'bilingual', env);
+    const again = await translated(first, 'b.vi.epub', 'model-two');
+    again.settings = { ...again.settings, attribution: false };
+    for (const mode of ['bilingual', 'translation-only'] as const) {
+      const out = await exportEpub(again, mode, env);
+      expect(readZip(out).has('OEBPS/epubtrans-attribution.xhtml')).toBe(false);
+      expect(unzipText(out, 'OEBPS/content.opf')).not.toContain('epubtrans-attribution');
+    }
+  });
 });
 
 describe('attribution phrases', () => {

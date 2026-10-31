@@ -63,7 +63,7 @@ export function isAttributionDocument(doc: Document): boolean {
  * Removes the attribution pages of earlier epubtrans exports from the package (spine, manifest and file), so a book
  * that is itself an epubtrans export ends with one attribution page, not one per export.
  */
-function removeEarlierAttributionPages(files: FileMap, pkg: PackageInfo, env: DomEnv): void {
+export function removeEarlierAttributionPages(files: FileMap, pkg: PackageInfo, env: DomEnv): void {
   for (const item of [...pkg.spine]) {
     if (!files.has(item.path)) continue;
     const markup = readText(files, item.path);

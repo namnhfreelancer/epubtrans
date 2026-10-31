@@ -9,7 +9,7 @@ import type { DomEnv, ExportMode, Project, Segment } from '../types';
 import { encodeUtf8 } from '../util/text-encoding';
 import { type FileMap, readZip, writeEpubZip } from '../util/zip-archive';
 import { dirname, relativeHref } from '../util/zip-path';
-import { addAttributionPage, wantsAttribution } from './attribution-page';
+import { addAttributionPage, removeEarlierAttributionPages, wantsAttribution } from './attribution-page';
 import { loadEmbeddedFontFiles, packageEmbeddedFonts } from './embedded-font-package';
 import { applyExportIdentifier } from './export-identifier';
 import { addManifestItem } from './manifest-items';
@@ -122,6 +122,8 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
   // Added after sanitizing: the attribution page and the font files are generated here, never taken from the book.
   const attribution = wantsAttribution(project, mode);
   if (attribution) addAttributionPage(files, pkg, project, cssPath, env);
+  // A translating export without attribution drops an earlier export's page, which would name another language and model.
+  else if (mode !== 'original') removeEarlierAttributionPages(files, pkg, env);
   const withCss = bilingual || linked.size > 0 || attribution;
   updateOpf(pkg, project, mode, withCss ? cssPath : undefined);
   // Other renditions that share a document linking the stylesheet list it, and the fonts it loads, too.

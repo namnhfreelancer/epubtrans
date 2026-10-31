@@ -26,6 +26,16 @@ export const FONT_ASSET_PATTERN = /\/assets\/[^/?#]+\.ttf$|\/assets\/[^/?#]+-OFL
  * catalog is about 1.4 MB), but a font fetched once is kept, cache first, so styled exports and previews that use it
  * also work offline later. Hashed file names make the files immutable, so a cached copy never goes stale.
  */
+/**
+ * Workbox plugin hook: stores a response only when it is a 200 that is not HTML. Hosts that answer unknown paths with
+ * the app's `index.html` (status 200, SPA fallback) would otherwise put a web page in the font cache for good.
+ * Self-contained, because Workbox serializes it into the generated service worker.
+ */
+export async function cacheOnlyFontResponses({ response }: { response: Response }): Promise<Response | null> {
+  const type = response.headers.get('content-type') ?? '';
+  return response.status === 200 && !type.includes('text/html') ? response : null;
+}
+
 export const FONT_RUNTIME_CACHING: RuntimeCaching = {
   urlPattern: FONT_ASSET_PATTERN,
   handler: 'CacheFirst',
@@ -33,5 +43,6 @@ export const FONT_RUNTIME_CACHING: RuntimeCaching = {
     cacheName: FONT_CACHE_NAME,
     expiration: { maxEntries: FONT_CACHE_MAX_ENTRIES, purgeOnQuotaError: true },
     cacheableResponse: { statuses: [200] },
+    plugins: [{ cacheWillUpdate: cacheOnlyFontResponses }],
   },
 };
