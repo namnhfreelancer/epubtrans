@@ -17,6 +17,11 @@ export interface Segment {
   translationHtml?: string;
   status: SegmentStatus;
   error?: string;
+  /**
+   * True when the user wrote or edited `translationHtml` by hand. Automatic runs (`translateProject`, samples)
+   * never overwrite such a segment unless asked to; a successful `retranslateSegment` clears the flag.
+   */
+  userEdited?: boolean;
 }
 
 export interface Chapter {
@@ -147,6 +152,8 @@ export interface TranslateOptions {
   onProgress?: (progress: TranslationProgress) => void;
   onSegment?: (segment: Segment, chapter: Chapter) => void;
   signal?: AbortSignal;
+  /** Also translate and review segments the user edited by hand (`userEdited`); by default they are left alone. */
+  overwriteUserEdited?: boolean;
 }
 
 export interface CostEstimate {

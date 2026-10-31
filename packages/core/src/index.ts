@@ -34,6 +34,7 @@ export {
   estimateSampleCost,
   MAX_SAMPLE_PASSAGES,
   randomSampleSeed,
+  type SampleRunResult,
   type SampleSelectionOptions,
   selectSamplePassages,
   type TranslateSampleOptions,

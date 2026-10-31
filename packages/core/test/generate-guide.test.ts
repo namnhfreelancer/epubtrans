@@ -122,6 +122,28 @@ describe('generateGuide', () => {
     ]);
   });
 
+  it('keeps the guideline and finished batches when one batch request keeps failing, and rejects when all do', async () => {
+    const project = book(200, 2, 300);
+    let classifyCall = 0;
+    const provider = mockProvider((req) => {
+      if (isGuideline(req)) return { text: '{"guideline":"- Plain"}' };
+      classifyCall++;
+      // Zero Retry-After keeps the test fast; the first batch fails on every retry.
+      if (classifyCall <= 5) throw new ProviderError('overloaded', 529, 0);
+      return { text: JSON.stringify({ entries: [{ term: 'Widget', translation: 'thiết bị', type: 'term' }] }) };
+    });
+    const guide = await generateGuide(project, provider, { ...project.settings, guideline: '', concurrency: 1 }, { maxEntries: 90 });
+    expect(guide.skippedBatches).toBe(1);
+    expect(guide.guideline).toContain('- Plain');
+    expect(guide.glossary.map((g) => g.term)).toContain('Widget');
+
+    const down = mockProvider((req) => {
+      if (isGuideline(req)) return { text: '{"guideline":"- Plain"}' };
+      throw new ProviderError('overloaded', 529, 0);
+    });
+    await expect(generateGuide(project, down, { ...project.settings, guideline: '', concurrency: 1 })).rejects.toThrow('overloaded');
+  });
+
   it('propagates fatal provider errors and aborts', async () => {
     const project = book(3);
     const fatal = mockProvider(() => {
@@ -136,6 +158,14 @@ describe('generateGuide', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(generateGuide(project, fatal, project.settings, { signal: controller.signal })).rejects.toThrow(/abort/i);
+  });
+
+  it('keeps a section the user appended below the generated block under its own heading', () => {
+    const guideline = `Base rule.\n\n${GENERATED_GUIDELINE_HEADING}\n\n### Tone & register\n- Light\n\n## My rules\n- Never translate "Muggle".`;
+    const { base, generated } = splitGuideline(guideline);
+    expect(generated).toBe(`${GENERATED_GUIDELINE_HEADING}\n\n### Tone & register\n- Light`);
+    expect(base).toBe('Base rule.\n\n## My rules\n- Never translate "Muggle".');
+    expect(splitGuideline('Only base.')).toEqual({ base: 'Only base.', generated: '' });
   });
 
   it('rejects a guideline answer without content', () => {
