@@ -1,5 +1,5 @@
 import { estimateWordHintsCost, type FrequencyList, type Project, planWordHints } from '@epubtrans/core';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { refreshJobLocks, useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { formatNumber, formatUsd } from '../../lib/format';
@@ -8,6 +8,7 @@ import { errorText } from '../../lib/notices';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { useJobActive } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
+import { useCostEstimate } from '../../lib/use-cost-estimate';
 import { useRunPrices } from '../../lib/use-run-prices';
 import { Button } from '../ui/button';
 import { Alert, ProgressBar } from '../ui/layout-primitives';
@@ -38,14 +39,19 @@ export function WordHintsGenerator({
   const prices = useRunPrices(project.settings, provider.active);
   const { priceInPerM, priceOutPerM } = prices;
 
-  // `version` tracks in-place project mutations (settings, new hints). A run bumps it for every finished word, and
-  // selecting candidates scans the whole book, so the plan is frozen while this tab runs and refreshed afterwards.
-  const planVersion = running ? -1 : version;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `planVersion` stands for the in-place mutations above.
-  const plan = useMemo(() => planWordHints(project, list, project.settings), [project, list, planVersion]);
-  const estimate = useMemo(() => estimateWordHintsCost(plan.candidates, { priceInPerM, priceOutPerM }, plan), [plan, priceInPerM, priceOutPerM]);
-  const glossed = plan.reset ? 0 : (project.wordHints?.entries.length ?? 0);
-  const pending = plan.candidates.length;
+  // Selecting candidates scans the whole book and `version` changes on every finished word or segment, so the plan
+  // and its estimate are scheduled like the book estimate: debounced, when idle, and kept as they are during a run.
+  const { estimate: planned } = useCostEstimate(
+    () => {
+      const plan = planWordHints(project, list, project.settings);
+      return { plan, estimate: estimateWordHintsCost(plan.candidates, { priceInPerM, priceOutPerM }, plan) };
+    },
+    running || translating || sampling,
+    // `version` tracks in-place project mutations (settings, new hints).
+    [project, list, priceInPerM, priceOutPerM, version],
+  );
+  const pending = planned?.plan.candidates.length ?? 0;
+  const glossed = planned && !planned.plan.reset ? (project.wordHints?.entries.length ?? 0) : 0;
   const locked = running || translating || sampling || busyElsewhere;
 
   const start = async () => {
@@ -63,21 +69,29 @@ export function WordHintsGenerator({
 
   return (
     <div className="space-y-3 rounded-xl bg-stone-100 px-4 py-3 dark:bg-stone-800">
-      <p data-testid="hints-status" className="text-sm">
-        {pending === 0
-          ? t('hints.statusAllDone', { total: formatNumber(plan.total, locale) })
-          : t('hints.status', { glossed: formatNumber(glossed, locale), pending: formatNumber(pending, locale) })}
-      </p>
-      {plan.reset && <Alert kind="warning">{t('hints.otherPair')}</Alert>}
-      {pending > 0 && (
-        <p data-testid="hints-estimate" className="text-xs text-stone-600 dark:text-stone-300">
-          {t('hints.estimate', {
-            input: formatNumber(estimate.inputTokens, locale),
-            output: formatNumber(estimate.outputTokens, locale),
-            words: formatNumber(estimate.words, locale),
-          })}
-          {estimate.usd !== undefined && ` · ${t('hints.estimateUsd', { usd: formatUsd(estimate.usd, locale) })}`}
+      {planned === undefined ? (
+        <p data-testid="hints-calculating" className="text-sm text-stone-500 dark:text-stone-400">
+          {t('setup.estimateCalculating')}
         </p>
+      ) : (
+        <>
+          <p data-testid="hints-status" className="text-sm">
+            {pending === 0
+              ? t('hints.statusAllDone', { total: formatNumber(planned.plan.total, locale) })
+              : t('hints.status', { glossed: formatNumber(glossed, locale), pending: formatNumber(pending, locale) })}
+          </p>
+          {planned.plan.reset && <Alert kind="warning">{t('hints.otherPair')}</Alert>}
+          {pending > 0 && (
+            <p data-testid="hints-estimate" className="text-xs text-stone-600 dark:text-stone-300">
+              {t('hints.estimate', {
+                input: formatNumber(planned.estimate.inputTokens, locale),
+                output: formatNumber(planned.estimate.outputTokens, locale),
+                words: formatNumber(planned.estimate.words, locale),
+              })}
+              {planned.estimate.usd !== undefined && ` · ${t('hints.estimateUsd', { usd: formatUsd(planned.estimate.usd, locale) })}`}
+            </p>
+          )}
+        </>
       )}
       <div className="flex flex-wrap gap-2" title={translating || sampling ? t('hints.lockedByJob') : busyElsewhere ? t('run.busyElsewhere') : undefined}>
         {running ? (

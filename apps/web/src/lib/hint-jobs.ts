@@ -86,7 +86,7 @@ async function runHints(project: Project, plan: WordHintsPlan, settings: Project
       signal: controller.signal,
       onReset: (hints) => track(persistHintsStart(project.id, hints, plan.reset)),
       onEntry: (entry) => {
-        track(persistHintEntry(project.id, entry));
+        track(persistHintEntry(project.id, plan, entry));
         touchProject(project.id);
       },
       onProgress: (p) => setJob(project.id, { ...(jobs.get(project.id) ?? IDLE), status: 'running', done: p.done, total: p.total, usage: p.usage }),

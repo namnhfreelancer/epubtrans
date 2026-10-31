@@ -225,12 +225,14 @@ export function persistHintsStart(projectId: string, hints: WordHints, clear: bo
 }
 
 /**
- * Persists one lemma finished by a hints run (a copy: the run keeps mutating the live project). Other tabs are told
- * once the run ends (`announceHints`), not per lemma: each message makes them re-read every entry.
+ * Persists one lemma finished by a hints run for `pair` (a copy: the run keeps mutating the live project), only while
+ * the stored hints still belong to that pair (compare-and-set; rejects otherwise, which stops the run). Other tabs are
+ * told once the run ends (`announceHints`), not per lemma: each message makes them re-read every entry.
  */
-export function persistHintEntry(projectId: string, entry: WordHintEntry): Promise<void> {
+export function persistHintEntry(projectId: string, pair: Pick<WordHints, 'sourceLang' | 'glossLang'>, entry: WordHintEntry): Promise<void> {
   const snapshot = structuredClone(entry);
-  return enqueueWrite(projectId, () => repository.saveHintEntry(projectId, snapshot));
+  const expected = { sourceLang: pair.sourceLang, glossLang: pair.glossLang };
+  return enqueueWrite(projectId, () => repository.saveHintEntry(projectId, expected, snapshot));
 }
 
 /** Tells other tabs that the stored hints changed, after this tab's pending writes. */

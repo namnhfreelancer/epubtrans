@@ -27,6 +27,13 @@ export class ProjectNotFoundError extends Error {
   override readonly name = 'ProjectNotFoundError';
 }
 
+/** A hints run tried to save an entry after the stored hints switched to another language pair (e.g. a re-import). */
+export class HintsReplacedError extends Error {
+  override readonly name = 'HintsReplacedError';
+}
+
+type HintPair = Pick<WordHints, 'sourceLang' | 'glossLang'>;
+
 const toStateRow = (projectId: string, s: Segment): SegmentStateRow => ({
   projectId,
   id: s.id,
@@ -182,7 +189,7 @@ export function createProjectRepository(db: ProjectDatabase) {
      * Starts a hints run for a language pair: records the pair on the project and, when it replaces hints of another
      * pair, deletes their entries. Rejects with {@link ProjectNotFoundError} when the project was deleted.
      */
-    async startHints(projectId: string, hints: Pick<WordHints, 'sourceLang' | 'glossLang'>, clear: boolean): Promise<void> {
+    async startHints(projectId: string, hints: HintPair, clear: boolean): Promise<void> {
       await db.transaction('rw', [db.projects, db.hints], async () => {
         const updated = await db.projects.update(projectId, {
           hintLanguages: { sourceLang: hints.sourceLang, glossLang: hints.glossLang },
@@ -193,10 +200,20 @@ export function createProjectRepository(db: ProjectDatabase) {
       });
     },
 
-    /** Persists one glossed lemma (called as soon as a hints run finishes it, which makes runs resumable). */
-    async saveHintEntry(projectId: string, entry: WordHintEntry): Promise<void> {
+    /**
+     * Compare-and-set: persists one glossed lemma (called as soon as a hints run finishes it, which makes runs
+     * resumable) only while the stored hints still belong to the run's language pair. Rejects with
+     * {@link ProjectNotFoundError} when the project was deleted and {@link HintsReplacedError} when its hints were
+     * replaced by another pair, so a stale run never mixes glosses of two pairs.
+     */
+    async saveHintEntry(projectId: string, pair: HintPair, entry: WordHintEntry): Promise<void> {
       await db.transaction('rw', [db.projects, db.hints], async () => {
-        if (!(await db.projects.get(projectId))) throw new ProjectNotFoundError(`Project ${projectId} not found`);
+        const meta = await db.projects.get(projectId);
+        if (!meta) throw new ProjectNotFoundError(`Project ${projectId} not found`);
+        const stored = meta.hintLanguages;
+        if (stored?.sourceLang !== pair.sourceLang || stored.glossLang !== pair.glossLang) {
+          throw new HintsReplacedError(`The hints of project ${projectId} were replaced by another language pair`);
+        }
         await db.hints.put(toHintRow(projectId, entry));
       });
     },
