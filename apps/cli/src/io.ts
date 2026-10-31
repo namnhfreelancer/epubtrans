@@ -13,6 +13,8 @@ export interface Io {
   readStdin(): Promise<string>;
   /** Aborted by Ctrl-C (SIGINT/SIGTERM). */
   signal: AbortSignal;
+  /** Transport for the public price lookup (no credentials); defaults to the global fetch. Injectable for tests. */
+  fetch?: typeof fetch;
 }
 
 export function createProcessIo(signal: AbortSignal, onInterrupt: () => void): Io {

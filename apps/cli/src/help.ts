@@ -29,7 +29,9 @@ const PROVIDER_OPTIONS = `  --provider <id>          Provider preset (see: epubt
 const RUN_OPTIONS = `  --concurrency <n>        Parallel requests, 1-16 (default 3)
   --two-pass               Add a review pass over every translation
   --price-in <usd>         USD per 1M input tokens, for the cost estimate
-  --price-out <usd>        USD per 1M output tokens (OpenRouter prices are looked up automatically)
+  --price-out <usd>        USD per 1M output tokens
+  --no-price-lookup        Do not look up missing prices in public catalogs (OpenRouter, then LiteLLM). The lookup is a
+                           plain GET that sends no API key; matched id and prices are printed before the estimate
   --mode <mode>            bilingual (default) | bilingual-translation-first | translation-only
   --out <file.epub>        Output path (default: <input>.<lang>.epub)
   -y, --yes                Start without asking for confirmation after the estimate`;

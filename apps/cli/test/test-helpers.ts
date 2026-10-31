@@ -10,7 +10,14 @@ export interface TestIo extends Io {
   stderr: string;
 }
 
-export function createTestIo(opts: { env?: Record<string, string | undefined>; signal?: AbortSignal; interactive?: boolean; stdin?: string } = {}): TestIo {
+/** Default transport for the price lookup in tests: offline, so no test reaches the real catalogs. */
+const offlineFetch = (async () => {
+  throw new TypeError('offline');
+}) as unknown as typeof fetch;
+
+export function createTestIo(
+  opts: { env?: Record<string, string | undefined>; signal?: AbortSignal; interactive?: boolean; stdin?: string; fetch?: typeof fetch } = {},
+): TestIo {
   const io: TestIo = {
     stdout: '',
     stderr: '',
@@ -26,6 +33,7 @@ export function createTestIo(opts: { env?: Record<string, string | undefined>; s
     prompt: async () => 'n',
     readStdin: async () => opts.stdin ?? '',
     signal: opts.signal ?? new AbortController().signal,
+    fetch: opts.fetch ?? offlineFetch,
   };
   return io;
 }

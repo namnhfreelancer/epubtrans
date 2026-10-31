@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import { installMockPricing } from './mock-pricing';
 
 /** Base URL of the fake OpenAI-compatible provider intercepted by page.route (never reaches the network). */
 export const MOCK_BASE = 'https://mock-provider.test/v1';
@@ -70,6 +71,8 @@ export async function installMockProvider(page: Page, opts: Partial<Pick<MockPro
     }
     return fulfill(route, 404, { error: { message: 'not found' } });
   });
+  // The app also queries public price catalogs; serve fixtures so no test reaches the real network.
+  await installMockPricing(page);
   return state;
 }
 

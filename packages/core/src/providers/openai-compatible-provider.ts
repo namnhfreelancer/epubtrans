@@ -1,3 +1,4 @@
+import { perTokenToPerM } from '../pricing/per-token-price';
 import type { ChatProvider, ChatRequest, ChatResponse, ModelInfo } from '../types';
 import { isRecord, joinUrl, ProviderError, requestJson } from './provider-http';
 
@@ -21,11 +22,10 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleOptions): C
       if (!isRecord(item) || typeof item.id !== 'string') continue;
       const info: ModelInfo = { id: item.id };
       const pricing = isRecord(item.pricing) ? item.pricing : undefined;
-      const perToken = (v: unknown) => (typeof v === 'string' || typeof v === 'number' ? Number(v) : Number.NaN);
-      const pin = perToken(pricing?.prompt);
-      const pout = perToken(pricing?.completion);
-      if (Number.isFinite(pin) && pin >= 0) info.priceInPerM = round(pin * 1e6);
-      if (Number.isFinite(pout) && pout >= 0) info.priceOutPerM = round(pout * 1e6);
+      const priceInPerM = perTokenToPerM(pricing?.prompt);
+      const priceOutPerM = perTokenToPerM(pricing?.completion);
+      if (priceInPerM !== undefined) info.priceInPerM = priceInPerM;
+      if (priceOutPerM !== undefined) info.priceOutPerM = priceOutPerM;
       models.push(info);
     }
     return models.sort((a, b) => a.id.localeCompare(b.id));
@@ -69,5 +69,3 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleOptions): C
     },
   };
 }
-
-const round = (n: number) => Math.round(n * 1e6) / 1e6;

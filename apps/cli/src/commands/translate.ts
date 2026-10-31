@@ -104,6 +104,7 @@ export async function translateCommand(argv: string[], io: Io): Promise<number> 
     outPath,
     mode,
     generateGuide: flags['generate-guide'] === true && (!existingBytes || countStatuses(project).done === 0),
+    priceLookup: flags['no-price-lookup'] !== true,
     yes: flags.yes === true,
     io,
   });

@@ -14,6 +14,7 @@ export const RUN_FLAGS = {
   'two-pass': { type: 'boolean' },
   'price-in': { type: 'number' },
   'price-out': { type: 'number' },
+  'no-price-lookup': { type: 'boolean' },
   mode: { type: 'string' },
   out: { type: 'string' },
   yes: { type: 'boolean', short: 'y' },
