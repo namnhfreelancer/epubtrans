@@ -52,7 +52,7 @@ Core never touches DOM globals. Callers pass `DomEnv = { DOMParser, XMLSerialize
 
 Vite, React 19, Tailwind v4, Dexie (IndexedDB) and vite-plugin-pwa; UI strings in a small typed dictionary (Vietnamese and English). Books, settings and segment state are persisted in IndexedDB as translation proceeds, so a reload resumes. Features: multi-book library, side-by-side reader and editor with per-segment re-translation, glossary and guideline editor, cost estimate, export in the three modes, import and export of `.epubtrans` files. Deployed as static files to GitHub Pages under `/epubtrans/`. See `apps/web` for the current structure.
 
-Several tabs on one book: a translation job holds the Web Lock `epubtrans:job:<projectId>` for its whole run, so other tabs cannot start one and lock Edit/Retranslate; the job saves each segment with compare-and-set inside a Dexie transaction (an edit saved from another tab wins), and segment changes are announced on the BroadcastChannel `epubtrans:<projectId>` so open tabs refresh. Details: `apps/web/README.md`.
+Several tabs on one book: a translation job or sample run holds the Web Lock `epubtrans:job:<projectId>` for its whole run, so other tabs cannot start either and lock Edit/Retranslate; the job saves each segment with compare-and-set inside a Dexie transaction (an edit saved from another tab wins), and segment changes are announced on the BroadcastChannel `epubtrans:<projectId>` so open tabs refresh. Details: `apps/web/README.md`.
 
 ## CLI (`apps/cli`)
 

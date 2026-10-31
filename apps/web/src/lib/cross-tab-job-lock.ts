@@ -137,3 +137,29 @@ export async function runWithJobLock(projectId: string, task: () => Promise<void
     }
   }
 }
+
+/**
+ * Starts `task` under the project's job lock without waiting for it to finish. `started` resolves as soon as
+ * it is known whether the task runs in this tab (false: another tab holds the lock, the task never runs);
+ * `settled` follows `runWithJobLock` and rejects only when the task or the lock manager failed while it ran.
+ */
+export function launchWithJobLock(projectId: string, task: () => Promise<void>): { started: Promise<boolean>; settled: Promise<void> } {
+  let markStarted: (value: boolean) => void = () => {};
+  const started = new Promise<boolean>((resolve) => {
+    markStarted = resolve;
+  });
+  const settled = runWithJobLock(projectId, () => {
+    markStarted(true);
+    return task();
+  }).then(
+    (ran) => {
+      if (!ran) markStarted(false);
+    },
+    (err: unknown) => {
+      // runWithJobLock rejects only after the task started; resolving again is a no-op, this only guards the promise.
+      markStarted(true);
+      throw err;
+    },
+  );
+  return { started, settled };
+}

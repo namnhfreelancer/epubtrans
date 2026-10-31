@@ -1,7 +1,8 @@
 import { type ChatProvider, type Project, type ProjectSettings, type SampleSelection, type TokenUsage, translateSample } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
+import { launchWithJobLock } from './cross-tab-job-lock';
 import { persistLastSample, persistSegment, touchProject } from './project-store';
-import { isJobActive } from './translation-jobs';
+import { isJobActive, type StartJobResult } from './translation-jobs';
 
 export type SampleJobStatus = 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
 
@@ -34,19 +35,50 @@ const subscribe = (l: () => void) => {
   };
 };
 
-export const useSampleJob = (projectId: string): SampleJobState => useSyncExternalStore(subscribe, () => jobs.get(projectId) ?? IDLE);
+export const getSampleJobState = (projectId: string): SampleJobState => jobs.get(projectId) ?? IDLE;
+
+export const useSampleJob = (projectId: string): SampleJobState => useSyncExternalStore(subscribe, () => getSampleJobState(projectId));
 
 /** Whether samples are being translated for the project; re-renders only when that flips, not on progress. */
 export const useSampleRunning = (projectId: string): boolean => useSyncExternalStore(subscribe, () => jobs.get(projectId)?.status === 'running');
 
 /**
- * Translates the sample in the background. Like the full run, every finished segment is persisted right away
- * and a persistence failure stops the run. Refuses to start while a full run (or another sample run) is active.
+ * Translates the sample in the background. A sample run is a paid job like the full run, so it holds the same
+ * cross-tab job lock (`launchWithJobLock`): it does not start while another tab translates the book, and other
+ * tabs cannot start a run (or edit segments) while it is running. Like the full run, every finished segment is
+ * persisted right away and a persistence failure stops the run. Refuses to start while a full run (or another
+ * sample run) is active in this tab. Resolves once it is known whether the sample started here.
  */
-export function startSampleJob(project: Project, settings: ProjectSettings, provider: ChatProvider, request: SampleRequest): void {
-  if (controllers.has(project.id) || isJobActive(project.id)) return;
+export function startSampleJob(project: Project, settings: ProjectSettings, provider: ChatProvider, request: SampleRequest): Promise<StartJobResult> {
+  if (controllers.has(project.id) || isJobActive(project.id)) return Promise.resolve('already-running');
   const controller = new AbortController();
   controllers.set(project.id, controller);
+  const { started, settled } = launchWithJobLock(project.id, () => runSample(project, settings, provider, request, controller));
+  void settled
+    .catch((err: unknown) => {
+      // runSample records its own failures; this only catches the lock manager failing after the sample ran.
+      setJob(project.id, { ...(jobs.get(project.id) ?? IDLE), status: 'failed', error: err instanceof Error ? err.message : String(err) });
+    })
+    .finally(() => {
+      // A start refused by the lock is forgotten right away (below), so a newer sample may own the entry by now.
+      if (controllers.get(project.id) === controller) controllers.delete(project.id);
+      touchProject(project.id);
+    });
+  return started.then((ran) => {
+    if (ran) return 'started';
+    if (controllers.get(project.id) === controller) controllers.delete(project.id);
+    return 'busy-elsewhere';
+  });
+}
+
+/** One sample run; never rejects (the outcome is recorded in the sample state). */
+async function runSample(
+  project: Project,
+  settings: ProjectSettings,
+  provider: ChatProvider,
+  request: SampleRequest,
+  controller: AbortController,
+): Promise<void> {
   setJob(project.id, { ...IDLE, status: 'running' });
   let writeError: Error | undefined;
   const writes: Promise<void>[] = [];
@@ -58,39 +90,33 @@ export function startSampleJob(project: Project, settings: ProjectSettings, prov
       }),
     );
 
-  const run = async () => {
-    try {
-      await translateSample(project, provider, settings, {
-        ...request,
-        signal: controller.signal,
-        onSelect: (selection) => {
-          track(persistLastSample(project.id, selection));
-          touchProject(project.id);
-        },
-        onProgress: (p) => setJob(project.id, { status: 'running', done: p.done, total: p.total, usage: p.usage }),
-        onSegment: (segment) => {
-          track(persistSegment(project.id, segment));
-          touchProject(project.id);
-        },
-      });
-      await Promise.all(writes);
-      if (writeError) throw writeError;
-      setJob(project.id, { ...(jobs.get(project.id) ?? IDLE), status: 'done' });
-    } catch (err) {
-      await Promise.all(writes);
-      const failure = writeError ?? err;
-      const cancelled = !writeError && controller.signal.aborted && controller.signal.reason === CANCEL;
-      const current = jobs.get(project.id) ?? IDLE;
-      setJob(
-        project.id,
-        cancelled ? { ...current, status: 'cancelled' } : { ...current, status: 'failed', error: failure instanceof Error ? failure.message : String(failure) },
-      );
-    } finally {
-      controllers.delete(project.id);
-      touchProject(project.id);
-    }
-  };
-  void run();
+  try {
+    await translateSample(project, provider, settings, {
+      ...request,
+      signal: controller.signal,
+      onSelect: (selection) => {
+        track(persistLastSample(project.id, selection));
+        touchProject(project.id);
+      },
+      onProgress: (p) => setJob(project.id, { status: 'running', done: p.done, total: p.total, usage: p.usage }),
+      onSegment: (segment) => {
+        track(persistSegment(project.id, segment));
+        touchProject(project.id);
+      },
+    });
+    await Promise.all(writes);
+    if (writeError) throw writeError;
+    setJob(project.id, { ...(jobs.get(project.id) ?? IDLE), status: 'done' });
+  } catch (err) {
+    await Promise.all(writes);
+    const failure = writeError ?? err;
+    const cancelled = !writeError && controller.signal.aborted && controller.signal.reason === CANCEL;
+    const current = jobs.get(project.id) ?? IDLE;
+    setJob(
+      project.id,
+      cancelled ? { ...current, status: 'cancelled' } : { ...current, status: 'failed', error: failure instanceof Error ? failure.message : String(failure) },
+    );
+  }
 }
 
 /** Stops a running sample; segments that already finished stay translated and persisted. */

@@ -10,7 +10,16 @@ interface ReaderErrorControlsProps {
   onStep: (direction: StepDirection) => void;
   onlyErrors: boolean;
   onOnlyErrorsChange: (value: boolean) => void;
-  retry: { running: boolean; blockedHint?: string; error?: string; onRetry: () => void; onPause: () => void };
+  retry: {
+    running: boolean;
+    /** Why "Retry all failed" is disabled (samples running, or a job in another tab). */
+    blockedHint?: string;
+    /** Another tab is translating the book: the hint is also shown as a notice. */
+    busyElsewhere?: boolean;
+    error?: string;
+    onRetry: () => void;
+    onPause: () => void;
+  };
 }
 
 /** Previous/next error, errors-only filter and "retry all failed"; the `[` and `]` keys step like the buttons. */
@@ -67,6 +76,11 @@ export function ReaderErrorControls({ total, ordinal, canStep, onStep, onlyError
           </Button>
         )}
       </span>
+      {retry.busyElsewhere && retry.blockedHint && (
+        <p data-testid="retry-busy-elsewhere" className="basis-full text-xs text-amber-800 dark:text-amber-300">
+          {retry.blockedHint}
+        </p>
+      )}
       {retry.error && (
         <p role="alert" className="basis-full text-xs text-red-700 dark:text-red-400">
           {retry.error}

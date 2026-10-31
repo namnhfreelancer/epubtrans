@@ -1,6 +1,7 @@
 import { DEFAULT_SAMPLE_PASSAGES, estimateSampleCost, MAX_SAMPLE_PASSAGES, type Project, randomSampleSeed, selectSamplePassages } from '@epubtrans/core';
 import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
+import { refreshJobLocks, useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { formatNumber, formatUsd } from '../../lib/format';
 import { errorText } from '../../lib/notices';
 import { settingsForRun } from '../../lib/provider-config-store';
@@ -18,6 +19,8 @@ export function SampleTranslationCard({ project, version, provider }: { project:
   const sample = useSampleJob(project.id);
   const fullRunActive = useJobActive(project.id);
   const running = sample.status === 'running';
+  // A sample run holds the same cross-tab job lock as the full run: blocked while another tab translates the book.
+  const busyElsewhere = useJobRunningElsewhere(project.id) && !running;
   const stored = project.lastSample;
   const [count, setCount] = useState(stored?.passages.length ?? DEFAULT_SAMPLE_PASSAGES);
   const [startError, setStartError] = useState<string>();
@@ -34,19 +37,20 @@ export function SampleTranslationCard({ project, version, provider }: { project:
     }
   }, [project, stored, count, providerId, baseURL, model, version]);
 
-  const start = (request: Parameters<typeof startSampleJob>[3]) => {
+  const start = async (request: Parameters<typeof startSampleJob>[3]) => {
     setStartError(undefined);
     if (provider.problem) return setStartError(t(provider.problem));
     try {
       const { provider: chat, settings } = provider.prepare(project);
-      startSampleJob(project, settings, chat, request);
+      // Another tab won the lock before this one noticed: re-read the locks so the busy notice shows right away.
+      if ((await startSampleJob(project, settings, chat, request)) === 'busy-elsewhere') await refreshJobLocks();
     } catch (err) {
       setStartError(errorText(err));
     }
   };
-  const newSample = () => start({ passages: count, seed: randomSampleSeed() });
-  const locked = running || fullRunActive;
-  const lockedHint = fullRunActive ? t('sample.lockedByRun') : undefined;
+  const newSample = () => void start({ passages: count, seed: randomSampleSeed() });
+  const locked = running || fullRunActive || busyElsewhere;
+  const lockedHint = fullRunActive ? t('sample.lockedByRun') : busyElsewhere ? t('run.busyElsewhere') : undefined;
   const usd = estimate?.usd;
 
   return (
@@ -73,7 +77,7 @@ export function SampleTranslationCard({ project, version, provider }: { project:
           <span className="flex flex-wrap gap-2" title={lockedHint}>
             {stored ? (
               <>
-                <Button variant="primary" data-testid="sample-again" disabled={locked} onClick={() => start({ selection: stored })}>
+                <Button variant="primary" data-testid="sample-again" disabled={locked} onClick={() => void start({ selection: stored })}>
                   {t('sample.again')}
                 </Button>
                 <Button data-testid="sample-new" disabled={locked} onClick={newSample}>
@@ -100,6 +104,11 @@ export function SampleTranslationCard({ project, version, provider }: { project:
               {t('sample.running', { done: formatNumber(sample.done, locale), total: formatNumber(sample.total, locale) })}
             </p>
           </>
+        )}
+        {busyElsewhere && (
+          <Alert>
+            <span data-testid="sample-busy-elsewhere">{t('run.busyElsewhere')}</span>
+          </Alert>
         )}
         {startError && <Alert kind="error">{startError}</Alert>}
         {!running && sample.status === 'failed' && <Alert kind="error">{t('sample.failed', { message: sample.error ?? '' })}</Alert>}

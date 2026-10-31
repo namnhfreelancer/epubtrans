@@ -32,7 +32,7 @@ Static, bring-your-own-key web app for epubtrans: import a DRM-free EPUB, MOBI, 
 
 Tabs of the same origin share IndexedDB but each holds its own in-memory project.
 
-- Only one tab at a time can translate a book: a job holds the Web Lock `epubtrans:job:<projectId>` (`src/lib/cross-tab-job-lock.ts`). Other tabs poll `navigator.locks.query()` (every second, on focus, and when a tab announces a job start or end). While the lock is held elsewhere they disable Start, show a notice, and lock Edit/Retranslate in the reader. Browsers without `navigator.locks` run jobs without this guard.
+- Only one tab at a time can translate a book: a job holds the Web Lock `epubtrans:job:<projectId>` (`src/lib/cross-tab-job-lock.ts`), and so does a sample run (it is a paid job too). Other tabs poll `navigator.locks.query()` (every second, on focus, and when a tab announces a job start or end). While the lock is held elsewhere they disable Start, the sample buttons and the reader's "Retry all failed", show a notice, and lock Edit/Retranslate in the reader. A start that loses the race for the lock resolves `busy-elsewhere` and shows the same notice. Browsers without `navigator.locks` run jobs without this guard.
 - Job results are saved with compare-and-set (`saveSegmentIfUnchanged`): a segment is written only if its stored status and translation still match what the job last saw. An edit or retranslation saved meanwhile in any tab wins, and the job copies it into its own in-memory segment.
 - Every segment write is announced on the BroadcastChannel `epubtrans:<projectId>` (ids only, in `src/lib/cross-tab-channel.ts`). Other tabs re-read that segment from IndexedDB and refresh their views.
 

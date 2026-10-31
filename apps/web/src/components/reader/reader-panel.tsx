@@ -24,7 +24,7 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
   const provider = useActiveProvider();
   const job = useJob(project.id);
   const sampleRunning = useSampleRunning(project.id);
-  const { start: retryAll, error: retryError } = useStartTranslation(project, provider);
+  const { start: retryAll, error: retryError, busyElsewhere } = useStartTranslation(project, provider);
   const [index, setIndex] = useState(() =>
     Math.max(
       0,
@@ -153,9 +153,10 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
               onOnlyErrorsChange={toggleOnlyErrors}
               retry={{
                 running: retrying,
-                blockedHint: sampleRunning ? t('sample.blocksRun') : undefined,
+                blockedHint: sampleRunning ? t('sample.blocksRun') : busyElsewhere ? t('run.busyElsewhere') : undefined,
+                busyElsewhere,
                 error: retryError,
-                onRetry: retryAll,
+                onRetry: () => void retryAll(),
                 onPause: () => pauseJob(project.id),
               }}
             />
