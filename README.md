@@ -8,6 +8,7 @@ Translate DRM-free books into **bilingual EPUB** with the AI model of your choic
 - **CLI (single binary):** Linux, macOS and Windows, see [Command line](#command-line)
 - Input: EPUB, MOBI, AZW3 and FB2 (DRM-free). Output: valid EPUB 3 (checked with [epubcheck](https://www.w3.org/publishing/epubcheck/)).
 - Any language pair, source language auto-detected. Inline formatting (bold, italics, links, ...) survives translation.
+- **Word Wise hints** for language learners: short glosses above the difficult words of the original text, with or without a translation (see [Word Wise hints](#word-wise-hints)).
 
 Tiếng Việt: xem [phần tiếng Việt](#tiếng-việt) ở cuối trang.
 
@@ -44,7 +45,7 @@ Prices are looked up automatically for the selected model from public catalogs: 
 3. Optionally let the model draft a **style guideline and glossary** for the book, then edit them; start from a preset (general, fiction, technical, psychology) if you prefer. Turn on the **2-pass review** for higher quality.
 4. Check the token and cost estimate, then translate. Progress is saved continuously: reload or close the tab and it resumes without redoing finished segments.
 5. Read side by side, edit any segment, or re-translate a single segment.
-6. Export the EPUB as **bilingual** (original, then translation, original faded), **bilingual-translation-first**, or **translation-only**.
+6. Export the EPUB as **bilingual** (original, then translation, original faded), **bilingual-translation-first**, **translation-only**, or **original + hints** (the original text with [Word Wise hints](#word-wise-hints), no translation needed).
 
 The library keeps several books. Each book can be exported to, and imported from, a `.epubtrans` project file. The interface is available in English and Vietnamese and the app is an installable PWA.
 
@@ -57,6 +58,21 @@ The library keeps several books. Each book can be exported to, and imported from
 3. **Glossary.** The model classifies the candidates in batches of 80 (person, place, organization, term, other), translates the real terms and drops the rest. Entries you already have are kept and win over duplicates. The glossary grows with the book: about one entry per 500 words, at least 30, at most 400 by default (web: "Max glossary entries").
 
 Each translation request only carries the glossary entries whose term occurs in that batch (whole-word, case-insensitive; the review pass also checks the draft), so a large glossary does not inflate every request. Generation costs one request plus one per 80 candidates: for a 1000-page book about 11 requests, roughly 100k input and 20k output tokens (about $0.60 at $3/$15 per 1M tokens); a short book needs 2 requests. The web glossary table has search, a type filter and pages of 50 rows.
+
+### Word Wise hints
+
+Kindle Word Wise shows short hints above difficult words. epubtrans writes similar hints into the exported EPUB itself, for any reader app, on the **original** text:
+
+- **Who it is for:** learners reading the original (export "Original + hints": no translation needed at all) and bilingual readers (the hints go on the source passages of both bilingual layouts; "Translation only" has no original text and therefore no hints).
+- **Turn it on per book** ("Word Wise hints" on the Translate tab), pick the **difficulty** (1 = fewest hints, only the rarest words, for about C2 readers; 5 = most hints, for about A2; default 3, about B2) and the **gloss language** (default: the book's target language; choose the source language for simple same-language definitions).
+- **Generate hints** is a separate button (CLI: `epubtrans hints`), never part of a translation run. It shows a token and cost estimate first (same automatic pricing as translation), runs as a job under the same one-job-per-book lock, and saves every finished word, so a reload or a cancel resumes where it stopped and a higher level later only adds the new words.
+- **How words are picked (locally):** each word's frequency rank in a list derived from [wordfreq](https://github.com/rspeer/wordfreq) decides whether it is difficult at the chosen level. Proper nouns (capitalized mid-sentence, used as a name elsewhere in the book, or glossary names), numbers, very short words and text in code, math, sub/superscripts and note references are skipped. English inflections are grouped with a small rule-based lemmatizer ("obfuscated" → "obfuscate").
+- **How glosses are written:** your model receives each difficult word with its sentence (at most two contexts per word, batched 40 per request) and answers a gloss of at most about 4 words plus a short sense label. A word whose contexts share one sense gets one gloss everywhere; a word with several senses ("bank" of a river, "bank" for money) gets its other occurrences checked against the known senses, so each gloss is cached per word and sense across the book. Answers are validated (JSON, known ids, plain text, length caps) with retries and backoff, and glosses are only ever written as text.
+- **Display:** by default `<ruby>word<rp> (</rp><rt>gloss</rt><rp>)</rp></ruby>` with a small gloss above the word and extra line height; readers without ruby support show "word (gloss)". The **Kindle / EPUB 2** style writes "word (gloss)" inline; EPUB 2 books always use it because ruby is invalid there. Exports pass epubcheck with zero errors.
+- **Density (at export, no new requests):** at most N hints per paragraph (default 3, rarest first) and only the first N occurrences of a word sense per chapter (default 1). Lowering the level at export also needs no new requests.
+- **Cost:** for a 1000-page book roughly 0.4M input and 0.15M output tokens at level 3, about $0.05–0.50 with cheap models or $3–4 with Sonnet-class models; the app and CLI show the exact estimate for your book first.
+
+Supported source languages: English, French, German, Spanish, Italian, Portuguese, Russian, Dutch, Polish, Swedish, Ukrainian, Czech, Japanese, Chinese (Simplified) and Korean. Limitations: only English groups inflected forms (other languages match exact word forms after lowercasing, so a rare inflection of a common word may get a hint); Chinese and Japanese use the browser's or Bun's word segmentation, which differs from wordfreq's, so selection is weaker there; Traditional Chinese and languages without a list (for example Vietnamese) are not supported; the frequency data is frozen at about 2021; multi-word expressions and phrasal verbs are not detected; ruby rendering on real Kindle devices with Latin text is unverified (use the Kindle / EPUB 2 style if it does not show). Real Kindle Word Wise cannot be produced from an EPUB.
 
 ## Command line
 
@@ -101,12 +117,15 @@ Progress is saved continuously to `book.epub.epubtrans`. After Ctrl-C or a crash
 | `epubtrans models [--provider <id>] [--base-url <url>]` | List models from `/models` |
 | `epubtrans presets` | List providers, guideline presets and export modes |
 | `epubtrans sample <input or file.epubtrans> [--passages N] [--words N] [--seed S] [--new]` | Translate a few passages from different chapters and print them as source/translation pairs, before the full run |
+| `epubtrans hints <input or file.epubtrans> [--level N] [--gloss-lang xx] [--style ruby\|inline]` | Generate [Word Wise hints](#word-wise-hints) and save them in the project file (no translation needed) |
 
 **Sample translation.** To check quality before paying for a whole book, translate a sample first: in the web app use the "Sample translation" card on the setup page, on the command line run `epubtrans sample book.epub --to vi --model <id>`. It picks 5 passages of about 350 words from different chapters spread across the book (seeded, so the same seed picks the same passages), translates them with your guideline and glossary, and shows source and translation side by side. Change the guideline or glossary and run it again to compare ("Translate samples again" in the app, the same command in the CLI); "New random samples" or `--new` picks other passages. The sampled segments count as translated, so the full run skips them. The selection is stored in the project file.
 
 Common options: `--from <lang>` (default auto), `--provider <preset id>`, `--base-url <url>`, `--model <id>`, `--concurrency <1-16>`, `--two-pass`, `--guideline-preset general|fiction|technical|psychology`, `--guideline-file <path>`, `--generate-guide`, `--mode bilingual|bilingual-translation-first|translation-only`, `--out <file.epub>`, `--project <file>`, `--price-in/--price-out <USD per 1M tokens>`, `--yes`. Run `epubtrans <command> --help` for details.
 
 `--no-price-lookup` turns off the automatic price lookup used when `--price-in/--price-out` are absent.
+
+**Word Wise hints.** `epubtrans hints book.epub --gloss-lang vi --model <id>` imports the book (if needed), prints an estimate, asks for confirmation and saves the glosses in `book.epub.epubtrans`; run it again to resume, or with a higher `--level` to add words. Options: `--level 1-5`, `--gloss-lang <lang>` (also the target language of a new project without `--to`), `--style ruby|inline`, `--hints-per-paragraph N`, `--hints-per-chapter N`, plus the provider and price options. Then `epubtrans export book.epub.epubtrans --mode original --word-wise` writes the original with hints. `translate`, `resume` and `export` accept `--word-wise`, `--hint-style ruby|inline`, `--hint-level N`, `--hints-per-paragraph N` and `--hints-per-chapter N`; they only apply hints that were already generated (`export` does not change the project file).
 
 Exit codes: `0` success, `1` error, `2` usage error, `3` finished with untranslated segments (EPUB still written), `130` interrupted (progress saved).
 
@@ -133,6 +152,8 @@ Layout: `packages/core` (engine), `apps/web` (Vite + React app), `apps/cli` (Bun
 
 epubtrans was created by [nguyenvanduocit](https://github.com/nguyenvanduocit/epubtrans); v2 and its prompt presets are his work. This v3 rewrite (TypeScript monorepo, browser app, new CLI) builds on that project and keeps its attribution. The MOBI/KF8 parser is vendored from [foliate-js](https://github.com/johnfactotum/foliate-js) (MIT), see `packages/core/third-party/foliate-js/`.
 
+Word Wise hints use word frequency lists derived from [wordfreq](https://github.com/rspeer/wordfreq) by Robyn Speer et al., whose data is licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The derived lists in `packages/core/data/wordfreq/` are distributed under the same license; see the README there. The share-alike terms apply to those data files only.
+
 See [LICENSE](LICENSE) for the terms that apply to this repository.
 
 ---
@@ -144,7 +165,8 @@ epubtrans dịch sách **không DRM** (EPUB, MOBI, AZW3, FB2) thành **EPUB song
 - **Dùng thử không cần cài đặt:** <https://namnhfreelancer.github.io/epubtrans/>
 - **Riêng tư:** không có máy chủ. Sách và tiến độ dịch lưu trong trình duyệt của bạn. API key chỉ nằm trong trình duyệt và chỉ được gửi tới nhà cung cấp bạn đã chọn (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek hoặc URL tương thích OpenAI). Lưu ý: nếu bật "nhớ khóa", khóa được lưu trong `localStorage` của trình duyệt cho origin `namnhfreelancer.github.io`, origin này dùng chung với các trang GitHub Pages khác của chủ repo; trên máy dùng chung hoặc nếu bạn không muốn vậy, hãy để ô này không chọn.
 - **Tự mang API key (BYOK):** ứng dụng ước tính token và chi phí trước khi dịch, tự tạo hướng dẫn văn phong và bảng thuật ngữ (chỉnh sửa được), có chế độ rà soát 2 lượt, lưu tiến độ liên tục nên tải lại trang vẫn dịch tiếp.
-- **Xuất EPUB** ở 3 chế độ: song ngữ, song ngữ (bản dịch trước), chỉ bản dịch. Giao diện có tiếng Việt và tiếng Anh, cài được như ứng dụng (PWA).
+- **Xuất EPUB** ở 4 chế độ: song ngữ, song ngữ (bản dịch trước), chỉ bản dịch, bản gốc + gợi ý.
+- **Gợi ý Word Wise** cho người học ngoại ngữ: chú giải ngắn (tối đa khoảng 4 từ) phía trên các từ khó của bản gốc, không cần dịch sách. Bật theo từng cuốn, chọn độ khó (1–5, ước lượng theo trình độ CEFR) và ngôn ngữ chú giải (mặc định là ngôn ngữ đích), bấm "Tạo gợi ý" (CLI: `epubtrans hints`) sau khi xem ước tính chi phí; tiến độ được lưu từng từ nên tải lại trang vẫn tiếp tục. Mặc định dùng ruby phía trên từ; kiểu "Kindle / EPUB 2" ghi "từ (chú giải)" ngay trong dòng (sách EPUB 2 luôn dùng kiểu này). Dữ liệu tần suất từ lấy từ wordfreq (giấy phép CC BY-SA 4.0). Giao diện có tiếng Việt và tiếng Anh, cài được như ứng dụng (PWA).
 - **Dòng lệnh:** cài bằng lệnh ở mục [Command line](#command-line), đặt khóa trong biến môi trường `EPUBTRANS_API_KEY`, rồi chạy `epubtrans translate sach.epub --to vi --model <id>` (nhà cung cấp mặc định là `openai`; dùng nhà cung cấp khác thì thêm `--provider <id>` ở mỗi lần chạy). Gặp sự cố hoặc nhấn Ctrl-C, chạy lại cùng lệnh để dịch tiếp; có thể mở tệp `.epubtrans` xuất từ web bằng `epubtrans resume`.
 - **Bảng thuật ngữ và hướng dẫn văn phong:** ứng dụng quét toàn bộ sách (không tốn lượt gọi mô hình) để tìm tên riêng và thuật ngữ lặp lại, rồi nhờ mô hình phân loại (nhân vật, địa danh, tổ chức, thuật ngữ, khác) và dịch chúng; số mục tăng theo độ dài sách (khoảng 1 mục cho mỗi 500 từ, tối đa 400 theo mặc định). Hướng dẫn văn phong được viết từ khoảng 18 đoạn trích khắp cuốn sách, theo các mục cố định, trong đó có cách xưng hô giữa các nhân vật; hướng dẫn bạn đang dùng được giữ nguyên, phần tạo ra được thêm bên dưới. Mỗi yêu cầu dịch chỉ gửi kèm những thuật ngữ xuất hiện trong đoạn đó.
 

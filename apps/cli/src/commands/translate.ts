@@ -13,6 +13,7 @@ import {
 import { expectPositionals, parseArgs, UsageError } from '../args';
 import { domEnv } from '../dom-env';
 import { TRANSLATE_FLAGS } from '../flag-specs';
+import { applyWordWiseFlags } from '../hint-flags';
 import type { Io } from '../io';
 import { translateAndExport } from '../pipeline';
 import { countStatuses } from '../progress';
@@ -90,7 +91,7 @@ export async function translateCommand(argv: string[], io: Io): Promise<number> 
   }
 
   const selection = selectProvider(flags, existingBytes ? project.settings : undefined);
-  settings = applyRunFlags(settings, flags, selection);
+  settings = applyWordWiseFlags(applyRunFlags(settings, flags, selection), flags);
   if (!settings.model) throw new UsageError('--model <id> is required. List the available models with: epubtrans models --provider <id>');
   const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io);
 
