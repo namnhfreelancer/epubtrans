@@ -29,7 +29,8 @@ const PROVIDER_OPTIONS = `  --provider <id>          Provider preset (see: epubt
   --api-key-file <path>    Read the API key from a file (- for stdin)`;
 
 const REASONING_OPTION = `  --reasoning <level>      default (provider default) | low | off, for reasoning models. An endpoint that rejects the
-                           setting is asked again without it (once per session); that never stops the run`;
+                           setting is asked again with minimal effort (off), then without it; what worked is
+                           remembered for the session, and a rejection never stops the run`;
 
 const RUN_OPTIONS = `  --concurrency <n>        Parallel requests, 1-16 (default 3)
   --two-pass               Add a review pass over every translation
