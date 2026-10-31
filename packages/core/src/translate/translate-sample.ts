@@ -17,7 +17,7 @@ const MAX_SEED = 0xffffffff;
  */
 const BACK_MATTER_TITLE =
   /^(?:index(?: of .*)?|general index|notes?(?: (?:to|on) .*)?|end ?notes|footnotes|bibliography|select(?:ed)? bibliography|references|works cited|sources|further reading|acknowledge?ments?|copyright(?: page)?|credits|permissions|about the authors?|also by .*|colophon|register|anmerkungen|literaturverzeichnis|danksagung|bibliographie|remerciements|notas|bibliografía|índice alfabético|agradecimientos|примечания|указатель|библиография|список литературы|chú thích|ghi chú|tài liệu tham khảo|lời cảm ơn|mục từ)$/i;
-const isBackMatter = (title: string) => BACK_MATTER_TITLE.test(title.trim().replace(/[\s.:;,!]+$/u, ''));
+export const isBackMatterTitle = (title: string): boolean => BACK_MATTER_TITLE.test(title.trim().replace(/[\s.:;,!]+$/u, ''));
 
 export interface SampleSelectionOptions {
   /** Number of passages, each from a different chapter (default 5). Fewer are returned when the book has fewer usable chapters. */
@@ -84,7 +84,7 @@ export function selectSamplePassages(project: Project, opts: SampleSelectionOpti
     .map((chapter) => ({ chapter, words: chapter.segments.map((s) => countWords(s.sourceText)) }))
     .map((m) => ({ ...m, total: m.words.reduce((a, b) => a + b, 0) }));
   const substantial = measured.filter((m) => m.total >= MIN_CHAPTER_WORDS);
-  const body = substantial.filter((m) => !isBackMatter(m.chapter.title));
+  const body = substantial.filter((m) => !isBackMatterTitle(m.chapter.title));
   // A very short book may have no substantial chapter; sample whatever text there is rather than nothing.
   const pool = body.length > 0 ? body : substantial.length > 0 ? substantial : measured.filter((m) => m.total > 0);
   if (pool.length === 0) throw new Error('The book has no text to sample');

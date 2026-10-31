@@ -59,9 +59,9 @@ describe('generateWordHints', () => {
         rank: 30_000,
         senses: [{ id: 'main', gloss: '≈perspicacious' }],
         occurrences: [
-          { segmentId: 'c0-0', word: 'Perspicacious', nth: 0, sense: 'main' },
-          { segmentId: 'c0-1', word: 'perspicacious', nth: 0, sense: 'main' },
-          { segmentId: 'c1-0', word: 'Perspicacious', nth: 0, sense: 'main' },
+          { segmentId: 'c0-0', word: 'Perspicacious', nth: 0, sense: 'main', rank: 30_000 },
+          { segmentId: 'c0-1', word: 'perspicacious', nth: 0, sense: 'main', rank: 30_000 },
+          { segmentId: 'c1-0', word: 'Perspicacious', nth: 0, sense: 'main', rank: 30_000 },
         ],
       },
     ]);
@@ -216,6 +216,68 @@ describe('project hints: plan, resume, estimate', () => {
     expect(resets).toEqual(['fr']);
     expect(project.wordHints?.glossLang).toBe('fr');
     expect(project.wordHints?.entries).toHaveLength(1);
+  });
+
+  it('decides per occurrence: a glossed lemma sends only its missing occurrences, with its known senses, and merges them', async () => {
+    const project = bankProject();
+    project.settings.wordHints = { enabled: true, level: 3, style: 'ruby', maxPerParagraph: 3, perChapter: 1 };
+    // An entry that covers only the first two occurrences (written by an older build, or before the text gained more).
+    project.wordHints = {
+      sourceLang: 'en',
+      glossLang: 'vi',
+      entries: [
+        {
+          lemma: 'bank',
+          rank: 13_000,
+          senses: [{ id: 'river edge', gloss: 'bờ sông' }],
+          occurrences: [
+            { segmentId: 'c0-0', word: 'banks', nth: 0, sense: 'river edge' },
+            { segmentId: 'c0-1', word: 'bank', nth: 0, sense: 'river edge' },
+          ],
+        },
+      ],
+    };
+    const plan = planWordHints(project, list, project.settings);
+    expect(plan.total).toBe(1);
+    expect(plan.candidates.map((c) => [c.lemma, c.occurrences.map((o) => o.segmentId), c.senses])).toEqual([
+      ['bank', ['c1-0', 'c1-1', 'c1-2'], [{ id: 'river edge', gloss: 'bờ sông' }]],
+    ]);
+    const estimate = estimateWordHintsCost(plan.candidates, {}, langs);
+    expect(estimate.requests).toBe(0);
+    expect(estimate.inputTokens).toBeGreaterThan(0);
+
+    const provider = glossProvider(bySense);
+    await generateProjectWordHints(project, plan, provider, settings);
+    // No first round: one request with the three missing contexts, each carrying the known sense.
+    expect(provider.calls).toHaveLength(1);
+    const sent = JSON.parse(provider.calls[0]?.user ?? '{}') as { items: GlossItem[] };
+    expect(sent.items.map((i) => i.senses)).toEqual(Array(3).fill([{ id: 'river edge', gloss: 'bờ sông' }]));
+    const [entry] = project.wordHints?.entries ?? [];
+    expect(entry?.senses.map((x) => x.id)).toEqual(['river edge', 'money institution']);
+    expect(entry?.occurrences.map((o) => `${o.segmentId}:${o.sense}`)).toEqual([
+      'c0-0:river edge',
+      'c0-1:river edge',
+      'c1-0:money institution',
+      'c1-1:river edge',
+      'c1-2:river edge',
+    ]);
+    expect(planWordHints(project, list, project.settings).candidates).toEqual([]);
+  });
+
+  it('samples the forms that qualified at the level, not the common forms of the lemma', async () => {
+    const words = rankedList('en', { frustrate: 28_000, frustrating: 7_000, it: 1, was: 2, a: 3, they: 4, me: 5 });
+    const project = makeProject([[segment('c0-0', 'It was frustrating.'), segment('c0-1', 'They frustrate me.')], [segment('c1-0', 'It was frustrating.')]]);
+    const candidates = selectHintCandidates(project, words, { level: 1 });
+    expect(candidates.map((c) => c.lemma)).toEqual(['frustrate']);
+    const provider = glossProvider();
+    const result = await generateWordHints(candidates, provider, settings, langs);
+    const sent = JSON.parse(provider.calls[0]?.user ?? '{}') as { items: GlossItem[] };
+    expect(sent.items.map((i) => i.word)).toEqual(['frustrate']);
+    expect(result.entries[0]?.occurrences.map((o) => [o.word, o.rank])).toEqual([
+      ['frustrating', 7_000],
+      ['frustrate', 28_000],
+      ['frustrating', 7_000],
+    ]);
   });
 
   it('estimates tokens and cost from the planned requests', () => {

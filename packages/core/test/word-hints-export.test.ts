@@ -176,6 +176,22 @@ describe('hint density at export', () => {
     expect(placed(densityProject(hintSettings({ level: 1 })))).toEqual({ 'c0-0': ['rare0:rare:main'] });
   });
 
+  it('filters each occurrence by the rank of its own form, falling back to the entry rank for older files', () => {
+    const project = densityProject(hintSettings({ level: 1 }));
+    project.wordHints?.entries.push({
+      lemma: 'frustrate',
+      rank: 28_991,
+      senses: [{ id: 'main', gloss: 'làm nản' }],
+      occurrences: [
+        { segmentId: 'c0-1', word: 'frustrate', nth: 0, sense: 'main', rank: 28_991 },
+        { segmentId: 'c1-0', word: 'frustrating', nth: 0, sense: 'main', rank: 7_418 },
+      ],
+    });
+    expect(placed(project)).toEqual({ 'c0-0': ['rare0:rare:main'], 'c0-1': ['frustrate0:làm nản'] });
+    project.settings.wordHints = hintSettings({ level: 4 });
+    expect(placed(project)['c1-0']).toEqual(['bank0:bank:river', 'frustrating0:làm nản']);
+  });
+
   it('limits hints to the first N occurrences of a sense per chapter', () => {
     expect(placed(densityProject(hintSettings({ perChapter: 1 })))).toEqual({
       'c0-0': ['bank0:bank:river', 'bank1:bank:money', 'rare0:rare:main'],
@@ -223,10 +239,93 @@ describe('applyWordHints', () => {
     expect(html.startsWith('<p>A bank, ')).toBe(true);
   });
 
+  it('never writes a hint into a drop cap or a word split by markup, even when a placement names it', () => {
+    const p = paragraph('<span class="dropcap">A</span>lthough the <b>W</b>hen bank.');
+    const written = applyWordHints(
+      p,
+      [
+        { word: 'lthough', nth: 0, gloss: 'x', rank: 1 },
+        { word: 'hen', nth: 0, gloss: 'y', rank: 1 },
+        { word: 'bank', nth: 0, gloss: 'z', rank: 1 },
+      ],
+      plan('inline'),
+      true,
+    );
+    expect(written).toBe(1);
+    expect(String(p)).toContain('<span class="dropcap">A</span>lthough the <b>W</b>hen bank<span');
+  });
+
+  it('never writes a hint into link text', () => {
+    const p = paragraph('<a href="#x">bank</a> and bank');
+    // Link text is not counted either, so the bank after the link is the first one.
+    expect(applyWordHints(p, [{ word: 'bank', nth: 0, gloss: 'z', rank: 1 }], plan('inline'), true)).toBe(1);
+    expect(String(p)).toContain('<a href="#x">bank</a> and bank<span');
+  });
+
   it('skips an occurrence that no longer matches', () => {
     const p = paragraph('Only one bank.');
     expect(applyWordHints(p, [{ word: 'bank', nth: 3, gloss: 'x', rank: 1 }], plan('inline'), true)).toBe(0);
     expect(String(p)).toBe('<p>Only one bank.</p>');
+  });
+});
+
+describe('changing the level after generating', () => {
+  const en = readFrequencyList('en');
+  const frustrateProject = (level: number) => {
+    const project = makeProject([[segment('c0-0', 'Delays frustrate everyone here.')], [segment('c1-0', 'It was a frustrating morning.')]]);
+    project.settings.wordHints = hintSettings({ level });
+    return project;
+  };
+  const exported = (project: Project) =>
+    [...(planWordHintExport(project, 'original', false)?.placements ?? [])].map(([id, list]) => [id, list.map((p) => p.word)]);
+
+  it('lowering the level at export keeps the forms a fresh run at that level would hint, without new requests', async () => {
+    const project = frustrateProject(5);
+    await generateProjectWordHints(project, planWordHints(project, en, project.settings), glossProvider(), { concurrency: 1 });
+    project.settings.wordHints = hintSettings({ level: 1 });
+    expect(exported(project)).toEqual([['c0-0', ['frustrate']]]);
+    expect(planWordHints(project, en, project.settings).candidates).toEqual([]);
+
+    const fresh = frustrateProject(1);
+    await generateProjectWordHints(fresh, planWordHints(fresh, en, fresh.settings), glossProvider(), { concurrency: 1 });
+    expect(exported(fresh)).toEqual(exported(project));
+  });
+
+  it('raising the level adds only new lemmas and shows the common forms of lemmas glossed before', async () => {
+    const project = frustrateProject(1);
+    await generateProjectWordHints(project, planWordHints(project, en, project.settings), glossProvider(), { concurrency: 1 });
+    expect(exported(project)).toEqual([['c0-0', ['frustrate']]]);
+
+    project.settings.wordHints = hintSettings({ level: 5 });
+    const plan = planWordHints(project, en, project.settings);
+    expect(plan.candidates.map((c) => c.lemma)).toEqual(['delay']);
+    const provider = glossProvider();
+    await generateProjectWordHints(project, plan, provider, { concurrency: 1 });
+    const sent = provider.calls.flatMap((c) => (JSON.parse(c.user) as { items: { lemma: string }[] }).items.map((i) => i.lemma));
+    expect([...new Set(sent)]).toEqual(['delay']);
+    expect(exported(project)).toEqual([
+      ['c0-0', ['frustrate', 'Delays']],
+      ['c1-0', ['frustrating']],
+    ]);
+    expect(planWordHints(project, en, project.settings).candidates).toEqual([]);
+  });
+});
+
+describe('XML-invalid characters from the model or a crafted file', () => {
+  it('drops them from glosses and translations, so the export stays well-formed', async () => {
+    const project = await hintedProject({ translated: true });
+    const entry = project.wordHints?.entries.find((e) => e.lemma === 'prodigious') as WordHintEntry;
+    (entry.senses[0] as { gloss: string }).gloss = 'bad\uFFFFgloss\uFFFE\u0001';
+    const segmentWithText = project.chapters.flatMap((c) => c.segments).find((s) => s.translationHtml?.includes('I think it is agreed'));
+    if (segmentWithText) segmentWithText.translationHtml = `${segmentWithText.translationHtml}\uFFFF\uD800`;
+    for (const mode of HINT_EXPORT_MODES) {
+      const out = await exportEpub(project, mode, env);
+      expectWellFormed(out);
+      const html = unzipText(out, CHAPTER);
+      expect(html).toContain('badgloss');
+      expect(html).not.toMatch(/[\uFFFE\uFFFF]/);
+      expect(html.includes('\u0001')).toBe(false);
+    }
   });
 });
 
@@ -259,5 +358,15 @@ describe('project files with hints', () => {
       },
     };
     await expect(loadProjectFile(await bytes(bad))).rejects.toThrow(/sense/);
+    const badRank = {
+      wordHints: {
+        sourceLang: 'en',
+        glossLang: 'vi',
+        entries: [
+          { lemma: 'a', rank: 1, senses: [{ id: 'm', gloss: 'g' }], occurrences: [{ segmentId: 'c0-0', word: 'a', nth: 0, sense: 'm', rank: 'high' }] },
+        ],
+      },
+    };
+    await expect(loadProjectFile(await bytes(badRank))).rejects.toThrow(/rank/);
   });
 });

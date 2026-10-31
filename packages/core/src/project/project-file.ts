@@ -195,7 +195,9 @@ function validateWordHintEntry(e: Json, path: string): WordHintEntry {
       if (nth === undefined || nth < 0 || !Number.isInteger(nth)) fail(`${op}.nth`, 'a non-negative integer');
       const sense = str(o, 'sense', op);
       if (!ids.has(sense)) fail(`${op}.sense`, 'the id of a sense of its entry');
-      return { segmentId: str(o, 'segmentId', op), word: boundedStr(o, 'word', op), nth, sense };
+      // Optional: absent in files written before per-form ranks (the entry's rank applies then).
+      const occRank = optNum(o, 'rank', op);
+      return { segmentId: str(o, 'segmentId', op), word: boundedStr(o, 'word', op), nth, sense, ...(occRank !== undefined ? { rank: occRank } : {}) };
     }),
   };
 }

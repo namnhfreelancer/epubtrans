@@ -88,6 +88,11 @@ export interface WordHintOccurrence {
   nth: number;
   /** Id of the sense of the lemma used here (see `WordHintEntry.senses`). */
   sense: string;
+  /**
+   * Frequency rank of this form (higher is rarer): export shows the occurrence only at levels whose threshold is
+   * below it. Absent in files written before per-form ranks; the entry's rank applies then.
+   */
+  rank?: number;
 }
 
 export interface WordHintSense {
@@ -99,7 +104,7 @@ export interface WordHintSense {
 /** Glosses of one lemma, reused for every occurrence with the same sense. */
 export interface WordHintEntry {
   lemma: string;
-  /** Frequency rank of the word (higher is rarer); export filters by the configured level without new requests. */
+  /** Frequency rank of the rarest form of the lemma (higher is rarer); the fallback for occurrences without a rank. */
   rank: number;
   /** Empty when the model judged the word not worth a hint (a name, a non-word); such a lemma is never sent again. */
   senses: WordHintSense[];

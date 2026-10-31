@@ -1,6 +1,7 @@
 import { extractJson } from '../translate/prompt-protocol';
 import { languageName } from '../translate/token-estimate';
 import type { WordHintSense } from '../types';
+import { stripXmlInvalidChars } from '../util/xml-chars';
 
 /**
  * Gloss protocol. The system prompt depends only on the language pair, so it is byte-identical for every request of
@@ -44,16 +45,65 @@ export function buildGlossUserMessage(items: readonly GlossRequestItem[]): strin
   });
 }
 
-/** Plain-text gloss within the caps, or undefined when the model's text is unusable. */
+/** Opening → closing character of the quote and bracket pairs a model may wrap a whole gloss in. */
+const WRAPPERS: Record<string, string> = { '"': '"', "'": "'", '“': '”', '‘': '’', '«': '»', '「': '」', '『': '』', '(': ')', '[': ']' };
+/** Format characters to drop (bidi overrides, zero-width space…), except ZWNJ/ZWJ, which Persian and Indic words need. */
+const FORMAT_CHARS = /(?![\u200C\u200D])[\p{Cc}\p{Cf}]/gu;
+
+const count = (text: string, ch: string) => text.split(ch).length - 1;
+
+/** The first and last characters are a quote or bracket pair enclosing the whole text ("(a) or (b)" is not enclosed). */
+function enclosed(text: string): boolean {
+  const open = text[0] ?? '';
+  const close = WRAPPERS[open];
+  if (!close || text.length < 2 || text[text.length - 1] !== close) return false;
+  if (open === close) return !text.slice(1, -1).includes(open);
+  let depth = 0;
+  for (let i = 0; i < text.length - 1; i++) {
+    if (text[i] === open) depth++;
+    else if (text[i] === close) depth--;
+    if (depth === 0) return false;
+  }
+  return true;
+}
+
+/** `ch` (an edge character of `text`) is a quote or bracket without a partner. */
+function unpaired(text: string, ch: string): boolean {
+  const close = WRAPPERS[ch];
+  const open = close === undefined ? Object.keys(WRAPPERS).find((o) => WRAPPERS[o] === ch) : ch;
+  if (open === undefined) return false;
+  const closer = WRAPPERS[open] as string;
+  if (open === closer) return count(text, open) % 2 === 1;
+  return ch === open ? count(text, open) > count(text, closer) : count(text, closer) > count(text, open);
+}
+
+/** Drops trailing sentence punctuation, quotes or brackets around the whole gloss and unpaired ones at either end. */
+function unwrap(text: string): string {
+  let out = text;
+  for (let before = ''; out !== before; ) {
+    before = out;
+    out = out.replace(/[.;,。、]+$/u, '').trim();
+    if (enclosed(out)) out = out.slice(1, -1).trim();
+    else if (out && unpaired(out, out[0] as string) && WRAPPERS[out[0] as string]) out = out.slice(1).trim();
+    else if (out && unpaired(out, out[out.length - 1] as string)) out = out.slice(0, -1).trim();
+  }
+  return out;
+}
+
+/**
+ * Plain-text gloss within the caps, or undefined when the model's text is unusable. Tags, controls, format characters
+ * (but not ZWNJ/ZWJ) and XML-invalid characters are removed; quotes or brackets wrapping the whole gloss are dropped,
+ * while balanced ones inside it ("bank (river)") are kept.
+ */
 export function cleanGloss(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
-  const text = raw
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^["'“”‘’«»「」([]+|["'“”‘’«»「」)\].;,]+$/g, '')
-    .trim();
+  const text = unwrap(
+    stripXmlInvalidChars(raw)
+      .replace(/<[^>]*>/g, ' ')
+      .replace(FORMAT_CHARS, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
   if (!text || text.length > MAX_GLOSS_CHARS || text.split(' ').length > MAX_GLOSS_WORDS) return undefined;
   return text;
 }

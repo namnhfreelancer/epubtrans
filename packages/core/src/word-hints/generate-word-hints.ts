@@ -45,13 +45,19 @@ interface PlannedItem {
   occurrence: number;
 }
 
-/** Indexes of the occurrences sent in the first round: the first one, and one from another chapter (else the middle one). */
+/**
+ * Indexes of the occurrences sent in the first round, among the forms that qualified at the selected level (the
+ * other forms of the lemma take the same senses): the first one, and one from another chapter (else the middle one).
+ */
 export function sampleOccurrences(candidate: HintCandidate): number[] {
-  const occ = candidate.occurrences;
-  if (occ.length <= 1) return occ.length ? [0] : [];
-  const first = occ[0]?.chapter;
-  const other = occ.findIndex((o) => o.chapter !== first);
-  return [0, other > 0 ? other : Math.floor(occ.length / 2)].slice(0, SAMPLE_CONTEXTS);
+  const all = candidate.occurrences.map((_, i) => i);
+  const qualified = all.filter((i) => (candidate.occurrences[i]?.rank ?? 0) > candidate.threshold);
+  const pool = qualified.length ? qualified : all;
+  if (pool.length <= 1) return pool;
+  const chapterOf = (i: number) => candidate.occurrences[i]?.chapter;
+  const first = pool[0] as number;
+  const other = pool.find((i) => chapterOf(i) !== chapterOf(first));
+  return [first, other ?? (pool[Math.floor(pool.length / 2)] as number)].slice(0, SAMPLE_CONTEXTS);
 }
 
 /** Up to `count` indexes spread evenly over `indexes`. */
@@ -75,11 +81,11 @@ export function packBatches(groups: PlannedItem[][]): PlannedItem[][] {
   return batches;
 }
 
-/** First-round items of every candidate, grouped per lemma. */
+/** First-round items of every new candidate, grouped per lemma (lemmas with known senses skip the first round). */
 export function planFirstRound(candidates: readonly HintCandidate[]): PlannedItem[][] {
   let next = 0;
   return candidates.map((c, ci) =>
-    sampleOccurrences(c).map((oi) => {
+    (c.senses?.length ? [] : sampleOccurrences(c)).map((oi) => {
       const o = c.occurrences[oi] as HintCandidate['occurrences'][number];
       return { candidate: ci, occurrence: oi, item: { id: `w${next++}`, word: o.word, lemma: c.lemma, context: hintContext(o) } };
     }),
@@ -159,7 +165,7 @@ export async function generateWordHints(
     const occurrences: WordHintOccurrence[] = [];
     c.occurrences.forEach((o, i) => {
       const sense = senseAt(i);
-      if (sense) occurrences.push({ segmentId: o.segmentId, word: o.word, nth: o.nth, sense });
+      if (sense) occurrences.push({ segmentId: o.segmentId, word: o.word, nth: o.nth, sense, rank: o.rank });
     });
     return { lemma: c.lemma, rank: c.rank, senses, occurrences };
   };
@@ -213,9 +219,14 @@ export async function generateWordHints(
     }
   };
 
+  // Lemmas glossed before whose occurrences are partly missing go straight to the second round with their senses.
+  candidates.forEach((c, index) => {
+    if (c.senses?.length) polysemous.push({ candidate: index, senses: [...c.senses], assigned: new Map() });
+  });
+
   try {
     report();
-    await runPool(packBatches(planFirstRound(candidates)), concurrencyOf(settings), firstRound, controller);
+    await runPool(packBatches(planFirstRound(candidates).filter((g) => g.length > 0)), concurrencyOf(settings), firstRound, controller);
     let next = 0;
     const groups = polysemous.map((lemma) => {
       const c = candidates[lemma.candidate] as HintCandidate;

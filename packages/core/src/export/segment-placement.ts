@@ -1,6 +1,7 @@
 import { fragmentToNodes, parseHtmlFragment } from '../dom/fragment-markup';
 import { ELEMENT_NODE, NS, nameOf, textOf } from '../dom/xml-dom-helpers';
 import type { DomEnv, ExportMode } from '../types';
+import { stripXmlInvalidChars } from '../util/xml-chars';
 
 export const SOURCE_CLASS = 'et-src';
 export const TRANSLATION_CLASS = 'et-tr';
@@ -31,10 +32,13 @@ export function addClass(el: Element, cls: string): void {
   el.setAttribute('class', current ? `${current} ${cls}` : cls);
 }
 
-/** Inserts the translation of segment block `el` according to the export mode. */
+/**
+ * Inserts the translation of segment block `el` according to the export mode. Characters XML 1.0 forbids (model output
+ * or a crafted project file may hold them) are dropped first, so the exported document stays well-formed.
+ */
 export function placeTranslation(el: Element, translationHtml: string, ctx: PlacementContext): void {
   const doc = el.ownerDocument;
-  const nodes = fragmentToNodes(ctx.env, translationHtml, doc);
+  const nodes = fragmentToNodes(ctx.env, stripXmlInvalidChars(translationHtml), doc);
   const name = nameOf(el);
   // The source copy keeps the ids (link targets); duplicated ids would make the document invalid.
   if (ctx.mode !== 'translation-only') for (const n of nodes) stripIds(n);
@@ -82,7 +86,7 @@ function stripIds(node: Node): void {
 /** Plain-text label for contexts that cannot hold markup (NCX). */
 export function textLabel(sourceText: string, translationHtml: string, ctx: Pick<PlacementContext, 'env' | 'mode'>): string {
   if (ctx.mode === 'original') return sourceText;
-  const translated = textOf(parseHtmlFragment(ctx.env, translationHtml));
+  const translated = textOf(parseHtmlFragment(ctx.env, stripXmlInvalidChars(translationHtml)));
   if (ctx.mode === 'translation-only') return translated;
   return ctx.mode === 'bilingual' ? `${sourceText} / ${translated}` : `${translated} / ${sourceText}`;
 }
