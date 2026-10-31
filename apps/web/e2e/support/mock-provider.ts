@@ -5,18 +5,26 @@ import { installMockPricing } from './mock-pricing';
 export const MOCK_BASE = 'https://mock-provider.test/v1';
 export const MOCK_MODELS = ['mock-model', 'mock-model-pro'];
 
+/** Answers of the guide requests: guideline sections, then the classified glossary entries. */
 export const MOCK_GUIDE = {
-  guideline: '- Mock guideline: keep a calm, formal register.',
+  sections: {
+    genre: '- Mock: satirical essay for adult readers.',
+    address: '- Mock: narrator to reader: tôi – quý vị.',
+  },
   glossary: [
-    { term: 'Ireland', translation: 'Ai-len', note: 'country' },
-    { term: 'Dublin', translation: 'Đu-blin' },
+    { term: 'Ireland', translation: 'Ai-len', type: 'place', note: 'country' },
+    // Different types keep the generated order (place before term) independent of candidate counts.
+    { term: 'shilling', translation: 'si-linh', type: 'term' },
   ],
 };
 
 export interface MockProviderState {
   /** Segment ids sent in each translate/review request, in arrival order. */
   segmentRequests: { kind: 'translate' | 'review'; ids: string[] }[];
+  /** Style-guideline requests (one per generation). */
   guideRequests: number;
+  /** Glossary-candidate classification requests (one per batch of candidates). */
+  glossaryRequests: number;
   /** Prefix prepended to every translated segment. */
   prefix: string;
   /** Artificial latency per chat request. */
@@ -36,9 +44,13 @@ interface ChatBody {
 function answer(body: ChatBody, state: MockProviderState): string {
   const system = body.messages.find((m) => m.role === 'system')?.content ?? '';
   const user = body.messages.find((m) => m.role === 'user')?.content ?? '';
+  if (system.includes('terminology editor')) {
+    state.glossaryRequests++;
+    return JSON.stringify({ entries: MOCK_GUIDE.glossary });
+  }
   if (system.includes('preparing a book translation')) {
     state.guideRequests++;
-    return JSON.stringify(MOCK_GUIDE);
+    return JSON.stringify({ sections: MOCK_GUIDE.sections });
   }
   const { segments } = JSON.parse(user) as { segments: { id: string; html?: string; draft?: string }[] };
   const review = segments.some((s) => s.draft !== undefined);
@@ -56,9 +68,9 @@ async function fulfill(route: Route, status: number, json?: unknown): Promise<vo
   }
 }
 
-/** Installs the fake provider on `page`: GET /models, POST /chat/completions (translate, review, guide). */
+/** Installs the fake provider on `page`: GET /models, POST /chat/completions (translate, review, guideline, glossary). */
 export async function installMockProvider(page: Page, opts: Partial<Pick<MockProviderState, 'delayMs' | 'prefix'>> = {}): Promise<MockProviderState> {
-  const state: MockProviderState = { segmentRequests: [], guideRequests: 0, prefix: opts.prefix ?? '[vi] ', delayMs: opts.delayMs ?? 0 };
+  const state: MockProviderState = { segmentRequests: [], guideRequests: 0, glossaryRequests: 0, prefix: opts.prefix ?? '[vi] ', delayMs: opts.delayMs ?? 0 };
   await page.route(`${MOCK_BASE}/**`, async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return fulfill(route, 204);

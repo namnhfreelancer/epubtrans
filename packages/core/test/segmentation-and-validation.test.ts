@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { generateGuide } from '../src';
 import { parseXhtmlDocument } from '../src/dom/xhtml-document';
 import { segmentContentDocument } from '../src/segment/segment-document';
 import { validateTranslationMarkup } from '../src/translate/markup-validation';
 import { parseSegmentsAnswer } from '../src/translate/prompt-protocol';
-import { env, makeProject, mockProvider, segment } from './test-helpers';
+import { env } from './test-helpers';
 
 const DOC = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>T</title></head><body>
@@ -64,21 +63,5 @@ describe('protocol parsing', () => {
     const answer = parseSegmentsAnswer('Here you go:\n```json\n{"segments":[{"id":"a","html":" Xin chào "},{"id":"b"}]}\n```');
     expect([...answer]).toEqual([['a', 'Xin chào']]);
     expect(() => parseSegmentsAnswer('no json here')).toThrow(/no JSON/);
-  });
-
-  it('generates a guideline and a cleaned glossary', async () => {
-    const project = makeProject([[segment('a', 'The fox met the lion.')]]);
-    const provider = mockProvider(() => ({
-      text: '{"guideline":"- Warm tone","glossary":[{"term":"fox","translation":"cáo"},{"term":"Fox","translation":"dup"},{"term":"","translation":"x"},{"term":"lion","translation":"sư tử","note":"animal"}]}',
-    }));
-    const guide = await generateGuide(project, provider, project.settings);
-    expect(guide).toEqual({
-      guideline: '- Warm tone',
-      glossary: [
-        { term: 'fox', translation: 'cáo' },
-        { term: 'lion', translation: 'sư tử', note: 'animal' },
-      ],
-    });
-    expect(provider.calls[0]?.user).toContain('The fox met the lion.');
   });
 });

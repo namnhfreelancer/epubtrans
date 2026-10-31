@@ -93,7 +93,7 @@ describe('--generate-guide', () => {
     const io = createTestIo({ env });
     expect(await run(args, io)).toBe(2);
     expect(io.stderr).toContain('--yes');
-    expect(io.stderr).toContain('extra request to generate the style guideline');
+    expect(io.stderr).toContain('extra requests to generate the style guideline');
     expect(server.calls.length).toBe(0);
   });
 
@@ -108,10 +108,13 @@ describe('--generate-guide', () => {
     const { server, t, args, env } = setup();
     const io = createTestIo({ env });
     expect(await run([...args, '--yes', '--out', `${t.dir}/book.vi.epub`], io)).toBe(0);
-    expect(server.calls[0]?.segmentIds).toEqual([]);
-    expect(server.calls.slice(1).every((c) => c.segmentIds.length > 0)).toBe(true);
+    // Guideline and glossary-classification requests (no segments) all come before the first translation batch.
+    const firstBatch = server.calls.findIndex((c) => c.segmentIds.length > 0);
+    expect(firstBatch).toBeGreaterThan(1);
+    expect(server.calls.slice(firstBatch).every((c) => c.segmentIds.length > 0)).toBe(true);
+    expect(io.stderr).toContain('Classifying glossary candidates:');
     const project = await loadProjectFile(new Uint8Array(readFileSync(`${t.input}.epubtrans`)));
-    expect(project.settings.guideline).toBe('- keep it plain');
-    expect(project.settings.glossary).toEqual([{ term: 'Ireland', translation: 'Ai-len' }]);
+    expect(project.settings.guideline).toContain('## Book-specific guideline\n\n- keep it plain');
+    expect(project.settings.glossary).toEqual([expect.objectContaining({ term: 'Ireland', translation: 'Ai-len', type: 'other' })]);
   });
 });

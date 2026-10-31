@@ -48,6 +48,16 @@ Prices are looked up automatically for the selected model from public catalogs: 
 
 The library keeps several books. Each book can be exported to, and imported from, a `.epubtrans` project file. The interface is available in English and Vietnamese and the app is an installable PWA.
 
+### Glossary and style guideline
+
+"Generate guideline & glossary" (web) and `--generate-guide` (CLI) work in three steps:
+
+1. **Scan (local, no model call).** The whole book is scanned for glossary candidates: multi-word names ("Ministry of Magic", "Mr. Darcy"), capitalized words that recur mid-sentence, and frequent phrases such as "natural selection" (Chinese, Japanese and Korean: frequent character sequences). Each candidate keeps its frequency and up to two short context snippets.
+2. **Guideline.** One request with about 18 passages spread across the book returns a guideline with fixed sections: genre & audience, tone & register, forms of address & pronouns (for Vietnamese the *xưng hô* pair per relationship), names policy, dialogue & quotation marks, honorifics & titles, units/numbers/dates, chapter titles & headings, footnotes, and terms to keep untranslated. Your current guideline (a preset or your own text) is kept as is; the generated part is added below it under `## Book-specific guideline`, and generating again replaces only that part.
+3. **Glossary.** The model classifies the candidates in batches of 80 (person, place, organization, term, other), translates the real terms and drops the rest. Entries you already have are kept and win over duplicates. The glossary grows with the book: about one entry per 500 words, at least 30, at most 400 by default (web: "Max glossary entries").
+
+Each translation request only carries the glossary entries whose term occurs in that batch (whole-word, case-insensitive; the review pass also checks the draft), so a large glossary does not inflate every request. Generation costs one request plus one per 80 candidates: for a 1000-page book about 11 requests, roughly 100k input and 20k output tokens (about $0.60 at $3/$15 per 1M tokens); a short book needs 2 requests. The web glossary table has search, a type filter and pages of 50 rows.
+
 ## Command line
 
 ### Install
@@ -136,5 +146,6 @@ epubtrans dịch sách **không DRM** (EPUB, MOBI, AZW3, FB2) thành **EPUB song
 - **Tự mang API key (BYOK):** ứng dụng ước tính token và chi phí trước khi dịch, tự tạo hướng dẫn văn phong và bảng thuật ngữ (chỉnh sửa được), có chế độ rà soát 2 lượt, lưu tiến độ liên tục nên tải lại trang vẫn dịch tiếp.
 - **Xuất EPUB** ở 3 chế độ: song ngữ, song ngữ (bản dịch trước), chỉ bản dịch. Giao diện có tiếng Việt và tiếng Anh, cài được như ứng dụng (PWA).
 - **Dòng lệnh:** cài bằng lệnh ở mục [Command line](#command-line), đặt khóa trong biến môi trường `EPUBTRANS_API_KEY`, rồi chạy `epubtrans translate sach.epub --to vi --model <id>` (nhà cung cấp mặc định là `openai`; dùng nhà cung cấp khác thì thêm `--provider <id>` ở mỗi lần chạy). Gặp sự cố hoặc nhấn Ctrl-C, chạy lại cùng lệnh để dịch tiếp; có thể mở tệp `.epubtrans` xuất từ web bằng `epubtrans resume`.
+- **Bảng thuật ngữ và hướng dẫn văn phong:** ứng dụng quét toàn bộ sách (không tốn lượt gọi mô hình) để tìm tên riêng và thuật ngữ lặp lại, rồi nhờ mô hình phân loại (nhân vật, địa danh, tổ chức, thuật ngữ, khác) và dịch chúng; số mục tăng theo độ dài sách (khoảng 1 mục cho mỗi 500 từ, tối đa 400 theo mặc định). Hướng dẫn văn phong được viết từ khoảng 18 đoạn trích khắp cuốn sách, theo các mục cố định, trong đó có cách xưng hô giữa các nhân vật; hướng dẫn bạn đang dùng được giữ nguyên, phần tạo ra được thêm bên dưới. Mỗi yêu cầu dịch chỉ gửi kèm những thuật ngữ xuất hiện trong đoạn đó.
 
 Cảm ơn tác giả gốc [nguyenvanduocit](https://github.com/nguyenvanduocit/epubtrans). Điều khoản sử dụng xem tệp [LICENSE](LICENSE).
