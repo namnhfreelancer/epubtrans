@@ -96,6 +96,11 @@ export function TranslationControls({ project, version, provider }: { project: P
         )}
         {startError && <Alert kind="error">{startError}</Alert>}
         {!running && job.status === 'failed' && job.error && <Alert kind="error">{t('run.failed', { message: job.error })}</Alert>}
+        {!running && job.status === 'aborted' && (
+          <Alert kind="error">
+            <span data-testid="run-book-deleted">{t('run.bookDeleted')}</span>
+          </Alert>
+        )}
         {!running && job.status === 'paused' && <Alert>{t('run.paused')}</Alert>}
         {!running && work === 0 && (
           <Alert kind="success">

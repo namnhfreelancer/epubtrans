@@ -51,11 +51,16 @@ function validRow(row: unknown): SegmentStateRow | undefined {
 
 /** Persistence helpers over {@link ProjectDatabase}. All data read back is validated with core's schema. */
 export function createProjectRepository(db: ProjectDatabase) {
-  /** Writes (or clears) one overlay row; must run inside a rw transaction over projects + segments. */
+  /**
+   * Writes (or clears) one overlay row; must run inside a rw transaction over projects + segments.
+   * Throws (rolling the transaction back) when the project is gone, e.g. deleted in another tab, so a
+   * late writer can never leave segment rows behind for a book that no longer exists.
+   */
   async function writeSegment(projectId: string, segment: Segment): Promise<void> {
+    const touched = await db.projects.update(projectId, { updatedAt: new Date().toISOString() });
+    if (!touched) throw new ProjectNotFoundError(`Project ${projectId} not found`);
     if (segment.status === 'pending' && segment.translationHtml === undefined) await db.segments.delete([projectId, segment.id]);
     else await db.segments.put(toStateRow(projectId, segment));
-    await db.projects.update(projectId, { updatedAt: new Date().toISOString() });
   }
 
   return {
@@ -122,10 +127,13 @@ export function createProjectRepository(db: ProjectDatabase) {
     /**
      * Compare-and-set: persists the segment only if the stored state still equals `expected` (the state the
      * writer based its change on). Read and write share one IndexedDB transaction, which IndexedDB serializes
-     * against writes from other tabs, so a concurrent edit is never overwritten.
+     * against writes from other tabs, so a concurrent edit is never overwritten. Rejects with
+     * {@link ProjectNotFoundError} when the project was deleted meanwhile.
      */
     async saveSegmentIfUnchanged(projectId: string, segment: Segment, expected: SegmentRevision): Promise<ConditionalSaveResult> {
       return db.transaction('rw', [db.projects, db.segments], async (): Promise<ConditionalSaveResult> => {
+        // A deleted book has no segment rows either, which would look like "unchanged": fail instead.
+        if (!(await db.projects.get(projectId))) throw new ProjectNotFoundError(`Project ${projectId} not found`);
         const stored = validRow(await db.segments.get([projectId, segment.id]));
         if (!canOverwrite(stored, expected)) return { saved: false, stored };
         await writeSegment(projectId, segment);
