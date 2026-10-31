@@ -1,16 +1,17 @@
-import type { Project, ProjectSettings, SampleSelection, Segment } from '@epubtrans/core';
+import type { Project, SampleSelection, Segment } from '@epubtrans/core';
 import { useEffect, useSyncExternalStore } from 'react';
 import { repository } from './app-services';
 import { broadcast, closeProjectChannel, onCrossTabMessage, watchProjectChannel } from './cross-tab-channel';
-import { runWithJobLock } from './cross-tab-job-lock';
 import { createExternalStore } from './external-store';
+import { SettingsChangedError, type SettingsGuard } from './project-repository';
 import { applyStoredState, revisionOf, type SegmentRevision } from './segment-revision';
 
 /**
  * In-memory cache of opened projects. The setup screen, the reader and a running translation job
  * share the same mutable Project object; `touch` bumps a version so subscribed views re-render.
  * Every change is persisted through the repository in call order (one write chain per project).
- * Other tabs are told about segment changes (see cross-tab-channel) and re-read them from storage.
+ * Other tabs are told about segment changes (see cross-tab-channel) and re-read them from storage. Settings live in
+ * `project-settings-store`.
  */
 export interface ProjectEntry {
   project?: Project;
@@ -80,6 +81,9 @@ export function useProject(id: string): ProjectEntry {
   return useSyncExternalStore(subscribe, () => entries.get(id) ?? EMPTY);
 }
 
+/** The project if it is open (loaded) in this tab. */
+export const cachedProject = (id: string): Project | undefined => entries.get(id)?.project;
+
 /** Returns the live in-memory project, loading it when needed. */
 export async function ensureProject(id: string): Promise<Project> {
   const cached = entries.get(id)?.project;
@@ -104,53 +108,6 @@ export async function removeProject(id: string): Promise<void> {
   entries.delete(id);
   for (const l of [...listeners]) l();
   libraryVersion.set(libraryVersion.get() + 1);
-}
-
-/** Applies a settings patch in memory immediately and persists it. */
-export function updateSettings(project: Project, patch: Partial<ProjectSettings>): Promise<void> {
-  project.settings = { ...project.settings, ...patch };
-  project.updatedAt = new Date().toISOString();
-  touchProject(project.id);
-  const snapshot = project.settings;
-  return enqueueWrite(project.id, () => repository.saveSettings(project.id, snapshot));
-}
-
-/** Segments holding a translation (finished, reviewed, edited, or a draft kept by a failed review). */
-export const translatedSegmentCount = (project: Project): number =>
-  project.chapters.reduce((n, c) => n + c.segments.filter((s) => s.translationHtml !== undefined).length, 0);
-
-/** True when changing the target language would leave translations into the old language behind. */
-export const targetChangeNeedsDecision = (project: Project, targetLang: string): boolean =>
-  targetLang.toLowerCase() !== project.settings.targetLang.toLowerCase() && translatedSegmentCount(project) > 0;
-
-/**
- * Applies a settings patch (a new target language) and resets every segment to pending: translations, errors, hand
- * edits and warnings are dropped. Runs under the book's cross-tab job lock, so it never races a translation or sample
- * run in any tab; resolves 'busy' (changing nothing) while one holds the lock. Storage is updated first, in one
- * transaction, then the in-memory project, then other tabs are told which segments changed.
- */
-export async function updateSettingsAndResetTranslations(project: Project, patch: Partial<ProjectSettings>): Promise<'done' | 'busy'> {
-  const ran = await runWithJobLock(project.id, async () => {
-    const settings = { ...project.settings, ...patch };
-    await enqueueWrite(project.id, () => repository.saveSettingsAndResetSegments(project.id, settings));
-    const changed: string[] = [];
-    for (const chapter of project.chapters) {
-      for (const s of chapter.segments) {
-        if (s.status === 'pending' && s.translationHtml === undefined && s.error === undefined) continue;
-        changed.push(s.id);
-        s.status = 'pending';
-        delete s.translationHtml;
-        delete s.error;
-        delete s.userEdited;
-        delete s.warning;
-      }
-    }
-    project.settings = settings;
-    project.updatedAt = new Date().toISOString();
-    touchProject(project.id);
-    for (const segmentId of changed) broadcast(project.id, { type: 'segment', segmentId });
-  });
-  return ran ? 'done' : 'busy';
 }
 
 const findSegment = (project: Project, segmentId: string): Segment | undefined => {
@@ -184,19 +141,22 @@ export function createJobBaseline(project: Project): JobBaseline {
  * Persists a segment finished by a translation job, unless its stored state changed since the job's
  * baseline (an edit or retranslation saved meanwhile, possibly from another tab). In that case the stored
  * state is kept and copied into the job's live segment, so storage and every view agree on it.
- * Resolves whether the segment was saved (false: the stored state won).
+ * Resolves whether the segment was saved (false: the stored state won). With `guard`, a book whose settings
+ * changed since the job read them (translations reset, another target language) keeps its stored state too,
+ * and the write rejects with `SettingsChangedError` so the job stops instead of paying for discarded work.
  */
-export function persistJobSegment(project: Project, segment: Segment, baseline: JobBaseline): Promise<boolean> {
+export function persistJobSegment(project: Project, segment: Segment, baseline: JobBaseline, guard?: SettingsGuard): Promise<boolean> {
   const snapshot: Segment = { ...segment };
   const produced = revisionOf(snapshot);
   return enqueueWrite(project.id, async () => {
-    const result = await repository.saveSegmentIfUnchanged(project.id, snapshot, baseline.get(snapshot.id) ?? { status: 'pending' });
+    const result = await repository.saveSegmentIfUnchanged(project.id, snapshot, baseline.get(snapshot.id) ?? { status: 'pending' }, guard);
     if (result.saved) {
       baseline.set(snapshot.id, produced);
       broadcast(project.id, { type: 'segment', segmentId: snapshot.id });
       return true;
     }
     if (applyStoredState(segment, produced, result.stored)) touchProject(project.id);
+    if (result.settingsChanged) throw new SettingsChangedError();
     return false;
   });
 }

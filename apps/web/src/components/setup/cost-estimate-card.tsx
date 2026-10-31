@@ -2,7 +2,7 @@ import { cachePriceRatios, MAX_CACHED_INPUT_RATIO, type Project } from '@epubtra
 import { useI18n } from '../../i18n/i18n-context';
 import { formatNumber, formatUsd, parseOptionalPrice } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
-import { updateSettings } from '../../lib/project-store';
+import { updateSettings } from '../../lib/project-settings-store';
 import type { ActiveProvider } from '../../lib/provider-config-store';
 import { estimateRunCost, resolveRunPrices } from '../../lib/run-pricing';
 import { useSampleRunning } from '../../lib/sample-jobs';

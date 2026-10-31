@@ -16,12 +16,15 @@ export function GlossaryTable({
   onChange,
   locked = false,
   bookTitle,
+  readCurrent,
 }: {
   entries: GlossaryEntry[];
   onChange: (entries: GlossaryEntry[]) => void;
   locked?: boolean;
   /** Names exported glossary files. */
   bookTitle: string;
+  /** The glossary as stored right now (a file import is applied to it). */
+  readCurrent: () => Promise<GlossaryEntry[]>;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
@@ -51,7 +54,7 @@ export function GlossaryTable({
           </span>
         </h3>
         <div className="flex flex-wrap items-center gap-2">
-          <GlossaryFileButtons entries={entries} bookTitle={bookTitle} onChange={onChange} locked={locked} />
+          <GlossaryFileButtons entries={entries} bookTitle={bookTitle} onChange={onChange} locked={locked} readCurrent={readCurrent} />
           <Button size="sm" onClick={add} disabled={locked}>
             {t('setup.addTerm')}
           </Button>

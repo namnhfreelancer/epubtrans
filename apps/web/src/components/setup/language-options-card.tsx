@@ -13,7 +13,7 @@ import { useI18n } from '../../i18n/i18n-context';
 import { routeHref } from '../../lib/hash-route';
 import { languageLabel } from '../../lib/languages';
 import { errorText, pushNotice } from '../../lib/notices';
-import { targetChangeNeedsDecision, translatedSegmentCount, updateSettings, updateSettingsAndResetTranslations } from '../../lib/project-store';
+import { targetChangeNeedsDecision, translatedSegmentCount, updateSettings, updateSettingsAndResetTranslations } from '../../lib/project-settings-store';
 import type { ActiveProvider } from '../../lib/provider-config-store';
 import { Button } from '../ui/button';
 import { ChoiceDialog } from '../ui/choice-dialog';

@@ -1,8 +1,8 @@
 import { type ChatProvider, type Project, type ProjectSettings, type TokenUsage, type TranslationPhase, translateProject } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
-import { repository } from './app-services';
 import { launchWithJobLock } from './cross-tab-job-lock';
-import { ProjectNotFoundError } from './project-repository';
+import { ProjectNotFoundError, type SettingsGuard } from './project-repository';
+import { refreshSettingsFromStorage } from './project-settings-store';
 import { createJobBaseline, persistJobSegment, touchProject } from './project-store';
 
 /** `aborted`: the book was deleted (in another tab) while the job ran, so the job stopped without writing anything more. */
@@ -65,15 +65,16 @@ export function estimateRemainingMs(job: Pick<JobState, 'done' | 'total' | 'phas
 
 /**
  * Starts (or resumes) translating a project in the background, holding the project's cross-tab job lock
- * for the whole run. Resolves once it is known whether the job started here. Finished segments are skipped
- * by core, each finished segment is persisted right away (compare-and-set, so an edit saved meanwhile in
- * any tab wins), and a persistence failure stops the run so progress is never lost silently.
+ * for the whole run. Resolves once it is known whether the job started here. Once the lock is held, the book's
+ * settings are re-read from storage (another tab may have changed them) and `settingsFor` turns them into the run's
+ * settings. Finished segments are skipped by core, each finished segment is persisted right away (compare-and-set, so
+ * an edit saved meanwhile in any tab wins), and a persistence failure stops the run so progress is never lost silently.
  */
-export function startJob(project: Project, settings: ProjectSettings, provider: ChatProvider): Promise<StartJobResult> {
+export function startJob(project: Project, settingsFor: (book: ProjectSettings) => ProjectSettings, provider: ChatProvider): Promise<StartJobResult> {
   if (controllers.has(project.id)) return Promise.resolve('already-running');
   const controller = new AbortController();
   controllers.set(project.id, controller);
-  const { started, settled } = launchWithJobLock(project.id, () => runJob(project, settings, provider, controller));
+  const { started, settled } = launchWithJobLock(project.id, () => runJob(project, settingsFor, provider, controller));
   const run = settled
     .catch((err: unknown) => {
       // runJob records its own failures; this only catches the lock manager failing after the job ran.
@@ -96,12 +97,21 @@ export function startJob(project: Project, settings: ProjectSettings, provider: 
 }
 
 /** One run of core's translator; never rejects (the outcome is recorded in the job state). */
-async function runJob(project: Project, settings: ProjectSettings, provider: ChatProvider, controller: AbortController): Promise<void> {
+async function runJob(
+  project: Project,
+  settingsFor: (book: ProjectSettings) => ProjectSettings,
+  provider: ChatProvider,
+  controller: AbortController,
+): Promise<void> {
   setJob(project.id, { ...IDLE, status: 'running', phaseStartedAt: Date.now() });
+  let settings: ProjectSettings;
+  let guard: SettingsGuard;
   try {
-    // Do not spend API calls on a book that was already deleted in another tab.
-    if (!(await repository.exists(project.id))) return setJob(project.id, { status: 'aborted' });
+    // Translate with the settings in storage, not this tab's copy; a book deleted in another tab fails here, before any API call.
+    guard = await refreshSettingsFromStorage(project);
+    settings = settingsFor(project.settings);
   } catch (err) {
+    if (err instanceof ProjectNotFoundError) return setJob(project.id, { status: 'aborted' });
     return setJob(project.id, { status: 'failed', error: err instanceof Error ? err.message : String(err) });
   }
   const baseline = createJobBaseline(project);
@@ -120,7 +130,7 @@ async function runJob(project: Project, settings: ProjectSettings, provider: Cha
         setJob(project.id, patch);
       },
       onSegment: (segment) => {
-        const write = persistJobSegment(project, segment, baseline).catch((err: unknown) => {
+        const write = persistJobSegment(project, segment, baseline, guard).catch((err: unknown) => {
           writeError ??= err instanceof Error ? err : new Error(String(err));
           controller.abort(writeError);
         });

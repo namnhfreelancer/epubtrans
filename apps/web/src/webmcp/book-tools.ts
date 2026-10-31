@@ -4,7 +4,7 @@ import { buildErrorIndex, isWarnedSegment } from '../lib/error-index';
 import { dialogText } from '../lib/format';
 import { getGuideJobState, isGuideJobRunning } from '../lib/guide-jobs';
 import { normalizeLanguageTag } from '../lib/languages';
-import { targetChangeNeedsDecision, translatedSegmentCount, updateSettings, updateSettingsAndResetTranslations } from '../lib/project-store';
+import { targetChangeNeedsDecision, translatedSegmentCount, updateSettings, updateSettingsAndResetTranslations } from '../lib/project-settings-store';
 import { getSampleJobState } from '../lib/sample-jobs';
 import { countSegments, remainingWork } from '../lib/segment-counts';
 import { getJobState } from '../lib/translation-jobs';

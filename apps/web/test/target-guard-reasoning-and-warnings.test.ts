@@ -3,7 +3,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { repository } from '../src/lib/app-services';
 import { jobLockName } from '../src/lib/cross-tab-job-lock';
 import { buildErrorIndex, isWarnedSegment } from '../src/lib/error-index';
-import { addProject, saveTranslationEdit, targetChangeNeedsDecision, updateSettingsAndResetTranslations } from '../src/lib/project-store';
+import { targetChangeNeedsDecision, updateSettingsAndResetTranslations } from '../src/lib/project-settings-store';
+import { addProject, saveTranslationEdit } from '../src/lib/project-store';
 import { parseProviderConfig, providerConfig, resolveActiveProvider, settingsForRun } from '../src/lib/provider-config-store';
 import { applyStoredState, isSegmentStateRow } from '../src/lib/segment-revision';
 import { withTextExtension } from '../src/webmcp/fetch-book-from-url';
@@ -121,6 +122,10 @@ describe('reasoning setting per provider', () => {
     const active = resolveActiveProvider({ providerId: 'openai', profiles: { openai: { baseURL: '', model: 'm', reasoning: 'off' } } });
     expect(active.reasoning).toBe('off');
     expect(settingsForRun(makeProject('r', 1).settings, active).reasoning).toBe('off');
+    // The book's own reasoning value never reaches a run: the provider profile decides, and without one the field is absent.
+    const withoutProfileValue = resolveActiveProvider({ providerId: 'openai', profiles: { openai: { baseURL: '', model: 'm' } } });
+    expect(settingsForRun({ ...makeProject('r', 1).settings, reasoning: 'low' }, withoutProfileValue)).not.toHaveProperty('reasoning');
+    expect(settingsForRun({ ...makeProject('r', 1).settings, reasoning: 'low' }, active).reasoning).toBe('off');
     providerConfig.updateProfile('custom', { reasoning: 'default' });
     expect(providerConfig.store.get().profiles.custom).not.toHaveProperty('reasoning');
   });

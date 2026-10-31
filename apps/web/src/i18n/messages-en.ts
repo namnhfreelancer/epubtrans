@@ -8,6 +8,8 @@ export const en = {
   'common.loading': 'Loading…',
   'common.dismiss': 'Dismiss',
   'common.saveFailed': 'Could not save: {message}',
+  'common.settingsChanged':
+    'The target language of this book changed (possibly in another tab), so this result was discarded. Start again to use the new settings.',
 
   'library.title': 'Your library',
   'library.dropTitle': 'Drop a book here',
@@ -160,6 +162,7 @@ export const en = {
   'reader.lockedDuringJob': 'Editing and retranslating are paused while this book is being translated. Pause the translation to make changes.',
   'reader.lockedInOtherTab': 'Editing and retranslating are paused while this book is being translated in another tab.',
   'reader.retranslateFailed': 'Retranslation failed: {message}',
+  'reader.retranslateSuperseded': 'This segment changed while it was being retranslated; the newer version was kept.',
   'reader.notTranslated': 'Not translated yet',
   'reader.emptyChapter': 'This chapter has no text.',
   'reader.empty': 'This book has no chapters.',
@@ -271,7 +274,7 @@ export const en = {
   'common.cancel': 'Cancel',
   'settings.reasoning': 'Reasoning',
   'settings.reasoningHint':
-    'For reasoning models: less reasoning is cheaper and faster. If the provider does not accept the setting, epubtrans asks again without it.',
+    'For reasoning models: less reasoning is cheaper and faster. If the provider does not accept the setting, epubtrans tries the lowest effort it accepts (for Off where possible), then asks without it.',
   'settings.reasoning.default': 'Provider default',
   'settings.reasoning.low': 'Low',
   'settings.reasoning.off': 'Off where possible',
@@ -310,6 +313,7 @@ export const en = {
   'glossary.importTooLarge': 'The glossary file is too large.',
   'glossary.importEmpty': 'The file has no glossary entries.',
   'glossary.importFailed': 'Could not import the glossary: {message}',
+  'glossary.importLocked': 'The glossary is being generated. Import the file again once generation has finished.',
   'glossary.importTitle': 'Import “{name}”',
   'glossary.importMerge': 'Merge (keep existing entries)',
   'glossary.importReplace': 'Replace the glossary',

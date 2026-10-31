@@ -2,6 +2,7 @@ import { type Project, usageCostUsd } from '@epubtrans/core';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { formatDuration, formatNumber, formatUsd } from '../../lib/format';
+import { localizedError } from '../../lib/notices';
 import { type RunPrices, resolveRunPrices } from '../../lib/run-pricing';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { countSegments, remainingWork } from '../../lib/segment-counts';
@@ -107,7 +108,7 @@ export function TranslationControls({
           </Alert>
         )}
         {startError && <Alert kind="error">{startError}</Alert>}
-        {!running && job.status === 'failed' && job.error && <Alert kind="error">{t('run.failed', { message: job.error })}</Alert>}
+        {!running && job.status === 'failed' && job.error && <Alert kind="error">{t('run.failed', { message: localizedError(job.error, t) })}</Alert>}
         {!running && job.status === 'aborted' && (
           <Alert kind="error">
             <span data-testid="run-book-deleted">{t('run.bookDeleted')}</span>

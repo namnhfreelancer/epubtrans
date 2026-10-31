@@ -1,10 +1,10 @@
-import { EXPORT_MODES, type ExportMode, exportEpub, type Project, retranslateSegment } from '@epubtrans/core';
+import { EXPORT_MODES, type ExportMode, exportEpub } from '@epubtrans/core';
 import { safeFileName } from '../lib/download-file';
 import { buildErrorIndex, locateSegment } from '../lib/error-index';
-import { persistJobSegment, touchProject } from '../lib/project-store';
+import { SETTINGS_CHANGED_MESSAGE } from '../lib/project-repository';
+import { retranslateLiveSegment } from '../lib/retranslate-live-segment';
 import { countSegments } from '../lib/segment-counts';
 import { segmentErrorText } from '../lib/segment-error-text';
-import { revisionOf, sameRevision } from '../lib/segment-revision';
 import { currentProviderState } from '../lib/use-active-provider';
 import { busyFailure, busyReason, findBook, isFailure, providerFailure, type ToolContext } from './tool-context';
 import { BOOK_ID, CANCELLED, objectSchema, type ToolSpec } from './tool-definition';
@@ -92,26 +92,10 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
         retranslating.add(key);
         ctx.navigate({ name: 'book', id: project.id, tab: 'read', segment: segmentId });
         try {
-          const { provider: chat, settings } = provider.prepare(project);
-          const chapter = project.chapters[location.chapter];
-          const live = chapter?.segments[location.segment];
-          if (!chapter || !live) return fail(`No segment with id "${segmentId.slice(0, 80)}" in this book.`, 'Use ids from list_errors.');
-          // Retranslate a detached copy: the live segment (and its stored state) stays whatever the user makes of it
-          // meanwhile, and the result is committed only if nothing changed it since the request started.
-          const started = revisionOf(live);
-          const detached: Project = { ...project, chapters: [{ ...chapter, segments: [{ ...live }] }] };
-          const result = await retranslateSegment(detached, segmentId, chat, settings, signal);
-          if (live.userEdited || !sameRevision(revisionOf(live), started)) return fail(CHANGED_WHILE_RETRANSLATING, EDITED_HINT);
-          // Same synchronous apply-then-compare-and-set as translation runs; a conflicting stored change reverts it.
-          const { translationHtml, status, error, warning } = result;
-          Object.assign(live, { translationHtml, status });
-          if (error === undefined) delete live.error;
-          else live.error = error;
-          if (warning === undefined) delete live.warning;
-          else live.warning = warning;
-          project.updatedAt = detached.updatedAt;
-          touchProject(project.id);
-          if (!(await persistJobSegment(project, live, new Map([[segmentId, started]])))) return fail(CHANGED_WHILE_RETRANSLATING, EDITED_HINT);
+          const outcome = await retranslateLiveSegment(project, segmentId, provider, { signal, keepEdits: true });
+          if (outcome.kind === 'changed') return fail(CHANGED_WHILE_RETRANSLATING, EDITED_HINT);
+          if (outcome.kind === 'settings-changed') return fail(SETTINGS_CHANGED_MESSAGE, 'Check the book settings, then retranslate again if needed.');
+          const live = outcome.segment;
           return ok({
             segmentId,
             status: live.status,

@@ -10,6 +10,7 @@ export const vi: Record<MessageKey, string> = {
   'common.loading': 'Đang tải…',
   'common.dismiss': 'Đóng',
   'common.saveFailed': 'Không lưu được: {message}',
+  'common.settingsChanged': 'Ngôn ngữ đích của sách đã thay đổi (có thể ở một thẻ khác) nên kết quả này đã bị bỏ. Hãy chạy lại để dùng cài đặt mới.',
 
   'library.title': 'Thư viện của bạn',
   'library.dropTitle': 'Thả sách vào đây',
@@ -162,6 +163,7 @@ export const vi: Record<MessageKey, string> = {
   'reader.lockedDuringJob': 'Không thể sửa hoặc dịch lại trong khi sách đang được dịch. Hãy tạm dừng bản dịch để chỉnh sửa.',
   'reader.lockedInOtherTab': 'Không thể sửa hoặc dịch lại trong khi sách đang được dịch ở một thẻ khác.',
   'reader.retranslateFailed': 'Dịch lại thất bại: {message}',
+  'reader.retranslateSuperseded': 'Đoạn này đã thay đổi trong lúc đang dịch lại; bản mới hơn được giữ lại.',
   'reader.notTranslated': 'Chưa dịch',
   'reader.emptyChapter': 'Chương này không có nội dung.',
   'reader.empty': 'Sách này không có chương nào.',
@@ -274,7 +276,7 @@ export const vi: Record<MessageKey, string> = {
   'common.cancel': 'Hủy',
   'settings.reasoning': 'Suy luận',
   'settings.reasoningHint':
-    'Dành cho mô hình suy luận: suy luận ít hơn thì rẻ và nhanh hơn. Nếu nhà cung cấp không nhận tùy chọn này, epubtrans sẽ gửi lại mà không kèm nó.',
+    'Dành cho mô hình suy luận: suy luận ít hơn thì rẻ và nhanh hơn. Nếu nhà cung cấp không nhận tùy chọn này, epubtrans thử mức thấp nhất mà họ chấp nhận (khi chọn Tắt nếu có thể), rồi gửi lại mà không kèm nó.',
   'settings.reasoning.default': 'Mặc định của nhà cung cấp',
   'settings.reasoning.low': 'Thấp',
   'settings.reasoning.off': 'Tắt nếu có thể',
@@ -313,6 +315,7 @@ export const vi: Record<MessageKey, string> = {
   'glossary.importTooLarge': 'Tệp thuật ngữ quá lớn.',
   'glossary.importEmpty': 'Tệp không có mục thuật ngữ nào.',
   'glossary.importFailed': 'Không nhập được bảng thuật ngữ: {message}',
+  'glossary.importLocked': 'Bảng thuật ngữ đang được tạo. Hãy nhập lại tệp khi quá trình tạo đã xong.',
   'glossary.importTitle': 'Nhập “{name}”',
   'glossary.importMerge': 'Gộp (giữ mục hiện có)',
   'glossary.importReplace': 'Thay thế bảng thuật ngữ',

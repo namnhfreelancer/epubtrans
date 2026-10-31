@@ -1,10 +1,11 @@
-import { type Project, retranslateSegment, type Segment } from '@epubtrans/core';
+import type { Project, Segment } from '@epubtrans/core';
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { isWarnedSegment } from '../../lib/error-index';
 import { errorText, pushNotice } from '../../lib/notices';
-import { persistSegment, saveTranslationEdit, touchProject } from '../../lib/project-store';
+import { saveTranslationEdit } from '../../lib/project-store';
+import { retranslateLiveSegment } from '../../lib/retranslate-live-segment';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { sanitizeSegmentHtml } from '../../lib/sanitize-segment-html';
 import { segmentErrorText } from '../../lib/segment-error-text';
@@ -70,12 +71,10 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
     abortRef.current = controller;
     setBusy(true);
     try {
-      const { provider: chat, settings } = provider.prepare(project);
-      const updated = await retranslateSegment(project, segment.id, chat, settings, controller.signal);
-      // The fresh machine translation replaces the user's text, so it no longer counts as hand-edited.
-      delete updated.userEdited;
-      touchProject(project.id);
-      await persistSegment(project.id, updated);
+      // The fresh machine translation replaces the user's text; a newer change (or a new target language) wins over it.
+      const outcome = await retranslateLiveSegment(project, segment.id, provider, { signal: controller.signal });
+      if (outcome.kind === 'changed') setRowError(t('reader.retranslateSuperseded'));
+      else if (outcome.kind === 'settings-changed') setRowError(t('common.settingsChanged'));
     } catch (err) {
       if (!controller.signal.aborted) setRowError(t('reader.retranslateFailed', { message: segmentErrorText(errorText(err)) ?? errorText(err) }));
     } finally {

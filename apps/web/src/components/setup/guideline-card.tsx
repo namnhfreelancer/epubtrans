@@ -4,7 +4,7 @@ import { useI18n } from '../../i18n/i18n-context';
 import { guidelineSections } from '../../lib/glossary-view';
 import { cancelGuideJob, reportGuideProblem, runGuideJob, useGuideJob } from '../../lib/guide-jobs';
 import { errorText, pushNotice } from '../../lib/notices';
-import { updateSettings } from '../../lib/project-store';
+import { refreshSettingsFromStorage, updateSettings } from '../../lib/project-settings-store';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
 import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
@@ -140,7 +140,16 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
           disabled={busy}
           onChange={(e) => void save({ guideline: e.target.value })}
         />
-        <GlossaryTable entries={project.settings.glossary} onChange={(glossary) => void save({ glossary })} locked={busy} bookTitle={project.title} />
+        <GlossaryTable
+          entries={project.settings.glossary}
+          onChange={(glossary) => void save({ glossary })}
+          locked={busy}
+          bookTitle={project.title}
+          readCurrent={async () => {
+            await refreshSettingsFromStorage(project);
+            return project.settings.glossary;
+          }}
+        />
       </div>
     </Card>
   );

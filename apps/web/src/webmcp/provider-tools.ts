@@ -14,7 +14,7 @@ export function providerTools(): ToolSpec[] {
       name: 'configure_provider',
       title: 'Choose provider and model',
       description:
-        'Selects the AI provider preset used for translation and, optionally, the model id and the reasoning setting for reasoning models (default, low or off; an endpoint that rejects it is asked again without it). Reports whether the user has stored an API key for it and whether translation can start. API keys and the custom endpoint URL are set by the user in Settings only.',
+        'Selects the AI provider preset used for translation and, optionally, the model id and the reasoning setting for reasoning models (default, low or off; an endpoint that rejects it is asked again with minimal effort for off, then without it). Reports whether the user has stored an API key for it and whether translation can start. API keys and the custom endpoint URL are set by the user in Settings only.',
       inputSchema: objectSchema(
         {
           providerId: { type: 'string', enum: PROVIDER_PRESETS.map((p) => p.id), description: 'Provider preset id.' },

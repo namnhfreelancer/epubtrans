@@ -9,6 +9,8 @@ import {
 } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
 import { launchWithJobLock } from './cross-tab-job-lock';
+import type { SettingsGuard } from './project-repository';
+import { refreshSettingsFromStorage } from './project-settings-store';
 import { createJobBaseline, persistJobSegment, persistLastSample, touchProject } from './project-store';
 import { isJobActive, type StartJobResult } from './translation-jobs';
 
@@ -77,13 +79,19 @@ export const useSampleRunning = (projectId: string): boolean => useSyncExternalS
  * tabs cannot start a run (or edit segments) while it is running. Like the full run, every finished segment is
  * persisted right away (compare-and-set against the state the run started from, so an edit saved meanwhile in any
  * tab survives) and a persistence failure stops the run. Refuses to start while a full run (or another
- * sample run) is active in this tab. Resolves once it is known whether the sample started here.
+ * sample run) is active in this tab. Resolves once it is known whether the sample started here. Like the full run,
+ * it re-reads the book's settings from storage once it holds the lock and runs with `settingsFor` of them.
  */
-export function startSampleJob(project: Project, settings: ProjectSettings, provider: ChatProvider, request: SampleRequest): Promise<StartJobResult> {
+export function startSampleJob(
+  project: Project,
+  settingsFor: (book: ProjectSettings) => ProjectSettings,
+  provider: ChatProvider,
+  request: SampleRequest,
+): Promise<StartJobResult> {
   if (controllers.has(project.id) || isJobActive(project.id)) return Promise.resolve('already-running');
   const controller = new AbortController();
   controllers.set(project.id, controller);
-  const { started, settled } = launchWithJobLock(project.id, () => runSample(project, settings, provider, request, controller));
+  const { started, settled } = launchWithJobLock(project.id, () => runSample(project, settingsFor, provider, request, controller));
   void settled
     .catch((err: unknown) => {
       // runSample records its own failures; this only catches the lock manager failing after the sample ran.
@@ -104,12 +112,20 @@ export function startSampleJob(project: Project, settings: ProjectSettings, prov
 /** One sample run; never rejects (the outcome is recorded in the sample state). */
 async function runSample(
   project: Project,
-  settings: ProjectSettings,
+  settingsFor: (book: ProjectSettings) => ProjectSettings,
   provider: ChatProvider,
   request: SampleRequest,
   controller: AbortController,
 ): Promise<void> {
   setJob(project.id, { ...IDLE, status: 'running' });
+  let settings: ProjectSettings;
+  let guard: SettingsGuard;
+  try {
+    guard = await refreshSettingsFromStorage(project);
+    settings = settingsFor(project.settings);
+  } catch (err) {
+    return setJob(project.id, { ...IDLE, status: 'failed', error: err instanceof Error ? err.message : String(err) });
+  }
   // Same compare-and-set baseline as a full run: an edit saved meanwhile (any tab) wins over the sample's answer.
   const baseline = createJobBaseline(project);
   let writeError: Error | undefined;
@@ -132,7 +148,7 @@ async function runSample(
       },
       onProgress: (p) => setJob(project.id, { ...IDLE, status: 'running', done: p.done, total: p.total, usage: p.usage }),
       onSegment: (segment) => {
-        track(persistJobSegment(project, segment, baseline));
+        track(persistJobSegment(project, segment, baseline, guard));
         touchProject(project.id);
       },
     });

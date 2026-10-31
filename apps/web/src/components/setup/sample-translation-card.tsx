@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { refreshJobLocks, useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { formatNumber, formatUsd } from '../../lib/format';
-import { errorText } from '../../lib/notices';
+import { errorText, localizedError } from '../../lib/notices';
 import { cancelSampleJob, startSampleJob, useSampleJob } from '../../lib/sample-jobs';
 import { useJobActive } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
@@ -35,9 +35,9 @@ export function SampleTranslationCard({ project, version, provider }: { project:
     setStartError(undefined);
     if (provider.problem) return setStartError(t(provider.problem));
     try {
-      const { provider: chat, settings } = provider.prepare(project);
+      const { provider: chat } = provider.prepare(project);
       // Another tab won the lock before this one noticed: re-read the locks so the busy notice shows right away.
-      if ((await startSampleJob(project, settings, chat, request)) === 'busy-elsewhere') await refreshJobLocks();
+      if ((await startSampleJob(project, provider.settingsFor, chat, request)) === 'busy-elsewhere') await refreshJobLocks();
     } catch (err) {
       setStartError(errorText(err));
     }
@@ -107,7 +107,7 @@ export function SampleTranslationCard({ project, version, provider }: { project:
         {startError && <Alert kind="error">{startError}</Alert>}
         {sample.status === 'failed' &&
           (sample.error !== undefined ? (
-            <Alert kind="error">{t('sample.failed', { message: sample.error })}</Alert>
+            <Alert kind="error">{t('sample.failed', { message: localizedError(sample.error, t) })}</Alert>
           ) : (
             <Alert kind="error">
               <span data-testid="sample-all-failed">{t('sample.allFailed', { n: formatNumber(sample.failed.length, locale) })}</span>

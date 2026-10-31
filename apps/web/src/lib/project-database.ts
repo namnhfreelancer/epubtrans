@@ -9,7 +9,11 @@ import { Dexie, type Table } from 'dexie';
  * - `segments`: per-segment translation state overlay (one small row per finished/edited segment).
  * Every segment that is not 'pending' has an overlay row, so progress counts never need the chapters.
  */
-export type ProjectMetaRow = Omit<Project, 'chapters' | 'sourceEpub'> & { segmentCount: number };
+export type ProjectMetaRow = Omit<Project, 'chapters' | 'sourceEpub'> & {
+  segmentCount: number;
+  /** Bumped when the book's translations are reset or the book is replaced; absent (0) on rows of older versions. */
+  settingsRevision?: number;
+};
 
 export interface ChaptersRow {
   projectId: string;

@@ -20,28 +20,36 @@ const MIME: Record<GlossaryFileFormat, string> = { csv: 'text/csv', tsv: 'text/t
 
 /**
  * Glossary file import (CSV, TSV, JSON; validated, deduplicated) with a merge-or-replace choice when the book already
- * has entries, and export as CSV or JSON for reuse in another book or the CLI (`--glossary-file`).
+ * has entries, and export as CSV or JSON for reuse in another book or the CLI (`--glossary-file`). The import is
+ * applied to the glossary as `readCurrent` finds it when the user decides (it may have changed while the choice was
+ * open: a generated glossary, another tab), never to the list shown when the file was picked.
  */
 export function GlossaryFileButtons({
   entries,
   bookTitle,
   onChange,
   locked,
+  readCurrent,
 }: {
   entries: GlossaryEntry[];
   bookTitle: string;
   onChange: (entries: GlossaryEntry[]) => void;
   locked: boolean;
+  readCurrent: () => Promise<GlossaryEntry[]>;
 }) {
   const { t } = useI18n();
   const inputId = useId();
   /** A parsed file waiting for the merge/replace decision. */
   const [pending, setPending] = useState<{ name: string; parsed: ParsedGlossaryFile }>();
 
-  const apply = (parsed: ParsedGlossaryFile, mode: GlossaryImportMode) => {
-    const result = applyGlossaryImport(entries, parsed.entries, mode);
-    onChange(result.glossary);
-    pushNotice('success', t('glossary.imported', { added: result.added, skipped: result.skipped + parsed.duplicates }));
+  const apply = async (parsed: ParsedGlossaryFile, mode: GlossaryImportMode) => {
+    try {
+      const result = applyGlossaryImport(await readCurrent(), parsed.entries, mode);
+      onChange(result.glossary);
+      pushNotice('success', t('glossary.imported', { added: result.added, skipped: result.skipped + parsed.duplicates }));
+    } catch (err) {
+      pushNotice('error', t('glossary.importFailed', { message: errorText(err) }));
+    }
   };
 
   const importFile = async (file: File) => {
@@ -51,7 +59,7 @@ export function GlossaryFileButtons({
       if (file.size > MAX_GLOSSARY_FILE_CHARS * 4) throw new Error(t('glossary.importTooLarge'));
       const parsed = parseGlossaryFile(await file.text(), format);
       if (parsed.entries.length === 0) return pushNotice('error', t('glossary.importEmpty'));
-      if (entries.length === 0) apply(parsed, 'replace');
+      if (entries.length === 0) await apply(parsed, 'replace');
       else setPending({ name: file.name, parsed });
     } catch (err) {
       pushNotice('error', t('glossary.importFailed', { message: errorText(err) }));
@@ -102,7 +110,9 @@ export function GlossaryFileButtons({
           onClose={(mode) => {
             const { parsed } = pending;
             setPending(undefined);
-            if (mode) apply(parsed, mode);
+            // Generation rewrites the glossary when it finishes, which would drop an import applied meanwhile.
+            if (mode && locked) pushNotice('error', t('glossary.importLocked'));
+            else if (mode) void apply(parsed, mode);
           }}
         >
           <p>{t('glossary.importBody', { n: pending.parsed.entries.length, existing: entries.length })}</p>
