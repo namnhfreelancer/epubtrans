@@ -96,6 +96,8 @@ describe('export style validation', () => {
       expect(matchingPreset(exportStylePreset(id))).toBe(id);
     }
     expect(matchingPreset(undefined)).toBe('classic');
+    expect(matchingPreset({})).toBe('classic');
+    expect(matchingPreset({ source: { italic: true } })).toBeUndefined();
     expect(matchingPreset({ source: { opacity: 0.3 } })).toBeUndefined();
   });
 });

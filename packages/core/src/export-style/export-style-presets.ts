@@ -1,4 +1,5 @@
 import type { ExportStyle, ExportStylePresetId } from '../types';
+import { DEFAULT_SOURCE_OPACITY } from './export-style-css';
 
 /**
  * Ready-made export styles. None sets a background or a color that only works on one theme: the one accent color
@@ -6,7 +7,7 @@ import type { ExportStyle, ExportStylePresetId } from '../types';
  */
 const PRESETS: Record<ExportStylePresetId, Omit<ExportStyle, 'preset'>> = {
   /** The default look: the original text faded behind the translation. */
-  classic: { source: { opacity: 0.55 } },
+  classic: { source: { opacity: DEFAULT_SOURCE_OPACITY } },
   /** For language learners: the original at full strength, prominent hints, a smaller translation. */
   learner: { source: { opacity: 1 }, translation: { fontSizePercent: 90 }, hint: { color: '#1f7a8c', fontSizePercent: 65 } },
   /** No faded text; the translation in bold. */
@@ -35,9 +36,12 @@ function lookKey(style: ExportStyle | undefined): string {
   return JSON.stringify(sort(look));
 }
 
-/** True when two styles produce the same look (preset labels ignored; an absent style equals Classic). */
+/**
+ * True when two styles produce the same look (preset labels ignored). A missing source opacity means the default fade,
+ * so an absent or empty style equals Classic.
+ */
 export function sameExportStyle(a: ExportStyle | undefined, b: ExportStyle | undefined): boolean {
-  const norm = (s: ExportStyle | undefined) => (s === undefined ? exportStylePreset('classic') : s);
+  const norm = (s: ExportStyle | undefined): ExportStyle => ({ ...s, source: { opacity: DEFAULT_SOURCE_OPACITY, ...s?.source } });
   return lookKey(norm(a)) === lookKey(norm(b));
 }
 
