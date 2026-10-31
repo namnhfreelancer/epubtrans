@@ -259,6 +259,14 @@ export const en = {
   'guide.sections': 'Guideline sections',
   'guide.cancel': 'Cancel',
   'guide.lockedWhileGenerating': 'Generating… the guideline and glossary are locked until it finishes (or you cancel).',
+
+  'webmcp.agentAsks': 'An AI agent asks:\n\n{question}',
+  'webmcp.startConfirm':
+    'Translate “{title}” with {provider}, model {model}? {segments} segments remain; estimated cost: {cost} ({input} input / {output} output tokens{prices}). This uses your API key and is billed by the provider.',
+  'webmcp.costUnknown': 'unknown (no price for this model)',
+  'webmcp.pricesFromBook': '; prices from the book’s settings: {input} input / {output} output per 1M tokens',
+  'webmcp.pricesLookedUp': '; prices looked up for this model: {input} input / {output} output per 1M tokens',
+  'webmcp.importConfirm': 'Download a book into your library from {host}?\n\n{url}',
 } as const;
 
 export type MessageKey = keyof typeof en;

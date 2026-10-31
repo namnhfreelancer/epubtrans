@@ -1,9 +1,10 @@
-import { estimateCost, type Project } from '@epubtrans/core';
+import type { Project } from '@epubtrans/core';
 import { useI18n } from '../../i18n/i18n-context';
 import { formatNumber, formatUsd, parseOptionalPrice } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
 import { updateSettings } from '../../lib/project-store';
-import { type ActiveProvider, settingsForRun } from '../../lib/provider-config-store';
+import type { ActiveProvider } from '../../lib/provider-config-store';
+import { estimateRunCost, resolveRunPrices } from '../../lib/run-pricing';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { useJobActive } from '../../lib/translation-jobs';
 import { useCostEstimate } from '../../lib/use-cost-estimate';
@@ -18,22 +19,12 @@ const SOURCE_LABELS = { openrouter: 'OpenRouter', litellm: 'LiteLLM' } as const;
 export function CostEstimateCard({ project, version, active }: { project: Project; version: number; active: ActiveProvider }) {
   const { t, locale } = useI18n();
   const settings = project.settings;
-  const published = active.priceInPerM !== undefined && active.priceOutPerM !== undefined;
   const save = (patch: Parameters<typeof updateSettings>[1]) =>
     updateSettings(project, patch).catch((err: unknown) => pushNotice('error', t('common.saveFailed', { message: errorText(err) })));
 
   // Automatic price: the provider's own model list (OpenRouter "Test connection") wins, else the public catalogs.
   const lookup = useModelPricing(active.model, active.providerId);
-  const auto = published
-    ? { priceInPerM: active.priceInPerM, priceOutPerM: active.priceOutPerM }
-    : lookup.status === 'found'
-      ? { priceInPerM: lookup.pricing.priceInPerM, priceOutPerM: lookup.pricing.priceOutPerM }
-      : undefined;
-  // Manual prices saved with the book override the automatic one per field; nothing automatic is persisted,
-  // so changing the model looks up a fresh price instead of keeping the previous model's.
-  const priceInPerM = settings.priceInPerM ?? auto?.priceInPerM;
-  const priceOutPerM = settings.priceOutPerM ?? auto?.priceOutPerM;
-  const manual = settings.priceInPerM !== undefined || settings.priceOutPerM !== undefined;
+  const { auto, published, manual, priceInPerM, priceOutPerM } = resolveRunPrices(settings, active, lookup.status === 'found' ? lookup.pricing : undefined);
 
   const { providerId, baseURL, model } = active;
   // The estimate walks every batch of the book, while `version` changes on every finished segment and every keystroke
@@ -41,7 +32,7 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
   const runActive = useJobActive(project.id);
   const sampleRunning = useSampleRunning(project.id);
   const { estimate, deferred } = useCostEstimate(
-    () => estimateCost(project, { ...settingsForRun(settings, { providerId, baseURL, model }), priceInPerM, priceOutPerM }),
+    () => estimateRunCost(project, { providerId, baseURL, model }, { priceInPerM, priceOutPerM }),
     runActive || sampleRunning,
     // `version` tracks in-place project mutations.
     [project, settings, providerId, baseURL, model, priceInPerM, priceOutPerM, version],

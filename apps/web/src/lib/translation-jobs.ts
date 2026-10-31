@@ -106,7 +106,7 @@ async function runJob(project: Project, settings: ProjectSettings, provider: Cha
   }
   const baseline = createJobBaseline(project);
   let writeError: Error | undefined;
-  const writes: Promise<void>[] = [];
+  const writes: Promise<unknown>[] = [];
   let phase: TranslationPhase | undefined;
   try {
     await translateProject(project, provider, settings, {

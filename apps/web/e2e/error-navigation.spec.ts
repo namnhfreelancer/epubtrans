@@ -5,6 +5,8 @@ import { installMockProvider } from './support/mock-provider';
 /** Segment ids of every chapter, read from the reader (all segments are listed even before translation). */
 async function segmentIdsByChapter(page: Page): Promise<string[][]> {
   const items = page.getByTestId('chapter-item');
+  // The chapter list renders after the book loads; counting earlier sees no chapters.
+  await expect(items.first()).toBeVisible();
   const result: string[][] = [];
   for (let i = 0; i < (await items.count()); i++) {
     await items.nth(i).click();

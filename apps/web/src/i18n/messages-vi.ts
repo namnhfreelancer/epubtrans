@@ -262,4 +262,12 @@ export const vi: Record<MessageKey, string> = {
   'guide.sections': 'Các mục của hướng dẫn',
   'guide.cancel': 'Hủy',
   'guide.lockedWhileGenerating': 'Đang tạo… hướng dẫn và bảng thuật ngữ bị khóa cho đến khi hoàn tất (hoặc bạn hủy).',
+
+  'webmcp.agentAsks': 'Một tác tử AI yêu cầu:\n\n{question}',
+  'webmcp.startConfirm':
+    'Dịch “{title}” bằng {provider}, mô hình {model}? Còn {segments} đoạn; chi phí ước tính: {cost} ({input} token vào / {output} token ra{prices}). Việc này dùng khóa API của bạn và nhà cung cấp sẽ tính phí.',
+  'webmcp.costUnknown': 'chưa rõ (chưa có giá cho mô hình này)',
+  'webmcp.pricesFromBook': '; giá lấy từ cài đặt của sách: {input} vào / {output} ra cho mỗi 1 triệu token',
+  'webmcp.pricesLookedUp': '; giá tra cứu cho mô hình này: {input} vào / {output} ra cho mỗi 1 triệu token',
+  'webmcp.importConfirm': 'Tải một cuốn sách từ {host} vào thư viện?\n\n{url}',
 };

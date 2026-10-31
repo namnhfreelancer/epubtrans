@@ -58,6 +58,32 @@ The library keeps several books. Each book can be exported to, and imported from
 
 Each translation request only carries the glossary entries whose term occurs in that batch (whole-word, case-insensitive; the review pass also checks the draft), so a large glossary does not inflate every request. Words of 4 or more Latin, Cyrillic or Greek letters also match with a short ending of up to 3 letters, and a final vowel may change, so "Horcrux" matches "Horcruxes", "Darcy" matches "Darcys" and "Анна" matches "Анну"; shorter words and words with digits must match exactly ("art" never matches "artist", "Name1" never matches "Name10"). Generation costs one request plus one per 80 candidates: for a 1000-page book about 11 requests, roughly 100k input and 20k output tokens (about $0.60 at $3/$15 per 1M tokens); a short book needs 2 requests. The web glossary table has search, a type filter and pages of 50 rows.
 
+### Use with AI agents (WebMCP)
+
+The web app offers its main actions as [WebMCP](https://webmachinelearning.github.io/webmcp/) tools, so an AI agent running in your browser can call them instead of clicking through the page. WebMCP is an experimental browser API (a W3C community-group draft). Today it exists only in Chrome and Edge 149 or later, with the origin trial or the `chrome://flags/#enable-webmcp-testing` flag. The app does not register for the origin trial, so you need the flag. In every other browser nothing changes: the app checks for `document.modelContext` and does nothing when it is missing (no polyfill is loaded).
+
+| Tool | What it does |
+|------|--------------|
+| `list_books`, `get_book_status` | Read the library, and one book's settings, progress, job status and cost estimate |
+| `import_book_from_url` | Download a book from an `https://` URL (after you approve the host) |
+| `update_book_settings` | Target/source language, 2-pass review, guideline preset |
+| `configure_provider`, `list_models` | Pick a provider preset and model; presets you have not set up report that they are not ready |
+| `generate_guide`, `translate_sample` | Draft the guideline and glossary, translate a sample (small paid runs) |
+| `start_translation`, `pause_translation` | Start or resume the full paid translation (after you approve it), pause it |
+| `list_errors`, `retranslate_segment` | Find failed segments and translate one again (never a segment you edited by hand) |
+| `export_epub` | Build and download the EPUB in any export mode |
+| `delete_book` | Delete a book (after you approve it) |
+
+What an agent cannot do:
+
+- **API keys:** agents never receive, set or change a key. Tools only report whether a key is stored, and every tool output is scrubbed of stored keys before it is returned.
+- **Custom endpoint:** agents cannot change the custom base URL, so a stored key cannot be redirected to another host. An agent can select any provider preset, but one without a stored key (or, for Custom, without the base URL you entered) only reports that it is not ready.
+- **Spending and deleting:** `start_translation` shows a confirmation in the page with the provider, model, remaining segments, cost estimate and where its prices come from (your book's settings or looked up for the model), and `delete_book` asks before deleting. If you decline, or the browser suppresses dialogs, nothing is spent or deleted. If the provider, model, API key, 2-pass mode or remaining work changes before the run starts, nothing starts and the agent must ask again. `generate_guide`, `translate_sample` and `retranslate_segment` cost a few requests and run without a dialog. Like the buttons, they refuse while the book is being translated in this tab or another one. `retranslate_segment` refuses segments you edited by hand. Deleting a book also stops its guideline generation and sample.
+- **Downloads:** `import_book_from_url` accepts only `https://` URLs and asks you to approve the host before fetching; a redirect to another host is refused. No cookies or referrer are sent, and the usual 300 MB limit applies. Many sites (for example Project Gutenberg) do not allow downloads from other web pages (CORS); the agent is then told to ask you to drop the file instead.
+- **Other sites:** tools are only visible on the app's own origin (no cross-origin exposure).
+
+Tool outputs that contain book text, model output or provider error messages are flagged as untrusted content (`untrustedContentHint`), so agents treat them as data rather than instructions. Each output stays under 1,500 characters. A dialog accepted by an agent that drives the browser itself (for example over the DevTools protocol) cannot be told apart from your own click. Agents that respect the `consequentialHint` flag on `start_translation` and `delete_book` should ask you first.
+
 ## Command line
 
 ### Install
@@ -147,5 +173,6 @@ epubtrans dịch sách **không DRM** (EPUB, MOBI, AZW3, FB2) thành **EPUB song
 - **Xuất EPUB** ở 3 chế độ: song ngữ, song ngữ (bản dịch trước), chỉ bản dịch. Giao diện có tiếng Việt và tiếng Anh, cài được như ứng dụng (PWA).
 - **Dòng lệnh:** cài bằng lệnh ở mục [Command line](#command-line), đặt khóa trong biến môi trường `EPUBTRANS_API_KEY`, rồi chạy `epubtrans translate sach.epub --to vi --model <id>` (nhà cung cấp mặc định là `openai`; dùng nhà cung cấp khác thì thêm `--provider <id>` ở mỗi lần chạy). Gặp sự cố hoặc nhấn Ctrl-C, chạy lại cùng lệnh để dịch tiếp; có thể mở tệp `.epubtrans` xuất từ web bằng `epubtrans resume`.
 - **Bảng thuật ngữ và hướng dẫn văn phong:** ứng dụng quét toàn bộ sách (không tốn lượt gọi mô hình) để tìm tên riêng và thuật ngữ lặp lại, rồi nhờ mô hình phân loại (nhân vật, địa danh, tổ chức, thuật ngữ, khác) và dịch chúng; số mục tăng theo độ dài sách (khoảng 1 mục cho mỗi 500 từ, tối đa 400 theo mặc định). Hướng dẫn văn phong được viết từ khoảng 18 đoạn trích khắp cuốn sách, theo các mục cố định, trong đó có cách xưng hô giữa các nhân vật; hướng dẫn bạn đang dùng được giữ nguyên, phần tạo ra được thêm bên dưới. Mỗi yêu cầu dịch chỉ gửi kèm những thuật ngữ xuất hiện trong đoạn đó.
+- **Dùng với tác tử AI (WebMCP, thử nghiệm):** trên Chrome/Edge 149 trở lên có bật cờ `chrome://flags/#enable-webmcp-testing`, tác tử AI chạy trong trình duyệt có thể gọi các thao tác chính của ứng dụng: nhập sách từ URL https, chọn mô hình, dịch mẫu, dịch, sửa đoạn lỗi, xuất EPUB. Tác tử không bao giờ đọc hay đặt API key, và không đổi được URL tùy chỉnh. Muốn dịch cả cuốn (tốn phí), xóa sách hay tải sách từ một máy chủ, bạn phải tự xác nhận trong trang. Ở các trình duyệt khác, ứng dụng không thay đổi gì. Chi tiết: [Use with AI agents (WebMCP)](#use-with-ai-agents-webmcp).
 
 Cảm ơn tác giả gốc [nguyenvanduocit](https://github.com/nguyenvanduocit/epubtrans). Điều khoản sử dụng xem tệp [LICENSE](LICENSE).

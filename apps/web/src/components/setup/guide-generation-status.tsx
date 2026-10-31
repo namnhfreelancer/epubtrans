@@ -1,15 +1,9 @@
-import type { GuideProgress } from '@epubtrans/core';
 import { useI18n } from '../../i18n/i18n-context';
+import type { GuideJobState } from '../../lib/guide-jobs';
 import { Alert, ProgressBar } from '../ui/layout-primitives';
 
-export type GenerateState =
-  | { kind: 'idle' }
-  | { kind: 'busy'; progress?: GuideProgress }
-  | { kind: 'done'; entries: number; candidates: number; skippedBatches: number }
-  | { kind: 'error'; message: string };
-
 /** Phase-by-phase progress of guideline and glossary generation, then its outcome. */
-export function GuideGenerationStatus({ state }: { state: GenerateState }) {
+export function GuideGenerationStatus({ state }: { state: GuideJobState }) {
   const { t } = useI18n();
   if (state.kind === 'done') {
     return (
