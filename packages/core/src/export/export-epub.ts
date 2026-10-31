@@ -6,6 +6,7 @@ import type { DomEnv, ExportMode, Project, Segment } from '../types';
 import { encodeUtf8 } from '../util/text-encoding';
 import { type FileMap, readZip, writeEpubZip } from '../util/zip-archive';
 import { dirname, relativeHref } from '../util/zip-path';
+import { markPreviewSegment } from './preview-markers';
 import { prunePackageFiles } from './prune-package-files';
 import { type PlacementContext, placeTranslation, SOURCE_CLASS, setLang, textLabel } from './segment-placement';
 import { stripActiveContent, stripActiveContentFromPackage, unmarkScripted } from './strip-active-content';
@@ -15,6 +16,15 @@ export const EXPORT_MODES: ExportMode[] = ['bilingual', 'bilingual-translation-f
 
 const STYLESHEET = `/* epubtrans: bilingual layout */\n.${SOURCE_CLASS} { opacity: 0.55; }\n`;
 const STYLESHEET_NAME = 'epubtrans.css';
+
+/** Options for {@link exportEpub}. */
+export interface ExportOptions {
+  /**
+   * Preview builds only, never for downloads: segment blocks keep their `data-et-id` marker, and blocks of failed
+   * or untranslated segments get the classes `et-error` / `et-pending`. The default (off) output is unchanged.
+   */
+  preview?: boolean;
+}
 
 const isDone = (s: Segment | undefined): s is Segment & { translationHtml: string } =>
   !!s?.translationHtml && (s.status === 'translated' || s.status === 'reviewed');
@@ -26,9 +36,9 @@ const isDone = (s: Segment | undefined): s is Segment & { translationHtml: strin
  * multi-rendition book are kept (listing the stylesheet when they share a translated document).
  * Files no package document references and XSLT stylesheets are dropped, and scripts, event
  * handlers and script URLs are stripped from every remaining markup file, package documents
- * included. `mimetype` is written first and stored.
+ * included. `mimetype` is written first and stored. `options.preview` keeps segment markers for the in-app preview.
  */
-export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv): Promise<Uint8Array> {
+export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv, options: ExportOptions = {}): Promise<Uint8Array> {
   if (!EXPORT_MODES.includes(mode)) throw new Error(`Unknown export mode: ${mode}`);
   const files = readZip(project.sourceEpub);
   const pkg = parsePackage(files, env);
@@ -52,7 +62,8 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
     let changed = false;
     for (const el of Array.from(doc.querySelectorAll(`[${SEGMENT_ATTR}]`))) {
       const segment = segments.get(el.getAttribute(SEGMENT_ATTR) ?? '');
-      el.removeAttribute(SEGMENT_ATTR);
+      if (options.preview) markPreviewSegment(el, segment, isDone(segment));
+      else el.removeAttribute(SEGMENT_ATTR);
       if (!isDone(segment)) continue;
       placeTranslation(el, segment.translationHtml, ctx);
       changed = true;
