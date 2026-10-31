@@ -3,7 +3,8 @@
  * DOM access goes through an injected DomEnv; HTTP goes through an injectable fetch.
  */
 
-export { EXPORT_MODES, exportEpub } from './export/export-epub';
+export { EXPORT_MODES, type ExportOptions, exportEpub } from './export/export-epub';
+export { PREVIEW_ERROR_CLASS, PREVIEW_PENDING_CLASS, PREVIEW_SEGMENT_ATTR } from './export/preview-markers';
 export { detectFormat } from './formats/detect-format';
 export { type ExtractCandidatesOptions, extractGlossaryCandidates, type GlossaryCandidate } from './glossary/extract-candidates';
 export { foldGlossaryKey, GLOSSARY_TERM_TYPES } from './glossary/glossary-entry';

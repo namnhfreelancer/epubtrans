@@ -26,7 +26,7 @@ export function setLang(el: Element, ctx: PlacementContext): void {
   if (!ctx.xmlLangOnly) el.setAttribute('lang', ctx.targetLang);
 }
 
-function addClass(el: Element, cls: string): void {
+export function addClass(el: Element, cls: string): void {
   const current = el.getAttribute('class');
   el.setAttribute('class', current ? `${current} ${cls}` : cls);
 }

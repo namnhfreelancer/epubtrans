@@ -71,6 +71,7 @@ export const vi: Record<MessageKey, string> = {
   'book.notFound': 'Cuốn sách này không có trong thư viện.',
   'book.tab.setup': 'Dịch',
   'book.tab.read': 'Đọc & sửa',
+  'book.tab.preview': 'Xem trước',
   'book.tab.export': 'Xuất',
 
   'setup.languages': 'Ngôn ngữ',

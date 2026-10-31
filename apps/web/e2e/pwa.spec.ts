@@ -13,9 +13,16 @@ test.describe('installable PWA', () => {
 
     // Strict CSP: no inline script, provider calls limited to https and localhost.
     const csp = (await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content')) ?? '';
-    expect(csp).toContain("script-src 'self'");
-    expect(csp).not.toContain("'unsafe-inline'");
+    const directive = (name: string) =>
+      csp
+        .split(';')
+        .map((d) => d.trim())
+        .find((d) => d.startsWith(`${name} `)) ?? '';
+    expect(directive('script-src')).toBe("script-src 'self'");
     expect(csp).toMatch(/connect-src 'self' https: http:\/\/localhost:\*/);
+    // The book preview renders sections as blob: documents (styles allowed inline, scripts never).
+    expect(directive('frame-src')).toBe('frame-src blob:');
+    expect(directive('style-src')).toBe("style-src 'self' 'unsafe-inline' blob:");
 
     // Manifest with icons.
     const href = await page.locator('link[rel="manifest"]').getAttribute('href');
