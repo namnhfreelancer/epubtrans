@@ -1,6 +1,7 @@
 import { type ChatProvider, type Project, type ProjectSettings, type SampleSelection, type TokenUsage, translateSample } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
 import { launchWithJobLock } from './cross-tab-job-lock';
+import { isHintJobActive } from './hint-jobs';
 import { persistLastSample, persistSegment, touchProject } from './project-store';
 import { isJobActive, type StartJobResult } from './translation-jobs';
 
@@ -50,7 +51,7 @@ export const useSampleRunning = (projectId: string): boolean => useSyncExternalS
  * sample run) is active in this tab. Resolves once it is known whether the sample started here.
  */
 export function startSampleJob(project: Project, settings: ProjectSettings, provider: ChatProvider, request: SampleRequest): Promise<StartJobResult> {
-  if (controllers.has(project.id) || isJobActive(project.id)) return Promise.resolve('already-running');
+  if (controllers.has(project.id) || isJobActive(project.id) || isHintJobActive(project.id)) return Promise.resolve('already-running');
   const controller = new AbortController();
   controllers.set(project.id, controller);
   const { started, settled } = launchWithJobLock(project.id, () => runSample(project, settings, provider, request, controller));

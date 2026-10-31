@@ -17,7 +17,15 @@ function Shell() {
         {route.name === 'settings' && <SettingsPage />}
         {route.name === 'book' && <BookPage key={route.id} id={route.id} tab={route.tab} segment={route.segment} />}
       </main>
-      <footer className="mx-auto w-full max-w-6xl px-4 pb-6 text-xs text-stone-500 dark:text-stone-400">{t('app.privacy')}</footer>
+      <footer className="mx-auto w-full max-w-6xl space-y-1 px-4 pb-6 text-xs text-stone-500 dark:text-stone-400">
+        <p>{t('app.privacy')}</p>
+        <p data-testid="app-credits">
+          {t('app.credits')}{' '}
+          <a href="https://github.com/rspeer/wordfreq" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+            wordfreq
+          </a>
+        </p>
+      </footer>
       <NoticeToasts />
     </div>
   );

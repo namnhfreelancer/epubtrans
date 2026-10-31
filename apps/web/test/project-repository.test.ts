@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { createDefaultSettings, type Project } from '@epubtrans/core';
+import { createDefaultSettings, type Project, type WordHintEntry } from '@epubtrans/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ProjectDatabase } from '../src/lib/project-database';
 import { createProjectRepository, ProjectNotFoundError, type ProjectRepository } from '../src/lib/project-repository';
@@ -129,5 +129,49 @@ describe('project repository', () => {
     await repo.saveProject(makeProject());
     await db.segments.put({ projectId: 'p1', id: 'c1-0', status: 'bogus' as never });
     await expect(repo.loadProject('p1')).rejects.toThrow(/status/);
+  });
+});
+
+describe('Word Wise hints in the repository', () => {
+  const entry = (lemma: string, gloss = `≈${lemma}`): WordHintEntry => ({
+    lemma,
+    rank: 20_000,
+    senses: [{ id: 'main', gloss }],
+    occurrences: [{ segmentId: 'c1-1', word: lemma, nth: 0, sense: 'main' }],
+  });
+
+  it('persists each glossed lemma so a reload resumes, and loads projects without hints', async () => {
+    await repo.saveProject(makeProject());
+    expect((await repo.loadProject('p1')).wordHints).toBeUndefined();
+    await repo.startHints('p1', { sourceLang: 'en', glossLang: 'vi' }, false);
+    await repo.saveHintEntry('p1', entry('world'));
+    await repo.saveHintEntry('p1', entry('hello'));
+    await repo.saveHintEntry('p1', entry('world', 'thế giới'));
+    const loaded = await repo.loadProject('p1');
+    expect(loaded.wordHints?.sourceLang).toBe('en');
+    expect(loaded.wordHints?.entries.map((e) => [e.lemma, e.senses[0]?.gloss]).sort()).toEqual([
+      ['hello', '≈hello'],
+      ['world', 'thế giới'],
+    ]);
+    expect(await repo.loadHints('p1')).toEqual(loaded.wordHints);
+  });
+
+  it('replaces hints of another language pair, round-trips imported hints and deletes them with the book', async () => {
+    const project: Project = { ...makeProject(), wordHints: { sourceLang: 'en', glossLang: 'vi', entries: [entry('world')] } };
+    await repo.saveProject(project);
+    expect((await repo.loadProject('p1')).wordHints).toEqual(project.wordHints);
+    await repo.startHints('p1', { sourceLang: 'en', glossLang: 'fr' }, true);
+    expect(await repo.loadHints('p1')).toEqual({ sourceLang: 'en', glossLang: 'fr', entries: [] });
+    await repo.deleteProject('p1');
+    expect(await db.hints.where('projectId').equals('p1').count()).toBe(0);
+    await expect(repo.saveHintEntry('p1', entry('x'))).rejects.toBeInstanceOf(ProjectNotFoundError);
+    await expect(repo.startHints('p1', { sourceLang: 'en', glossLang: 'vi' }, false)).rejects.toBeInstanceOf(ProjectNotFoundError);
+  });
+
+  it('rejects stored hints that name an unknown sense', async () => {
+    await repo.saveProject(makeProject());
+    await repo.startHints('p1', { sourceLang: 'en', glossLang: 'vi' }, false);
+    await db.hints.put({ projectId: 'p1', ...entry('world'), senses: [] });
+    await expect(repo.loadProject('p1')).rejects.toThrow(/sense/);
   });
 });
