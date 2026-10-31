@@ -15,7 +15,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleOptions): C
   const headers = (): Record<string, string> => (opts.apiKey ? { authorization: `Bearer ${opts.apiKey}` } : {});
 
   const listModelInfo = async (signal?: AbortSignal): Promise<ModelInfo[]> => {
-    const json = await requestJson(opts.fetchImpl, joinUrl(opts.baseURL, 'models'), { method: 'GET', headers: headers(), signal });
+    const json = await requestJson(opts.fetchImpl, joinUrl(opts.baseURL, 'models'), { method: 'GET', headers: headers(), signal, secrets: [opts.apiKey] });
     const data = isRecord(json) && Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
     const models: ModelInfo[] = [];
     for (const item of data) {
@@ -50,6 +50,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleOptions): C
         headers: headers(),
         body,
         signal: req.signal,
+        secrets: [opts.apiKey],
       });
       const choice = isRecord(json) && Array.isArray(json.choices) ? json.choices[0] : undefined;
       const message = isRecord(choice) && isRecord(choice.message) ? choice.message : undefined;

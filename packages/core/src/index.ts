@@ -49,3 +49,4 @@ export {
   translateSample,
 } from './translate/translate-sample';
 export type * from './types';
+export { REDACTED, redactSecrets } from './util/redact-secrets';
