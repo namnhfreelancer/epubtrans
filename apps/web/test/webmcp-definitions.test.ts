@@ -109,10 +109,14 @@ describe('the model context adapter', () => {
 });
 
 describe('tool results', () => {
-  it('redacts secrets, raw and JSON-escaped', () => {
-    const out = serializeResult(ok({ a: `x ${SENTINEL_KEY} y`, b: 'k"ey-with-quote1' }), [SENTINEL_KEY, 'k"ey-with-quote1']);
+  it('redacts secrets in every string and always returns valid JSON', () => {
+    const out = serializeResult(ok({ a: `x ${SENTINEL_KEY} y`, b: 'k"ey-with-quote1', c: [`pre ${SENTINEL_KEY.slice(0, 12)}`] }), [
+      SENTINEL_KEY,
+      'k"ey-with-quote1',
+    ]);
     expect(out).not.toContain(SENTINEL_KEY);
     expect(out).not.toContain('ey-with-quote1');
+    expect(out).not.toContain(SENTINEL_KEY.slice(0, 12));
     expect(JSON.parse(out)).toMatchObject({ ok: true, a: 'x [redacted] y', b: '[redacted]' });
   });
 

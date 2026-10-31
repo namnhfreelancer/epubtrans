@@ -3,13 +3,12 @@
  * (stored API keys) redacted. Text from books, models and providers goes into named fields as plain, clipped text.
  */
 
+import { redactSecrets as redactCoreSecrets } from '@epubtrans/core';
+
 /** Per-call output budget recommended for WebMCP agents. */
 export const MAX_OUTPUT_CHARS = 1500;
 /** Room kept for the `truncated` note when a list is shortened to fit. */
 const LIST_BUDGET = MAX_OUTPUT_CHARS - 120;
-const REDACTED = '[redacted]';
-/** Shorter strings are too likely to occur in ordinary text to be redacted safely (real keys are much longer). */
-const MIN_SECRET_LENGTH = 8;
 
 export type ToolSuccess = { ok: true } & Record<string, unknown>;
 export type ToolFailure = { ok: false; error: string; hint?: string };
@@ -31,15 +30,12 @@ export function setSecretSource(source: () => readonly string[]): void {
   secretSource = source;
 }
 
-/** Replaces every secret (raw and JSON-escaped forms) in `text` with a marker. */
+/**
+ * Replaces the stored keys (exact, partial, encoded echoes) and common secret shapes in `text` with a marker,
+ * using core's redactor so tool outputs follow the same rules as stored errors and project files.
+ */
 export function redactSecrets(text: string, secrets: readonly string[] = secretSource()): string {
-  let out = text;
-  for (const secret of secrets) {
-    if (secret.length < MIN_SECRET_LENGTH) continue;
-    // The raw value and its JSON-escaped form (a key with quotes or backslashes would appear escaped).
-    for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)])) out = out.split(form).join(REDACTED);
-  }
-  return out;
+  return redactCoreSecrets(text, secrets);
 }
 
 /** Clips text to `max` characters, marking the cut with an ellipsis. Secrets are redacted first, so no key prefix survives the cut. */
@@ -86,12 +82,24 @@ export function fitList<T>(items: readonly T[], build: (items: readonly T[]) => 
   return result;
 }
 
+/** Returns a copy of `value` with every string (keys and values) passed through {@link redactSecrets}. */
+function redactDeep(value: unknown, secrets: readonly string[]): unknown {
+  if (typeof value === 'string') return redactSecrets(value, secrets);
+  if (Array.isArray(value)) return value.map((item) => redactDeep(item, secrets));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [redactSecrets(k, secrets), redactDeep(v, secrets)]));
+  }
+  return value;
+}
+
 /**
  * Serializes a result for the agent: redacts every secret, then enforces the output budget. Output that is still too
  * long is replaced by a valid JSON object carrying its beginning as a string, flagged `truncated`.
  */
 export function serializeResult(result: ToolResult, secrets: readonly string[]): string {
-  const json = redactSecrets(JSON.stringify(result), secrets);
+  // Redact each string before serializing: redacting the JSON text could cut through an escape sequence
+  // (a partial key echo after a `\"`) and produce invalid JSON.
+  const json = JSON.stringify(redactDeep(result, secrets));
   if (json.length <= MAX_OUTPUT_CHARS) return json;
   const note = 'Output exceeded 1500 characters and was cut; request fewer items or a narrower range.';
   let keep = MAX_OUTPUT_CHARS - 200;
