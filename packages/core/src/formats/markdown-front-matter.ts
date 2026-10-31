@@ -10,7 +10,15 @@ export interface FrontMatter {
 }
 
 const FRONT_MATTER_MAX_LINES = 60;
-const YAML_KEY = /^[A-Za-z_][\w-]*[ \t]*:(?:[ \t]|$)/;
+/** Metadata keys recognized in any case (`Title:`); every other key must be a simple lower-case YAML identifier. */
+const KNOWN_KEYS = 'title|subtitle|author|authors|creator|lang|language|date|description|publisher|rights|subject|tags|keywords|identifier|series';
+const LOWER_CASE_KEY = /^[a-z_][a-z0-9_-]*[ \t]*:(?:[ \t]|$)/;
+const KNOWN_KEY = new RegExp(`^(?:${KNOWN_KEYS})[ \\t]*:(?:[ \\t]|$)`, 'i');
+/**
+ * A front-matter key: `title`, `cover-image`, `date_published`, `Title`. Script lines such as `HAMLET: To be…` or
+ * `Ophelia: …` are not keys, so a play that opens with a `---` line keeps its text.
+ */
+const isYamlKey = (line: string) => LOWER_CASE_KEY.test(line) || KNOWN_KEY.test(line);
 const YAML_ITEM_OR_CONTINUATION = /^(?:[ \t]*-(?:[ \t]|$)|[ \t]+\S|[ \t]*#)/;
 
 const isBlank = (line: string) => line.trim() === '';
@@ -37,7 +45,7 @@ function looksLikeYaml(lines: string[]): boolean {
   let keys = 0;
   for (const line of lines) {
     if (isBlank(line)) continue;
-    if (YAML_KEY.test(line)) keys++;
+    if (isYamlKey(line)) keys++;
     else if (keys === 0 || !YAML_ITEM_OR_CONTINUATION.test(line)) return false;
   }
   return keys > 0;

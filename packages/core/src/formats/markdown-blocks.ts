@@ -1,11 +1,10 @@
-import { splitLongText } from './split-long-text';
-
 /**
  * Block-level Markdown (the subset books use): ATX and setext headings, paragraphs, block quotes, flat bullet and
  * ordered lists, fenced code and thematic breaks (front matter is read by `markdown-front-matter.ts`). Raw HTML blocks and tables are kept as paragraph
  * text (inline rendering drops the tags). Indented text is a paragraph, not code: many plain-text books indent paragraphs.
- * The rules favour books over strict CommonMark: a file with (almost) no blank lines has one paragraph per line, as in
- * the plain-text importer, and a leading `---` is front matter only when what follows really is YAML.
+ * The rules favour books over strict CommonMark: a file without any blank line has one paragraph per line, as in the
+ * plain-text importer (hard-wrapped paragraphs are separated by blank lines, so they are never cut into lines), and a
+ * leading `---` is front matter only when what follows really is YAML.
  */
 export type MarkdownBlock =
   | { kind: 'heading'; level: number; text: string }
@@ -24,16 +23,20 @@ const BULLET = /^ {0,3}[-*+][ \t]+/;
 const ORDERED = /^ {0,3}(\d{1,9})[.)][ \t]+/;
 /** Deeper block quotes are flattened into the deepest one: real books never nest further, hostile files could. */
 export const MAX_QUOTE_DEPTH = 8;
-/** Fewer blank lines than one per this many text lines means the file puts one paragraph on each line. */
-const LINES_PER_BLANK_LINE = 20;
+/** A line ending a sentence (or a clause): such a line above a `---` underline is prose followed by a scene break. */
+const ENDS_SENTENCE = /[.!?…:;,。！？]["'”’»)\]]*\s*$/u;
 
 const isBlank = (line: string) => line.trim() === '';
 const startsBlock = (line: string) => ATX.test(line) || FENCE.test(line) || RULE.test(line) || QUOTE.test(line) || BULLET.test(line) || ORDERED.test(line);
 
-/** True when the text (outside fenced code) has almost no blank lines: then each line is a paragraph of its own. */
+/**
+ * True when the text (outside fenced code, leading and trailing blank lines aside) has no blank line at all: then each
+ * line is a paragraph of its own, as in the plain-text importer. One blank line anywhere means paragraphs are separated
+ * by blank lines, and lines within one are hard wrapping.
+ */
 function hasParagraphPerLine(lines: string[]): boolean {
-  let blank = 0;
   let text = 0;
+  let blankAfterText = false;
   let fence: string | undefined;
   for (const line of lines) {
     const marker = FENCE.exec(line)?.[1];
@@ -42,10 +45,11 @@ function hasParagraphPerLine(lines: string[]): boolean {
       continue;
     }
     if (marker) fence = marker;
-    else if (isBlank(line)) blank++;
+    else if (isBlank(line)) blankAfterText = text > 0;
+    else if (blankAfterText) return false;
     else text++;
   }
-  return text > 1 && blank * LINES_PER_BLANK_LINE < text;
+  return text > 1;
 }
 
 /** Removes every leading `>` marker (an iterative loop: the nesting can be arbitrarily deep). */
@@ -129,8 +133,16 @@ function parseBlocks(lines: string[], depth: number, perLine: boolean): Markdown
       continue;
     }
     if (perLine) {
-      blocks.push({ kind: 'paragraph', text: line.trim() });
-      i++;
+      // A setext underline still makes the line above it a heading; a `---` under a sentence is a scene break instead.
+      const next = i + 1 < lines.length ? (lines[i + 1] as string) : undefined;
+      const setext = next === undefined ? null : SETEXT.exec(quotes ? next : stripQuoteMarkers(next));
+      if (setext && ((setext[1] as string).startsWith('=') || !ENDS_SENTENCE.test(line))) {
+        blocks.push({ kind: 'heading', level: (setext[1] as string).startsWith('=') ? 1 : 2, text: line.trim() });
+        i += 2;
+      } else {
+        blocks.push({ kind: 'paragraph', text: line.trim() });
+        i++;
+      }
       continue;
     }
     const paragraph: string[] = [];
@@ -151,27 +163,4 @@ function parseBlocks(lines: string[], depth: number, perLine: boolean): Markdown
     if (paragraph.length) blocks.push({ kind: 'paragraph', text: paragraph.join('\n') });
   }
   return blocks;
-}
-
-/**
- * Splits every block whose text is too long for one model answer (see `splitLongText`): a paragraph into several, a
- * list item into several items, a heading into the heading and paragraphs. Code is never translated and stays whole.
- */
-export function splitOversizedBlocks(blocks: MarkdownBlock[]): MarkdownBlock[] {
-  return blocks.flatMap((block): MarkdownBlock[] => {
-    switch (block.kind) {
-      case 'paragraph':
-        return splitLongText(block.text).map((text) => ({ kind: 'paragraph', text }));
-      case 'heading': {
-        const [first = '', ...rest] = splitLongText(block.text);
-        return [{ ...block, text: first }, ...rest.map((text): MarkdownBlock => ({ kind: 'paragraph', text }))];
-      }
-      case 'list':
-        return [{ ...block, items: block.items.flatMap((item) => splitLongText(item)) }];
-      case 'quote':
-        return [{ kind: 'quote', blocks: splitOversizedBlocks(block.blocks) }];
-      default:
-        return [block];
-    }
-  });
 }

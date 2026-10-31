@@ -2,47 +2,76 @@ import { createXhtmlDocument } from '../dom/xhtml-document';
 import { NS, textOf } from '../dom/xml-dom-helpers';
 import { detectTextLanguage } from '../lang/detect-language';
 import type { DomEnv } from '../types';
-import { type MarkdownBlock, parseMarkdownBlocks, splitOversizedBlocks } from './markdown-blocks';
+import { type MarkdownBlock, parseMarkdownBlocks } from './markdown-blocks';
 import { splitFrontMatter } from './markdown-front-matter';
 import { renderInline } from './markdown-inline';
+import { createInlineSplitter, type InlineContent } from './markdown-inline-split';
 import { type BlockRenderer, buildTextBook, chunkChapters, decodeTextFile, type TextChapter, titleFromFileName } from './text-book';
 
-function renderBlock(block: MarkdownBlock): BlockRenderer {
-  return (doc) => {
-    const el = (tag: string, text?: string) => {
-      const node = doc.createElementNS(NS.XHTML, tag);
-      if (text !== undefined) for (const n of renderInline(doc, text)) node.appendChild(n);
-      return node;
-    };
-    switch (block.kind) {
-      case 'heading':
-        return el(`h${block.level}`, block.text);
-      case 'paragraph':
-        return el('p', block.text);
-      case 'rule':
-        return el('hr');
-      case 'code': {
-        const pre = el('pre');
-        const code = el('code');
-        code.textContent = block.text;
-        pre.appendChild(code);
-        return pre;
-      }
-      case 'quote': {
-        const quote = el('blockquote');
-        for (const inner of block.blocks) quote.appendChild(renderBlock(inner)(doc));
-        // An empty quote would be an empty block element; give it a paragraph so the document stays meaningful.
-        if (!quote.firstChild) quote.appendChild(el('p'));
-        return quote;
-      }
-      case 'list': {
-        const list = el(block.ordered ? 'ol' : 'ul');
-        if (block.ordered && block.start !== 1) list.setAttribute('start', String(block.start));
-        for (const item of block.items) list.appendChild(el('li', item));
-        return list;
-      }
-    }
+/** Fills `node` with inline content: Markdown rendered in its document, or nodes rendered elsewhere imported into it. */
+function fillInline(node: Element, content: InlineContent): void {
+  const doc = node.ownerDocument as Document;
+  if (typeof content === 'string') for (const n of renderInline(doc, content)) node.appendChild(n);
+  else for (const n of content) node.appendChild(doc.importNode(n, true));
+}
+
+const inlineElement =
+  (tag: string, content: InlineContent): BlockRenderer =>
+  (doc) => {
+    const node = doc.createElementNS(NS.XHTML, tag);
+    fillInline(node, content);
+    return node;
   };
+
+/**
+ * The block elements of a Markdown block. Text too long for one segment is split (see `createInlineSplitter`): a
+ * paragraph into several paragraphs, a heading into the heading and paragraphs, a list item into several items. Code is
+ * never translated and stays whole; a quote stays one block around its (split) inner blocks.
+ */
+function renderBlock(block: MarkdownBlock, split: (text: string) => InlineContent[]): BlockRenderer[] {
+  switch (block.kind) {
+    case 'heading': {
+      const [first = '', ...rest] = split(block.text);
+      return [inlineElement(`h${block.level}`, first), ...rest.map((part) => inlineElement('p', part))];
+    }
+    case 'paragraph':
+      return split(block.text).map((part) => inlineElement('p', part));
+    case 'rule':
+      return [(doc) => doc.createElementNS(NS.XHTML, 'hr')];
+    case 'code':
+      return [
+        (doc) => {
+          const pre = doc.createElementNS(NS.XHTML, 'pre');
+          const code = doc.createElementNS(NS.XHTML, 'code');
+          code.textContent = block.text;
+          pre.appendChild(code);
+          return pre;
+        },
+      ];
+    case 'quote': {
+      const inner = block.blocks.flatMap((b) => renderBlock(b, split));
+      return [
+        (doc) => {
+          const quote = doc.createElementNS(NS.XHTML, 'blockquote');
+          for (const render of inner) quote.appendChild(render(doc));
+          // An empty quote would be an empty block element; give it a paragraph so the document stays meaningful.
+          if (!quote.firstChild) quote.appendChild(doc.createElementNS(NS.XHTML, 'p'));
+          return quote;
+        },
+      ];
+    }
+    case 'list': {
+      const items = block.items.flatMap((item) => split(item));
+      return [
+        (doc) => {
+          const list = doc.createElementNS(NS.XHTML, block.ordered ? 'ol' : 'ul');
+          if (block.ordered && block.start !== 1) list.setAttribute('start', String(block.start));
+          for (const item of items) list.appendChild(inlineElement('li', item)(doc));
+          return list;
+        },
+      ];
+    }
+  }
 }
 
 /** Plain text of a heading's inline Markdown (for the table of contents and the book title). */
@@ -77,7 +106,8 @@ function blockTexts(blocks: MarkdownBlock[]): string[] {
  */
 export function markdownToEpub(bytes: Uint8Array, fileName: string, env: DomEnv): Uint8Array {
   const { meta, body } = splitFrontMatter(decodeTextFile(bytes).split('\n'));
-  const blocks = splitOversizedBlocks(parseMarkdownBlocks(body));
+  const blocks = parseMarkdownBlocks(body);
+  const split = createInlineSplitter(env);
   if (blocks.length === 0) throw new Error('No translatable text found in this book');
   // Plain titles of the headings; one whose text renders to nothing (markup only) never starts a chapter.
   const titles = new Map<MarkdownBlock, string>();
@@ -91,7 +121,7 @@ export function markdownToEpub(bytes: Uint8Array, fileName: string, env: DomEnv)
 
   let chapters: TextChapter[];
   if (splitLevel === 0) {
-    chapters = chunkChapters(blocks.map(renderBlock));
+    chapters = chunkChapters(blocks.flatMap((b) => renderBlock(b, split)));
   } else {
     chapters = [];
     let current: TextChapter = { title: '', blocks: [] };
@@ -100,7 +130,7 @@ export function markdownToEpub(bytes: Uint8Array, fileName: string, env: DomEnv)
         if (current.blocks.length) chapters.push(current);
         current = { title: titles.get(block) ?? '', blocks: [] };
       }
-      current.blocks.push(renderBlock(block));
+      current.blocks.push(...renderBlock(block, split));
     }
     if (current.blocks.length) chapters.push(current);
   }

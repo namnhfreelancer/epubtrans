@@ -43,6 +43,20 @@ const timed = async <T>(run: () => Promise<T> | T, runs = 3): Promise<{ value: T
   return best as { value: T; ms: number };
 };
 
+/**
+ * Asserts that the work grows about linearly with the input: four times the input takes less than eight times as long
+ * (linear work takes four times, quadratic sixteen), and even the largest input stays far below a generous cap. Times
+ * are relative, so a slow or shared machine does not make the test flaky; times under 5 ms count as 5 ms, where timer
+ * noise dominates.
+ */
+async function expectLinear(label: string, run: (scale: 1 | 4) => unknown): Promise<void> {
+  const { ms: single } = await timed(() => run(1));
+  const { ms: quadruple } = await timed(() => run(4));
+  console.log(`${label}: ${single.toFixed(0)} ms, four times the input ${quadruple.toFixed(0)} ms`);
+  expect(quadruple / Math.max(single, 5)).toBeLessThan(8);
+  expect(quadruple).toBeLessThan(5000);
+}
+
 describe('Markdown front matter and scene breaks', () => {
   const scene =
     '---\n\nThe opening scene sets the stage for the whole story.\n\nAnother important paragraph follows here.\n\n---\n\nAfter the break the story continues for a while.\n';
@@ -92,14 +106,13 @@ describe('Markdown front matter and scene breaks', () => {
 });
 
 describe('Markdown without blank lines', () => {
-  it('treats each line as a paragraph, like the plain-text importer, and converts fast', async () => {
-    const body = Array.from({ length: 3000 }, (_, i) => `Line ${i + 1} of the story goes on with a *few* more words in it.`).join('\n');
-    const bytes = encode(`## Chapter 1\n${body}\n`);
+  it('treats each line as a paragraph, like the plain-text importer, and converts in linear time', async () => {
+    const flat = (lines: number) =>
+      encode(`## Chapter 1\n${Array.from({ length: lines }, (_, i) => `Line ${i + 1} of the story goes on with a *few* more words in it.`).join('\n')}\n`);
     // The Markdown work (block and inline parsing, building the chapter) is timed; segmenting and zipping are shared with TXT.
-    const { ms } = await timed(() => markdownToEpub(bytes, 'flat.md', env));
-    const { value: project, ms: importMs } = await timed(() => importBook(bytes, 'flat.md', env), 1);
-    console.log(`3000 single-newline Markdown lines: converted in ${ms.toFixed(0)} ms, whole import ${importMs.toFixed(0)} ms`);
-    expect(ms).toBeLessThan(300);
+    const inputs = { 1: flat(750), 4: flat(3000) };
+    await expectLinear('single-newline Markdown lines', (scale) => markdownToEpub(inputs[scale], 'flat.md', env));
+    const project = await importBook(inputs[4], 'flat.md', env);
     const chapter = project.chapters.find((c) => c.title === 'Chapter 1');
     expect(chapter?.segments).toHaveLength(3001);
     expect(chapter?.segments[1]?.sourceHtml).toBe('Line 1 of the story goes on with a <em>few</em> more words in it.');
@@ -112,19 +125,16 @@ describe('Markdown without blank lines', () => {
 });
 
 describe('inline Markdown is linear and never recurses', () => {
-  it.each(['*a ', '_a ', '~~a ', '[a](', '`` a ', '<!-- a '])('renders 120 KB of %j in well under 300 ms', async (unit) => {
-    const text = unit.repeat(Math.ceil(120_000 / unit.length));
-    const { value, ms } = await timed(() => inline(text));
-    console.log(`120 KB of ${JSON.stringify(unit)} rendered in ${ms.toFixed(0)} ms`);
-    expect(ms).toBeLessThan(300);
-    expect(value.length).toBeGreaterThan(0);
+  it.each(['*a ', '_a ', '~~a ', '[a](', '`` a ', '<!-- a '])('renders 30 and 120 KB of %j in linear time', async (unit) => {
+    const texts = { 1: unit.repeat(Math.ceil(30_000 / unit.length)), 4: unit.repeat(Math.ceil(120_000 / unit.length)) };
+    await expectLinear(`KB of ${JSON.stringify(unit)} rendered`, (scale) => inline(texts[scale]));
+    expect(inline(texts[4]).length).toBeGreaterThan(0);
   });
 
-  it('imports 120 KB of unmatched emphasis openers in under 300 ms', async () => {
-    const { value: project, ms } = await timed(() => importBook(encode('*a '.repeat(40_000)), 'stars.md', env));
-    console.log(`120 KB '*a ' Markdown imported in ${ms.toFixed(0)} ms`);
-    expect(ms).toBeLessThan(300);
-    expect(sources(project).join(' ')).toContain('*a *a');
+  it('imports 30 and 120 KB of unmatched emphasis openers in linear time', async () => {
+    const inputs = { 1: encode('*a '.repeat(10_000)), 4: encode('*a '.repeat(40_000)) };
+    await expectLinear("KB '*a ' Markdown imported", (scale) => importBook(inputs[scale], 'stars.md', env));
+    expect(sources(await importBook(inputs[4], 'stars.md', env)).join(' ')).toContain('*a *a');
   });
 
   it('survives deep nesting of quotes, brackets and emphasis', async () => {
@@ -137,6 +147,9 @@ describe('inline Markdown is linear and never recurses', () => {
     await expect(importBook(encode(nestedLines), 'stairs.md', env)).resolves.toBeDefined();
     expect(inline(`${'['.repeat(50_000)}x${'](u)'.repeat(50_000)}`)).toContain('x');
     expect(inline(`${'*_'.repeat(50_000)}x${'_*'.repeat(50_000)}`)).toContain('x');
+    // Too long for one segment and nested far deeper than any book: split as raw text, still imported.
+    const deepEmphasis = await importBook(encode(`${'*_'.repeat(5_000)}${'word '.repeat(2_000)}${'_*'.repeat(5_000)}\n`), 'deep-em.md', env);
+    expect(sources(deepEmphasis).join(' ')).toContain('word word');
   });
 
   it('matches delimiters like before: emphasis, links, literal leftovers', () => {

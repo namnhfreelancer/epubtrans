@@ -42,6 +42,14 @@ function words(piece: string, maxTokens: number): string[] {
 }
 
 /**
+ * The places text may be cut at: its sentences, and a sentence longer than `maxTokens` cut further (see `words`). Every
+ * piece is at most `maxTokens` and keeps its trailing whitespace, so joining the pieces gives the text back.
+ */
+export function textPieces(text: string, maxTokens = MAX_SEGMENT_TOKENS): string[] {
+  return sentences(text).flatMap((sentence) => (estimateTokens(sentence) > maxTokens ? words(sentence, maxTokens) : [sentence]));
+}
+
+/**
  * Splits a paragraph longer than `maxTokens` into consecutive parts of at most `maxTokens`, cutting at sentence ends
  * (else at spaces, else anywhere). Shorter text comes back unchanged as the only part. Parts are trimmed.
  */
@@ -50,17 +58,15 @@ export function splitLongText(text: string, maxTokens = MAX_SEGMENT_TOKENS): str
   const parts: string[] = [];
   let current = '';
   let tokens = 0;
-  for (const sentence of sentences(text)) {
-    for (const piece of estimateTokens(sentence) > maxTokens ? words(sentence, maxTokens) : [sentence]) {
-      const pieceTokens = estimateTokens(piece);
-      if (current && tokens + pieceTokens > maxTokens) {
-        if (current.trim()) parts.push(current.trim());
-        current = '';
-        tokens = 0;
-      }
-      current += piece;
-      tokens += pieceTokens;
+  for (const piece of textPieces(text, maxTokens)) {
+    const pieceTokens = estimateTokens(piece);
+    if (current && tokens + pieceTokens > maxTokens) {
+      if (current.trim()) parts.push(current.trim());
+      current = '';
+      tokens = 0;
     }
+    current += piece;
+    tokens += pieceTokens;
   }
   if (current.trim()) parts.push(current.trim());
   return parts;
