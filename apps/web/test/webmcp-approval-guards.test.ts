@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { repository } from '../src/lib/app-services';
 import { dialogText } from '../src/lib/format';
 import { getGuideJobState, isGuideJobRunning } from '../src/lib/guide-jobs';
-import { addProject, ensureProject } from '../src/lib/project-store';
+import { addProject, ensureProject, saveTranslationEdit } from '../src/lib/project-store';
 import { providerConfig } from '../src/lib/provider-config-store';
 import { getSampleJobState } from '../src/lib/sample-jobs';
 import { isJobActive } from '../src/lib/translation-jobs';
@@ -91,6 +91,34 @@ describe('start_translation starts only what the user confirmed', () => {
     expect(isJobActive(project.id)).toBe(false);
   });
 
+  it('shows the cost of the confirmed settings even when two-pass mode is switched off during the price lookup', async () => {
+    const dialogFor = async (id: string, twoPass: boolean) => {
+      const project = makeProject(id);
+      project.settings = { ...project.settings, twoPass };
+      await addProject(project);
+      tools.confirmAnswers.push(false);
+      await tools.call('start_translation', { bookId: id });
+      return (tools.confirms.at(-1) ?? '').replace(project.title, 'TITLE');
+    };
+    const twoPassDialog = await dialogFor('snapshot-two-pass', true);
+    const singlePassDialog = await dialogFor('snapshot-single-pass', false);
+    expect(twoPassDialog).not.toBe(singlePassDialog);
+
+    const project = makeProject('snapshot-race');
+    project.settings = { ...project.settings, twoPass: true };
+    await addProject(project);
+    const confirmsBefore = tools.confirms.length;
+    const out = await startWithChangeDuringEstimate(project.id, async () => {
+      expect(await tools.call('update_book_settings', { bookId: project.id, twoPass: false })).toMatchObject({ ok: true, twoPass: false });
+    });
+    // The dialog priced what was approved (two passes), not the settings changed meanwhile, and nothing starts.
+    expect(tools.confirms).toHaveLength(confirmsBefore + 1);
+    expect((tools.confirms.at(-1) ?? '').replace(project.title, 'TITLE')).toBe(twoPassDialog);
+    expect(out).toMatchObject({ ok: false, started: false, reason: expect.stringContaining('settings changed') });
+    expect(state.chatRequests).toBe(0);
+    expect(isJobActive(project.id)).toBe(false);
+  });
+
   it('starts when nothing changed', async () => {
     const project = await addBook('race-none');
     const out = await startWithChangeDuringEstimate(project.id, async () => {});
@@ -111,6 +139,50 @@ describe('retranslate_segment', () => {
     expect(state.chatRequests).toBe(0);
     const stored = (await ensureProject(project.id)).chapters[0]?.segments[0];
     expect(stored).toMatchObject({ translationHtml: 'MY HAND EDIT', userEdited: true });
+  });
+
+  it('keeps a hand edit saved while the request is in flight and reports the conflict', async () => {
+    const project = await addBook('edit-during-retranslate');
+    const segment = project.chapters[0]?.segments[0];
+    if (!segment) throw new Error('fixture has no segments');
+    const held = gate();
+    state.gate = held.promise;
+    const pending = tools.call('retranslate_segment', { bookId: project.id, segmentId: segment.id });
+    await eventually(() => state.chatRequests > 0);
+    const live = (await ensureProject(project.id)).chapters[0]?.segments[0];
+    if (!live) throw new Error('segment not loaded');
+    await saveTranslationEdit(project, live, 'MY HAND EDIT');
+    held.open();
+    expect(await pending).toMatchObject({ ok: false, error: "segment changed while retranslating; kept the user's version" });
+    expect(live).toMatchObject({ translationHtml: 'MY HAND EDIT', userEdited: true });
+    const stored = await repository.loadSegmentState(project.id, segment.id);
+    expect(stored).toMatchObject({ translationHtml: 'MY HAND EDIT', userEdited: true });
+  });
+
+  it('keeps a change saved by another tab while the request is in flight', async () => {
+    const project = await addBook('other-tab-during-retranslate');
+    const segment = project.chapters[0]?.segments[0];
+    if (!segment) throw new Error('fixture has no segments');
+    const held = gate();
+    state.gate = held.promise;
+    const pending = tools.call('retranslate_segment', { bookId: project.id, segmentId: segment.id });
+    await eventually(() => state.chatRequests > 0);
+    // Written straight to storage, as another tab would; this tab's live segment has not seen it yet.
+    await repository.saveSegment(project.id, { ...segment, status: 'translated', translationHtml: 'OTHER TAB EDIT', userEdited: true });
+    held.open();
+    expect(await pending).toMatchObject({ ok: false, error: expect.stringContaining('kept the user') });
+    expect(await repository.loadSegmentState(project.id, segment.id)).toMatchObject({ translationHtml: 'OTHER TAB EDIT', userEdited: true });
+    expect((await ensureProject(project.id)).chapters[0]?.segments[0]).toMatchObject({ translationHtml: 'OTHER TAB EDIT', userEdited: true });
+  });
+
+  it('saves the retranslation when nothing changed meanwhile', async () => {
+    const project = await addBook('retranslate-clean');
+    const segment = project.chapters[0]?.segments[0];
+    if (!segment) throw new Error('fixture has no segments');
+    expect(await tools.call('retranslate_segment', { bookId: project.id, segmentId: segment.id })).toMatchObject({ ok: true, status: 'translated' });
+    const stored = await repository.loadSegmentState(project.id, segment.id);
+    expect(stored).toMatchObject({ status: 'translated', translationHtml: expect.stringContaining('Dịch') });
+    expect(stored?.userEdited).toBeUndefined();
   });
 });
 

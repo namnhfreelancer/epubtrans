@@ -189,7 +189,9 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
         if (remaining === 0) return ok({ started: false, reason: 'nothing-to-translate' });
         // What the user is asked to approve; the run starts only if this is still what would run after the dialog.
         const confirmed = runTerms(project, provider);
-        const estimate = await estimateRemaining(project, provider, signal);
+        // Estimated from a frozen copy of the settings taken with `confirmed`: a settings change during the price
+        // lookup must not alter the cost shown, so the approved cost is the cost of what would start.
+        const estimate = await estimateRemaining({ ...project, settings: { ...project.settings } }, provider, signal);
         if (signal?.aborted) return CANCELLED();
         ctx.navigate({ name: 'book', id: project.id, tab: 'setup' });
         const { t } = ctx;
