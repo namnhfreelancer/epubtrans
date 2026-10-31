@@ -1,7 +1,7 @@
 import { SEGMENT_ATTR } from '../dom/fragment-markup';
-import { ensureStylesheet, extractDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
+import { ensureStylesheet, exportDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
 import { byLocalName, firstByLocalName, parseXml, textOf } from '../dom/xml-dom-helpers';
-import { type PackageInfo, parsePackage, readText } from '../epub/package-document';
+import { isEpub2Package, type PackageInfo, parsePackage, readText } from '../epub/package-document';
 import type { DomEnv, ExportMode, Project, Segment } from '../types';
 import { encodeUtf8 } from '../util/text-encoding';
 import { type FileMap, readZip, writeEpubZip } from '../util/zip-archive';
@@ -30,7 +30,7 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
   const files = readZip(project.sourceEpub);
   const pkg = parsePackage(files, env);
   prunePackageFiles(files, pkg);
-  const xmlLangOnly = (pkg.opf.documentElement.getAttribute('version') ?? '3').startsWith('2');
+  const xmlLangOnly = isEpub2Package(pkg);
   const segments = new Map(project.chapters.flatMap((c) => c.segments).map((s) => [s.id, s]));
   const cssPath = `${dirname(pkg.opfPath) ? `${dirname(pkg.opfPath)}/` : ''}${STYLESHEET_NAME}`;
   const bilingual = mode !== 'translation-only';
@@ -56,10 +56,10 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
     stripActiveContent(doc);
     unmarkScripted(pkg, chapter.href, doc);
     sanitized.add(chapter.href);
-    files.set(chapter.href, encodeUtf8(serializeXhtmlDocument(env, doc, extractDoctype(markup))));
+    files.set(chapter.href, encodeUtf8(serializeXhtmlDocument(env, doc, exportDoctype(markup, xmlLangOnly))));
   }
 
-  if (pkg.nav && files.has(pkg.nav.path)) repairNavDocument(files, pkg.nav.path, env);
+  if (pkg.nav && files.has(pkg.nav.path)) repairNavDocument(files, pkg.nav.path, xmlLangOnly, env);
   if (pkg.ncx && files.has(pkg.ncx.path)) updateNcx(files, pkg, project, mode, env);
   stripActiveContentFromPackage(files, pkg, sanitized, env);
   if (bilingual) files.set(cssPath, encodeUtf8(STYLESHEET));
@@ -71,13 +71,13 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
  * epubcheck rejects `aria-label` on `<nav>` in EPUB navigation documents (common in Gutenberg
  * books); the nav's heading or `epub:type` already labels it, so the attribute is dropped.
  */
-function repairNavDocument(files: FileMap, path: string, env: DomEnv): void {
+function repairNavDocument(files: FileMap, path: string, epub2: boolean, env: DomEnv): void {
   const markup = readText(files, path);
   const doc = parseXhtmlDocument(env, markup);
   const labelled = byLocalName(doc, 'nav').filter((nav) => nav.hasAttribute('aria-label'));
   if (labelled.length === 0) return;
   for (const nav of labelled) nav.removeAttribute('aria-label');
-  files.set(path, encodeUtf8(serializeXhtmlDocument(env, doc, extractDoctype(markup))));
+  files.set(path, encodeUtf8(serializeXhtmlDocument(env, doc, exportDoctype(markup, epub2))));
 }
 
 /** NCX labels are text only: segment markers are applied directly, or labels are matched by source text. */

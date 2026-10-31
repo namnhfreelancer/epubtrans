@@ -30,6 +30,9 @@ export interface PackageInfo {
   ncx?: ManifestItem;
 }
 
+/** EPUB 2 package (XHTML 1.1 content documents: no `lang` attribute, no HTML5 doctype). */
+export const isEpub2Package = (pkg: PackageInfo): boolean => (pkg.opf.documentElement.getAttribute('version') ?? '3').startsWith('2');
+
 export function readText(files: FileMap, path: string): string {
   const bytes = files.get(path);
   if (!bytes) throw new Error(`Missing file in EPUB: ${path}`);

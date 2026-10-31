@@ -71,16 +71,27 @@ function htmlToXhtmlDocument(env: DomEnv, markup: string, strict: boolean): Docu
   return doc;
 }
 
-/** Serializes an XHTML document with an XML declaration and a doctype (HTML5 unless given). */
-export function serializeXhtmlDocument(env: DomEnv, doc: Document, doctype = '<!DOCTYPE html>'): string {
+/** Serializes an XHTML document with an XML declaration and a doctype (HTML5 unless given, none when null). */
+export function serializeXhtmlDocument(env: DomEnv, doc: Document, doctype: string | null = '<!DOCTYPE html>'): string {
   const markup = new env.XMLSerializer().serializeToString(doc.documentElement);
-  return `<?xml version="1.0" encoding="utf-8"?>\n${doctype}\n${markup}\n`;
+  return `<?xml version="1.0" encoding="utf-8"?>\n${doctype === null ? '' : `${doctype}\n`}${markup}\n`;
 }
 
 /** The document type declaration of a markup string (without internal subset), if any. */
 export function extractDoctype(markup: string): string | undefined {
   const m = /<!DOCTYPE\s+html[^>[]*>/i.exec(markup.slice(0, 2048));
   return m?.[0];
+}
+
+/**
+ * Doctype for an exported content document: the one in `markup`, or HTML5. EPUB 2 content documents are XHTML 1.1,
+ * where epubcheck rejects the HTML5 doctype (which import writes when the source had none), so there a bare
+ * `<!DOCTYPE html>` becomes no doctype at all (null).
+ */
+export function exportDoctype(markup: string, epub2: boolean): string | null {
+  const doctype = extractDoctype(markup);
+  if (!epub2) return doctype ?? '<!DOCTYPE html>';
+  return doctype && !/^<!DOCTYPE\s+html\s*>$/i.test(doctype) ? doctype : null;
 }
 
 /** Serializes a generic XML document (OPF, NCX, container) with an XML declaration. */
