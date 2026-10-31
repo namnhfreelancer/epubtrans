@@ -364,3 +364,28 @@ describe('export keeps every file of a valid book', () => {
     expect([...source.keys()].filter((path) => !out.has(path))).toEqual([]);
   });
 });
+
+describe('content document doctype', () => {
+  it('writes no HTML5 doctype into an EPUB 2 book, whose XHTML 1.1 documents forbid it', async () => {
+    const files = readZip(readFixture('a-modest-proposal.epub'));
+    const opf = new TextDecoder().decode(files.get('OEBPS/content.opf'));
+    files.set('OEBPS/content.opf', enc(opf.replace(/(<package\b[^>]*\bversion=")3\.0"/, '$12.0"')));
+    const project = await importBook(writeEpubZip(files), 'epub2.epub', env);
+    for (const s of project.chapters.flatMap((c) => c.segments)) {
+      s.translationHtml = fakeTranslate(s.sourceHtml);
+      s.status = 'translated';
+    }
+    const out = readZip(await exportEpub(project, 'bilingual', env));
+    const xhtml = [...out.keys()].filter((path) => path.endsWith('.xhtml'));
+    expect(xhtml.length).toBeGreaterThan(2);
+    for (const path of xhtml) expect(new TextDecoder().decode(out.get(path)), path).not.toMatch(/<!DOCTYPE html>/i);
+  });
+
+  it('keeps an explicit doctype, and HTML5 for EPUB 3', () => {
+    const xhtml11 = '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">';
+    const body = '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>t</title></head><body><p>x</p></body></html>';
+    expect(sanitizeMarkupFile(env, 'xhtml', `${xhtml11}${body}`, true)?.text).toContain(xhtml11);
+    expect(sanitizeMarkupFile(env, 'xhtml', body, true)?.text).not.toContain('<!DOCTYPE');
+    expect(sanitizeMarkupFile(env, 'xhtml', body)?.text).toContain('<!DOCTYPE html>');
+  });
+});

@@ -1,8 +1,8 @@
 import { XMLValidator } from 'fast-xml-parser';
 import { describe, expect, it } from 'vitest';
-import { EXPORT_MODES, type ExportMode, exportEpub, importBook, type Project } from '../src';
-import { readZip } from '../src/util/zip-archive';
-import { env, fakeTranslate, readFixture, unzipText } from './test-helpers';
+import { EXPORT_MODES, type ExportMode, exportEpub, importBook, type Project, translateProject } from '../src';
+import { readZip, writeEpubZip } from '../src/util/zip-archive';
+import { answerAll, env, fakeTranslate, mockProvider, readFixture, unzipText } from './test-helpers';
 
 async function translatedProject(file: string): Promise<Project> {
   const project = await importBook(readFixture(file), file, env);
@@ -82,6 +82,28 @@ describe('exportEpub', () => {
       }
     });
   }
+
+  it('keeps one copy of page-marker ids whatever the mode', async () => {
+    const files = readZip(readFixture('a-modest-proposal.epub'));
+    const path = 'OEBPS/6893508861643006172_1080-h-1.htm.xhtml';
+    const chapter = new TextDecoder().decode(files.get(path));
+    files.set(path, new TextEncoder().encode(chapter.replace('It is a melancholy object', 'It is a <a id="p1"></a>melancholy object')));
+    const project = await importBook(writeEpubZip(files), 'marked.epub', env);
+    // A model that drops empty anchors, as real models do when they restructure a sentence.
+    const dropping = mockProvider((req) => answerAll({ ...req, user: req.user.replace(/<a id=\\"[^"\\]*\\"><\/a>/g, '') }));
+    await translateProject(project, dropping, project.settings);
+    const marked = project.chapters.flatMap((c) => c.segments).find((s) => s.sourceHtml.includes('id="p1"'));
+    expect(marked?.status).toBe('translated');
+    expect(marked?.translationHtml).toContain('<a id="p1"></a>');
+    for (const mode of EXPORT_MODES) {
+      const html = unzipText(await exportEpub(project, mode, env), path);
+      expect(html.match(/id="p1"/g), mode).toHaveLength(1);
+      const holder = /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*id="p1"/.exec(html)?.[0] ?? '';
+      // The source keeps the link target in bilingual modes; translation-only has only the translated paragraph.
+      if (mode === 'translation-only') expect(holder).toContain('[vi] ');
+      else expect(holder).toContain('class="et-src"');
+    }
+  });
 
   it('keeps untranslated segments as source and keeps list structure intact', async () => {
     const project = await translatedProject('aesop-fables.fb2');

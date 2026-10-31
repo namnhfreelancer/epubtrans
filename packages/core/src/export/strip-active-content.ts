@@ -1,6 +1,6 @@
-import { extractDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
+import { exportDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
 import { byLocalName, CDATA_SECTION_NODE, ELEMENT_NODE, isParserError, nameOf, PROCESSING_INSTRUCTION_NODE } from '../dom/xml-dom-helpers';
-import { type PackageInfo, readText } from '../epub/package-document';
+import { isEpub2Package, type PackageInfo, readText } from '../epub/package-document';
 import type { DomEnv } from '../types';
 import { normalizeMediaType } from '../util/media-type';
 import { encodeUtf8 } from '../util/text-encoding';
@@ -190,11 +190,11 @@ export function hasXslStylesheet(markup: string): boolean {
  * files lose their prolog, which drops XSL `xml-stylesheet` instructions; a file that has one is
  * always rewritten.
  */
-export function sanitizeMarkupFile(env: DomEnv, kind: MarkupKind, markup: string): { text: string; doc: Document } | undefined {
+export function sanitizeMarkupFile(env: DomEnv, kind: MarkupKind, markup: string, epub2 = false): { text: string; doc: Document } | undefined {
   if (kind === 'xhtml') {
     const doc = parseXhtmlDocument(env, markup);
     stripActiveContent(doc);
-    return { text: serializeXhtmlDocument(env, doc, extractDoctype(markup)), doc };
+    return { text: serializeXhtmlDocument(env, doc, exportDoctype(markup, epub2)), doc };
   }
   const mime = kind === 'svg' ? 'image/svg+xml' : 'application/xml';
   const parse = (text: string) => new env.DOMParser().parseFromString(text, mime);
@@ -221,7 +221,7 @@ export function stripActiveContentFromPackage(files: FileMap, pkg: PackageInfo, 
     if (done.has(path) || path === 'mimetype' || path === pkg.opfPath) continue;
     const kind = markupKindOf(path, mediaTypes.get(path));
     if (!kind) continue;
-    const result = sanitizeMarkupFile(env, kind, readText(files, path));
+    const result = sanitizeMarkupFile(env, kind, readText(files, path), isEpub2Package(pkg));
     if (!result) continue;
     unmarkScripted(pkg, path, result.doc);
     files.set(path, encodeUtf8(result.text));

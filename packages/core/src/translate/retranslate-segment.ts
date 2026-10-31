@@ -19,7 +19,8 @@ export async function retranslateSegment(
   const draft: Segment = { id: segment.id, sourceHtml: segment.sourceHtml, sourceText: segment.sourceText, status: 'pending' };
   const ctx = { provider, settings, signal: signal ?? new AbortController().signal, usage: { input: 0, output: 0 }, commit: () => {}, clientErrors: 0 };
   await runBatch([draft], 'translate', ctx);
-  if (draft.status === 'error') throw new Error(`Retranslation failed: ${draft.error ?? 'unknown error'}`);
+  // The reason alone: callers add their own "Retranslation failed" context.
+  if (draft.status === 'error') throw new Error(draft.error ?? 'unknown error');
   if (settings.twoPass) await runBatch([draft], 'review', ctx);
   segment.translationHtml = draft.translationHtml;
   segment.status = draft.status;
