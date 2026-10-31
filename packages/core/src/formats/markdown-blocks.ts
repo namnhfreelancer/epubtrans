@@ -1,7 +1,11 @@
+import { splitLongText } from './split-long-text';
+
 /**
  * Block-level Markdown (the subset books use): ATX and setext headings, paragraphs, block quotes, flat bullet and
- * ordered lists, fenced code, thematic breaks and YAML front matter. Raw HTML blocks and tables are kept as paragraph
+ * ordered lists, fenced code and thematic breaks (front matter is read by `markdown-front-matter.ts`). Raw HTML blocks and tables are kept as paragraph
  * text (inline rendering drops the tags). Indented text is a paragraph, not code: many plain-text books indent paragraphs.
+ * The rules favour books over strict CommonMark: a file with (almost) no blank lines has one paragraph per line, as in
+ * the plain-text importer, and a leading `---` is front matter only when what follows really is YAML.
  */
 export type MarkdownBlock =
   | { kind: 'heading'; level: number; text: string }
@@ -11,12 +15,6 @@ export type MarkdownBlock =
   | { kind: 'list'; ordered: boolean; start: number; items: string[] }
   | { kind: 'rule' };
 
-export interface FrontMatter {
-  title?: string;
-  author?: string;
-  lang?: string;
-}
-
 const ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
 const SETEXT = /^ {0,3}(=+|-+)[ \t]*$/;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
@@ -24,35 +22,53 @@ const RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 const QUOTE = /^ {0,3}> ?/;
 const BULLET = /^ {0,3}[-*+][ \t]+/;
 const ORDERED = /^ {0,3}(\d{1,9})[.)][ \t]+/;
+/** Deeper block quotes are flattened into the deepest one: real books never nest further, hostile files could. */
+export const MAX_QUOTE_DEPTH = 8;
+/** Fewer blank lines than one per this many text lines means the file puts one paragraph on each line. */
+const LINES_PER_BLANK_LINE = 20;
 
 const isBlank = (line: string) => line.trim() === '';
 const startsBlock = (line: string) => ATX.test(line) || FENCE.test(line) || RULE.test(line) || QUOTE.test(line) || BULLET.test(line) || ORDERED.test(line);
 
-/** Strips a leading `---` YAML block and reads `title`, `author` and `lang`/`language` from it (simple `key: value` lines). */
-export function splitFrontMatter(lines: string[]): { meta: FrontMatter; body: string[] } {
-  if (lines[0]?.trim() !== '---') return { meta: {}, body: lines };
-  const end = lines.findIndex((l, i) => i > 0 && i <= 60 && /^(?:---|\.\.\.)\s*$/.test(l));
-  if (end < 0) return { meta: {}, body: lines };
-  const meta: FrontMatter = {};
-  for (const line of lines.slice(1, end)) {
-    const m = /^(title|author|lang|language)\s*:\s*(.+?)\s*$/i.exec(line);
-    if (!m) continue;
-    const value = (m[2] as string).replace(/^(["'])(.*)\1$/, '$2').trim();
-    const key = (m[1] as string).toLowerCase();
-    if (!value) continue;
-    if (key === 'title') meta.title = value;
-    else if (key === 'author') meta.author = value;
-    else meta.lang = value;
+/** True when the text (outside fenced code) has almost no blank lines: then each line is a paragraph of its own. */
+function hasParagraphPerLine(lines: string[]): boolean {
+  let blank = 0;
+  let text = 0;
+  let fence: string | undefined;
+  for (const line of lines) {
+    const marker = FENCE.exec(line)?.[1];
+    if (fence) {
+      if (line.trimStart().startsWith(fence)) fence = undefined;
+      continue;
+    }
+    if (marker) fence = marker;
+    else if (isBlank(line)) blank++;
+    else text++;
   }
-  return { meta, body: lines.slice(end + 1) };
+  return text > 1 && blank * LINES_PER_BLANK_LINE < text;
+}
+
+/** Removes every leading `>` marker (an iterative loop: the nesting can be arbitrarily deep). */
+function stripQuoteMarkers(line: string): string {
+  let rest = line;
+  for (let m = QUOTE.exec(rest); m; m = QUOTE.exec(rest)) rest = rest.slice(m[0].length);
+  return rest;
 }
 
 /** Parses Markdown lines into blocks. */
 export function parseMarkdownBlocks(lines: string[]): MarkdownBlock[] {
+  return parseBlocks(lines, 1, hasParagraphPerLine(lines));
+}
+
+/** `depth` is the quote nesting of `lines` plus one; it never exceeds MAX_QUOTE_DEPTH + 1, so the recursion is bounded. */
+function parseBlocks(lines: string[], depth: number, perLine: boolean): MarkdownBlock[] {
   const blocks: MarkdownBlock[] = [];
+  const quotes = depth <= MAX_QUOTE_DEPTH;
+  const isQuote = (line: string) => quotes && QUOTE.test(line);
+  const lineStartsBlock = (line: string) => startsBlock(line) && (quotes || !QUOTE.test(line));
   let i = 0;
   while (i < lines.length) {
-    const line = lines[i] as string;
+    const line = quotes ? (lines[i] as string) : stripQuoteMarkers(lines[i] as string);
     if (isBlank(line)) {
       i++;
       continue;
@@ -69,7 +85,9 @@ export function parseMarkdownBlocks(lines: string[]): MarkdownBlock[] {
     }
     const atx = ATX.exec(line);
     if (atx) {
-      blocks.push({ kind: 'heading', level: (atx[1] as string).length, text: (atx[2] ?? '').trim() });
+      // An empty heading carries no title: it is dropped rather than starting an untitled chapter.
+      const text = (atx[2] ?? '').trim();
+      if (text) blocks.push({ kind: 'heading', level: (atx[1] as string).length, text });
       i++;
       continue;
     }
@@ -78,13 +96,15 @@ export function parseMarkdownBlocks(lines: string[]): MarkdownBlock[] {
       i++;
       continue;
     }
-    if (QUOTE.test(line)) {
+    if (isQuote(line)) {
       const inner: string[] = [];
-      while (i < lines.length && !isBlank(lines[i] as string) && (QUOTE.test(lines[i] as string) || !startsBlock(lines[i] as string))) {
-        inner.push((lines[i] as string).replace(QUOTE, ''));
+      while (i < lines.length) {
+        const current = lines[i] as string;
+        if (isBlank(current) || !(QUOTE.test(current) || (!perLine && !startsBlock(current)))) break;
+        inner.push(current.replace(QUOTE, ''));
         i++;
       }
-      blocks.push({ kind: 'quote', blocks: parseMarkdownBlocks(inner) });
+      blocks.push({ kind: 'quote', blocks: parseBlocks(inner, depth + 1, perLine) });
       continue;
     }
     const bullet = BULLET.test(line);
@@ -97,7 +117,7 @@ export function parseMarkdownBlocks(lines: string[]): MarkdownBlock[] {
         if (marker.test(current)) {
           items.push(current.replace(marker, ''));
           i++;
-        } else if (!isBlank(current) && !startsBlock(current) && items.length) {
+        } else if (!perLine && !isBlank(current) && !startsBlock(current) && items.length) {
           // A continuation line (lazy or indented) belongs to the item above.
           items[items.length - 1] += `\n${current.trim()}`;
           i++;
@@ -108,9 +128,15 @@ export function parseMarkdownBlocks(lines: string[]): MarkdownBlock[] {
       blocks.push({ kind: 'list', ordered: !bullet, start: ordered ? Number(ordered[1]) : 1, items });
       continue;
     }
+    if (perLine) {
+      blocks.push({ kind: 'paragraph', text: line.trim() });
+      i++;
+      continue;
+    }
     const paragraph: string[] = [];
-    while (i < lines.length && !isBlank(lines[i] as string)) {
-      const current = lines[i] as string;
+    while (i < lines.length) {
+      const current = quotes ? (lines[i] as string) : stripQuoteMarkers(lines[i] as string);
+      if (isBlank(current)) break;
       const setext = paragraph.length > 0 ? SETEXT.exec(current) : null;
       if (setext) {
         blocks.push({ kind: 'heading', level: (setext[1] as string).startsWith('=') ? 1 : 2, text: paragraph.join(' ').trim() });
@@ -118,11 +144,34 @@ export function parseMarkdownBlocks(lines: string[]): MarkdownBlock[] {
         i++;
         break;
       }
-      if (paragraph.length > 0 && startsBlock(current)) break;
+      if (paragraph.length > 0 && lineStartsBlock(current)) break;
       paragraph.push(current.replace(/^[ \t]+/, ''));
       i++;
     }
     if (paragraph.length) blocks.push({ kind: 'paragraph', text: paragraph.join('\n') });
   }
   return blocks;
+}
+
+/**
+ * Splits every block whose text is too long for one model answer (see `splitLongText`): a paragraph into several, a
+ * list item into several items, a heading into the heading and paragraphs. Code is never translated and stays whole.
+ */
+export function splitOversizedBlocks(blocks: MarkdownBlock[]): MarkdownBlock[] {
+  return blocks.flatMap((block): MarkdownBlock[] => {
+    switch (block.kind) {
+      case 'paragraph':
+        return splitLongText(block.text).map((text) => ({ kind: 'paragraph', text }));
+      case 'heading': {
+        const [first = '', ...rest] = splitLongText(block.text);
+        return [{ ...block, text: first }, ...rest.map((text): MarkdownBlock => ({ kind: 'paragraph', text }))];
+      }
+      case 'list':
+        return [{ ...block, items: block.items.flatMap((item) => splitLongText(item)) }];
+      case 'quote':
+        return [{ kind: 'quote', blocks: splitOversizedBlocks(block.blocks) }];
+      default:
+        return [block];
+    }
+  });
 }

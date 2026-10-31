@@ -2,7 +2,8 @@ import { createXhtmlDocument } from '../dom/xhtml-document';
 import { NS, textOf } from '../dom/xml-dom-helpers';
 import { detectTextLanguage } from '../lang/detect-language';
 import type { DomEnv } from '../types';
-import { type MarkdownBlock, parseMarkdownBlocks, splitFrontMatter } from './markdown-blocks';
+import { type MarkdownBlock, parseMarkdownBlocks, splitOversizedBlocks } from './markdown-blocks';
+import { splitFrontMatter } from './markdown-front-matter';
 import { renderInline } from './markdown-inline';
 import { type BlockRenderer, buildTextBook, chunkChapters, decodeTextFile, type TextChapter, titleFromFileName } from './text-book';
 
@@ -76,13 +77,17 @@ function blockTexts(blocks: MarkdownBlock[]): string[] {
  */
 export function markdownToEpub(bytes: Uint8Array, fileName: string, env: DomEnv): Uint8Array {
   const { meta, body } = splitFrontMatter(decodeTextFile(bytes).split('\n'));
-  const blocks = parseMarkdownBlocks(body);
+  const blocks = splitOversizedBlocks(parseMarkdownBlocks(body));
   if (blocks.length === 0) throw new Error('No translatable text found in this book');
-  const levelCount = (level: number) => blocks.filter((b) => b.kind === 'heading' && b.level === level).length;
+  // Plain titles of the headings; one whose text renders to nothing (markup only) never starts a chapter.
+  const titles = new Map<MarkdownBlock, string>();
+  for (const b of blocks) if (b.kind === 'heading') titles.set(b, plainHeading(env, b.text).trim());
+  const isTitled = (b: MarkdownBlock, level: number) => b.kind === 'heading' && b.level === level && titles.get(b) !== '';
+  const levelCount = (level: number) => blocks.filter((b) => isTitled(b, level)).length;
   const h1 = levelCount(1);
   const splitLevel = h1 >= 2 ? 1 : levelCount(2) >= 1 ? 2 : 0;
-  const soleH1 = h1 === 1 ? blocks.find((b): b is Extract<MarkdownBlock, { kind: 'heading' }> => b.kind === 'heading' && b.level === 1) : undefined;
-  const title = meta.title ?? (soleH1 ? plainHeading(env, soleH1.text) : '');
+  const soleH1 = h1 === 1 ? blocks.find((b) => isTitled(b, 1)) : undefined;
+  const title = meta.title ?? (soleH1 ? (titles.get(soleH1) ?? '') : '');
 
   let chapters: TextChapter[];
   if (splitLevel === 0) {
@@ -91,9 +96,9 @@ export function markdownToEpub(bytes: Uint8Array, fileName: string, env: DomEnv)
     chapters = [];
     let current: TextChapter = { title: '', blocks: [] };
     for (const block of blocks) {
-      if (block.kind === 'heading' && block.level === splitLevel) {
+      if (isTitled(block, splitLevel)) {
         if (current.blocks.length) chapters.push(current);
-        current = { title: plainHeading(env, block.text), blocks: [] };
+        current = { title: titles.get(block) ?? '', blocks: [] };
       }
       current.blocks.push(renderBlock(block));
     }
