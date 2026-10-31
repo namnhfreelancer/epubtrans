@@ -23,6 +23,13 @@ function rule(selector: string, declarations: readonly Declaration[]): string {
 
 const percent = (value: number | undefined) => (value === undefined ? undefined : `${value}%`);
 
+/**
+ * Marks a value the user chose as `!important`. Books style their paragraphs with selectors like `p.ct`, which outrank
+ * the single-class `.et-tr`, so without it a chosen color or size would silently lose to the book's own stylesheet.
+ * Defaults stay plain, so a book exported without a style keeps the old stylesheet byte for byte.
+ */
+const chosen = (value: string | number | undefined) => (value === undefined ? undefined : `${value} !important`);
+
 function fontFamily(id: ExportFontId | undefined): string | undefined {
   if (id === undefined) return undefined;
   const font = embeddedFont(id);
@@ -81,33 +88,33 @@ export function exportStyleCss(style: ExportStyle | undefined, options: ExportCs
     '/* epubtrans: bilingual layout and Word Wise hints */\n',
     fontFaces(options.fonts),
     rule(`.${SOURCE_CLASS}`, [
-      ['opacity', src?.opacity ?? DEFAULT_SOURCE_OPACITY],
-      ['color', src?.color],
-      ['font-size', percent(src?.fontSizePercent)],
-      ['font-style', src?.italic ? 'italic' : undefined],
-      ['font-family', fontFamily(src?.font)],
+      ['opacity', src?.opacity === undefined || src.opacity === DEFAULT_SOURCE_OPACITY ? DEFAULT_SOURCE_OPACITY : chosen(src.opacity)],
+      ['color', chosen(src?.color)],
+      ['font-size', chosen(percent(src?.fontSizePercent))],
+      ['font-style', chosen(src?.italic ? 'italic' : undefined)],
+      ['font-family', chosen(fontFamily(src?.font))],
     ]),
     rule(`.${TRANSLATION_CLASS}`, [
-      ['color', tr?.color],
-      ['font-family', fontFamily(tr?.font)],
-      ['font-weight', tr?.fontWeight],
-      ['font-size', percent(tr?.fontSizePercent)],
+      ['color', chosen(tr?.color)],
+      ['font-family', chosen(fontFamily(tr?.font))],
+      ['font-weight', chosen(tr?.fontWeight)],
+      ['font-size', chosen(percent(tr?.fontSizePercent))],
     ]),
     rule(`.${SOURCE_CLASS}, .${TRANSLATION_CLASS}`, [
-      ['margin-top', spacing],
-      ['margin-bottom', spacing],
+      ['margin-top', chosen(spacing)],
+      ['margin-bottom', chosen(spacing)],
     ]),
     rule(`ruby.${HINT_RUBY_CLASS} > rt`, [
-      ['font-size', percent(hintSize) ?? DEFAULT_RUBY_SIZE],
+      ['font-size', chosen(percent(hintSize)) ?? DEFAULT_RUBY_SIZE],
       ['font-style', 'normal'],
       ['font-weight', 'normal'],
-      ['color', hint?.color],
+      ['color', chosen(hint?.color)],
     ]),
     rule(`.${HINT_PARAGRAPH_CLASS}`, [['line-height', lineHeight]]),
     rule(`.${HINT_INLINE_CLASS}`, [
-      ['font-size', percent(hintSize) ?? DEFAULT_INLINE_SIZE],
+      ['font-size', chosen(percent(hintSize)) ?? DEFAULT_INLINE_SIZE],
       ['opacity', 0.75],
-      ['color', hint?.color],
+      ['color', chosen(hint?.color)],
     ]),
     options.attribution
       ? rule(`.${ATTRIBUTION_CLASS}`, [
