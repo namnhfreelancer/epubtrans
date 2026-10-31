@@ -25,7 +25,7 @@ import {
   STYLE_CHOICES,
 } from '../../lib/export-style-edit';
 import { errorText, pushNotice } from '../../lib/notices';
-import { updateSettings } from '../../lib/project-store';
+import { updateSettings } from '../../lib/project-settings-store';
 import { INPUT_CLASS } from '../ui/input-class';
 import { type StyleTranslate, useStyleText } from './export-style-messages';
 

@@ -62,7 +62,7 @@ describe('a sample run saves with compare-and-set', () => {
     await addProject(project);
     const { provider, release, inFlight } = gatedProvider();
 
-    expect(await startSampleJob(project, project.settings, provider, { selection })).toBe('started');
+    expect(await startSampleJob(project, (book) => book, provider, { selection })).toBe('started');
     await inFlight;
     // Written straight to storage (no broadcast), like an edit from another tab the sample never heard about.
     await database.segments.put({ projectId: project.id, id: 's1', status: 'translated', translationHtml: 'Bản sửa từ thẻ khác' });

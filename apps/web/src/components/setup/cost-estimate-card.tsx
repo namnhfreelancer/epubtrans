@@ -1,28 +1,41 @@
-import type { Project } from '@epubtrans/core';
+import { cachePriceRatios, MAX_CACHED_INPUT_RATIO, type Project } from '@epubtrans/core';
 import { useI18n } from '../../i18n/i18n-context';
 import { formatNumber, formatUsd, parseOptionalPrice } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
-import { updateSettings } from '../../lib/project-store';
+import { updateSettings } from '../../lib/project-settings-store';
 import type { ActiveProvider } from '../../lib/provider-config-store';
-import { estimateRunCost } from '../../lib/run-pricing';
+import { estimateRunCost, resolveRunPrices } from '../../lib/run-pricing';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { useJobActive } from '../../lib/translation-jobs';
 import { useCostEstimate } from '../../lib/use-cost-estimate';
-import { useRunPrices } from '../../lib/use-run-prices';
+import type { ModelPricingState } from '../../lib/use-model-pricing';
 import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
 import { Card, Field } from '../ui/layout-primitives';
 
 const SOURCE_LABELS = { openrouter: 'OpenRouter', litellm: 'LiteLLM' } as const;
+const roundPercent = (ratio: number) => Math.round(ratio * 10_000) / 100;
 
 /** Prices per 1M tokens and the token/cost estimate for the remaining work. */
-export function CostEstimateCard({ project, version, active }: { project: Project; version: number; active: ActiveProvider }) {
+export function CostEstimateCard({
+  project,
+  version,
+  active,
+  lookup,
+}: {
+  project: Project;
+  version: number;
+  active: ActiveProvider;
+  /** Public catalog price of the active model; the provider's own model list still wins (see resolveRunPrices). */
+  lookup: ModelPricingState;
+}) {
   const { t, locale } = useI18n();
   const settings = project.settings;
   const save = (patch: Parameters<typeof updateSettings>[1]) =>
     updateSettings(project, patch).catch((err: unknown) => pushNotice('error', t('common.saveFailed', { message: errorText(err) })));
 
-  const { priceInPerM, priceOutPerM, auto, published, manual, lookup } = useRunPrices(settings, active);
+  // Automatic price: the provider's own model list (OpenRouter "Test connection") wins, else the public catalogs.
+  const { auto, published, manual, priceInPerM, priceOutPerM } = resolveRunPrices(settings, active, lookup.status === 'found' ? lookup.pricing : undefined);
 
   const { providerId, baseURL, model } = active;
   // The estimate walks every batch of the book, while `version` changes on every finished segment and every keystroke
@@ -75,6 +88,25 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
             defaultValue={settings.priceOutPerM ?? ''}
             placeholder={auto?.priceOutPerM?.toString() ?? ''}
             onBlur={(e) => void save({ priceOutPerM: parseOptionalPrice(e.target.value) })}
+          />
+        </Field>
+        <Field label={t('setup.cachedPrice')} htmlFor="cached-price" hint={t('setup.cachedPriceHint')}>
+          <input
+            key={`cached-${settings.cachedInputRatio ?? ''}`}
+            id="cached-price"
+            type="number"
+            min={0}
+            max={MAX_CACHED_INPUT_RATIO * 100}
+            step="any"
+            inputMode="decimal"
+            className={INPUT_CLASS}
+            defaultValue={settings.cachedInputRatio === undefined ? '' : roundPercent(settings.cachedInputRatio)}
+            placeholder={String(roundPercent(cachePriceRatios({ providerId: active.providerId }).read))}
+            onBlur={(e) => {
+              const percent = parseOptionalPrice(e.target.value);
+              if (percent === undefined || percent <= MAX_CACHED_INPUT_RATIO * 100)
+                void save({ cachedInputRatio: percent === undefined ? undefined : percent / 100 });
+            }}
           />
         </Field>
       </div>

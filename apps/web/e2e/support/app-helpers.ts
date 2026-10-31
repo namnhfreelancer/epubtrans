@@ -9,6 +9,8 @@ export const FIXTURES = {
   mobi: fixturePath('a-modest-proposal.mobi'),
   azw3: fixturePath('a-modest-proposal.azw3'),
   fb2: fixturePath('aesop-fables.fb2'),
+  txt: fixturePath('aesop-fables.txt'),
+  md: fixturePath('aesop-fables.md'),
 } as const;
 
 function fixturePath(name: string): string {
@@ -117,5 +119,27 @@ export async function writeSegmentRowSilently(page: Page, row: { id: string; sta
         };
       }),
     row,
+  );
+}
+
+/** Reads the settings of the (only) stored book straight from IndexedDB. */
+export async function storedSettings(page: Page): Promise<{ targetLang: string } & Record<string, unknown>> {
+  return page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open('epubtrans');
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const req = db.transaction('projects', 'readonly').objectStore('projects').getAll();
+          req.onsuccess = () => {
+            const rows = req.result as { settings: { targetLang: string } & Record<string, unknown> }[];
+            db.close();
+            if (rows[0]) resolve(rows[0].settings);
+            else reject(new Error('no project in IndexedDB'));
+          };
+          req.onerror = () => reject(req.error);
+        };
+      }),
   );
 }

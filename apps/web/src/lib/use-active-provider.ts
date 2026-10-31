@@ -11,6 +11,8 @@ export interface ActiveProviderState {
   problem?: MessageKey;
   /** Creates the provider for `project` and the settings to run with; throws on invalid configuration. */
   prepare(project: Project): { provider: ChatProvider; settings: ProjectSettings };
+  /** The settings to run with, from a book's settings (as re-read from storage by a run). */
+  settingsFor(book: ProjectSettings): ProjectSettings;
 }
 
 /** The configured provider, its key and what (if anything) blocks a run, from a configuration and key snapshot. */
@@ -26,6 +28,7 @@ export function resolveProviderState(config: ProviderConfig, keys: ApiKeyState):
     apiKey,
     problem,
     prepare: (project) => ({ provider: buildProvider(active, apiKey), settings: settingsForRun(project.settings, active) }),
+    settingsFor: (book) => settingsForRun(book, active),
   };
 }
 

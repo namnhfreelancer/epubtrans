@@ -8,6 +8,8 @@ const BOOKS = [
   { format: 'MOBI', file: FIXTURES.mobi, title: /Modest Proposal/i },
   { format: 'AZW3', file: FIXTURES.azw3, title: /Modest Proposal/i },
   { format: 'FB2', file: FIXTURES.fb2, title: /Aesop/i },
+  { format: 'TXT', file: FIXTURES.txt, title: /Three Fables of Aesop/ },
+  { format: 'Markdown', file: FIXTURES.md, title: /Three Fables of Aesop/ },
 ];
 
 for (const book of BOOKS) {

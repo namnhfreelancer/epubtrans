@@ -13,11 +13,12 @@ import {
 } from '@epubtrans/core';
 import { expectPositionals, parseArgs, UsageError } from '../args';
 import { HINTS_FLAGS } from '../flag-specs';
+import { applyGlossaryFile } from '../glossary-import';
 import { applyHintsCommandFlags } from '../hint-flags';
 import type { Io } from '../io';
 import { confirmRun, EXIT } from '../pipeline';
 import { lookupEstimatePrices } from '../price-lookup';
-import { createProgress, formatTokens, formatUsd, usageCost } from '../progress';
+import { createProgress, formatTokens, formatUsd, tokensUsedLine } from '../progress';
 import { createProjectSaver, writeProjectFile } from '../project-store';
 import { applyRunFlags, selectProvider } from '../settings';
 import { applyStyleFlags } from '../style-flags';
@@ -26,7 +27,7 @@ import { openProject } from './open-project';
 import { buildProvider } from './provider-setup';
 
 const USAGE =
-  'epubtrans hints <input.(epub|mobi|azw3|fb2) | project.epubtrans> [--level N] [--gloss-lang <lang>] [--style ruby|inline] [--style-file style.json] --model <id> [options]';
+  'epubtrans hints <input.(epub|mobi|azw3|fb2|txt|md) | project.epubtrans> [--level N] [--gloss-lang <lang>] [--style ruby|inline] [--style-file style.json] [--glossary-file <file>] --model <id> [options]';
 
 function describeEstimate(plan: WordHintsPlan, settings: ProjectSettings): string {
   const hints = wordHintSettingsOf(settings);
@@ -54,7 +55,9 @@ export async function hintsCommand(argv: string[], io: Io): Promise<number> {
   const { project, projectPath } = opened;
 
   const selection = selectProvider(flags, opened.existing ? project.settings : undefined);
-  const settings = await applyStyleFlags(applyHintsCommandFlags(applyRunFlags(opened.settings, flags, selection), flags), flags, io);
+  // Glossary names are never hinted, so a glossary file merged here also keeps them out of the plan below.
+  const withGlossary = await applyGlossaryFile(applyRunFlags(opened.settings, flags, selection), flags['glossary-file'], io);
+  const settings = await applyStyleFlags(applyHintsCommandFlags(withGlossary, flags), flags, io);
   if (!settings.model) throw new UsageError('--model <id> is required. List the available models with: epubtrans models --provider <id>');
   const lang = wordHintLanguage(settings.sourceLang);
   if (!lang) {
@@ -62,7 +65,7 @@ export async function hintsCommand(argv: string[], io: Io): Promise<number> {
       `Word Wise hints need a supported source language (${WORD_HINT_LANGUAGES.join(', ')}); this book's is "${settings.sourceLang}". Pass --from <lang> if it is wrong.`,
     );
   }
-  const chat = await buildProvider(selection, flags['api-key-file'], settings.model, io);
+  const chat = await buildProvider(selection, flags['api-key-file'], settings.model, io, { reasoning: settings.reasoning });
 
   project.settings = settings;
   await writeProjectFile(project, projectPath);
@@ -104,8 +107,7 @@ export async function hintsCommand(argv: string[], io: Io): Promise<number> {
   // Persist every finished word, even after an abort or a fatal error, so the next run resumes from here.
   await saver.flush();
 
-  const cost = usageCost(usage, priced.priceInPerM, priced.priceOutPerM);
-  io.err(`Tokens used: ${formatTokens(usage.input)} in / ${formatTokens(usage.output)} out${cost === undefined ? '' : ` (${formatUsd(cost)})`}\n`);
+  io.err(tokensUsedLine(usage, priced));
   if (failure !== undefined) {
     if (!io.signal.aborted) throw failure;
     io.err(`Interrupted. Glossed words are saved to ${projectPath}; run the same command to continue.\n`);

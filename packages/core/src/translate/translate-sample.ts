@@ -226,6 +226,8 @@ export async function translateSample(
       if (copy.translationHtml !== undefined) target.segment.translationHtml = copy.translationHtml;
       if (copy.error !== undefined) target.segment.error = copy.error;
       else delete target.segment.error;
+      if (copy.warning !== undefined) target.segment.warning = copy.warning;
+      else delete target.segment.warning;
       expected.set(copy.id, revisionOf(target.segment));
       project.updatedAt = new Date().toISOString();
       opts.onSegment?.(target.segment, target.chapter);

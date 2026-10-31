@@ -2,7 +2,7 @@ import { type CompiledGlossary, compileGlossary, matchPrepared, type PreparedTex
 import type { CostEstimate, GlossaryEntry, Project, ProjectSettings, Segment, TranslateOptions } from '../types';
 import { buildReviewSystemPrompt, buildTranslateSystemPrompt, formatGlossaryEntry, stripTags } from './prompt-protocol';
 import { countCjk, estimateTokens } from './token-estimate';
-import { keepsUserEdit, MAX_BATCH_TOKENS, makeBatches } from './translate-project';
+import { keepsUserEdit, MAX_BATCH_TOKENS, makeBatches, maxSegmentsOf } from './translate-project';
 
 /** Translations are usually somewhat longer in tokens than their source. */
 const OUTPUT_RATIO = 1.3;
@@ -115,12 +115,13 @@ export function estimateCost(project: Project, settings: ProjectSettings, opts: 
   let batchNo = 0;
   const byTokens = (s: Segment) => factsOf(s).sourceTokens;
   const editable = (s: Segment) => !keepsUserEdit(s, opts.overwriteUserEdited);
+  const maxSegments = maxSegmentsOf(settings);
 
   let inputTokens = 0;
   let outputTokens = 0;
   for (const chapter of project.chapters) {
     const todo = chapter.segments.filter((s) => (s.status === 'pending' || s.status === 'error') && editable(s));
-    for (const batch of makeBatches(todo, MAX_BATCH_TOKENS, byTokens)) {
+    for (const batch of makeBatches(todo, MAX_BATCH_TOKENS, byTokens, maxSegments)) {
       batchNo++;
       const message: CharCount = { chars: MESSAGE_ENVELOPE + batch.length - 1, cjk: 0 };
       let entries = 0;
@@ -144,7 +145,7 @@ export function estimateCost(project: Project, settings: ProjectSettings, opts: 
     }
     if (!settings.twoPass) continue;
     const review = chapter.segments.filter((s) => s.status !== 'reviewed' && editable(s));
-    for (const batch of makeBatches(review, MAX_BATCH_TOKENS, byTokens)) {
+    for (const batch of makeBatches(review, MAX_BATCH_TOKENS, byTokens, maxSegments)) {
       batchNo++;
       let draft = 0;
       let source = 0;

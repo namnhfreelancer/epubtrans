@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { readFileSync, rmSync } from 'node:fs';
-import { importBook, loadProjectFile } from '@epubtrans/core';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { importBook, loadProjectFile, planWordHints } from '@epubtrans/core';
 import { domEnv } from '../src/dom-env';
 import { run } from '../src/run';
+import { loadFrequencyList } from '../src/word-frequency';
 import { createTestIo, type MockProvider, startMockProvider, workDirWithFixture } from './test-helpers';
 
 const SECRET = 'sk-test-secret-key';
@@ -70,6 +71,41 @@ describe('epubtrans hints', () => {
     const only = createTestIo();
     expect(await run(['export', t.project, '--mode', 'translation-only', '--out', `${t.dir}/only.epub`], only)).toBe(0);
     expect(only.stderr).toContain('translation-only has no original text');
+  });
+
+  test('--glossary-file merges a glossary file into the project first, and names in it are never hinted', async () => {
+    const t = setup();
+    // A word the plan would gloss at level 1, with every form the book uses: as a person's name it must not be sent.
+    const book = await importBook(new Uint8Array(readFileSync(t.input)), 'book.epub', domEnv);
+    const settings = {
+      ...book.settings,
+      sourceLang: 'en',
+      targetLang: 'vi',
+      wordHints: { enabled: true, level: 1, style: 'ruby' as const, maxPerParagraph: 3, perChapter: 1 },
+    };
+    const candidate = planWordHints(book, await loadFrequencyList('en'), settings).candidates[0];
+    if (!candidate) throw new Error('the fixture has no level-1 hint candidate');
+    const forms = [...new Set(candidate.occurrences.map((o) => o.word.toLowerCase()))];
+    const glossary = `${t.dir}/names.csv`;
+    writeFileSync(glossary, ['term,translation,type,note', ...forms.map((f) => `${f[0]?.toUpperCase()}${f.slice(1)},${f},person,`)].join('\n'));
+
+    const io = createTestIo({ env });
+    const args = ['hints', t.input, '--from', 'en', '--gloss-lang', 'vi', '--level', '1', '--glossary-file', glossary, ...providerArgs(t.server)];
+    expect(await run(args, io)).toBe(0);
+    expect(io.stderr).toContain(`Glossary: ${forms.length} entries added from ${glossary}`);
+    expect((await readProject(t.project)).settings.glossary.map((g) => g.term.toLowerCase())).toEqual(forms);
+    const sent = lemmasSent(t.server);
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent).not.toContain(candidate.lemma);
+
+    // An invalid glossary file stops the command before any request.
+    const bad = `${t.dir}/bad.tsv`;
+    writeFileSync(bad, 'Fox\tCáo\nWolf\t\n');
+    const calls = t.server.calls.length;
+    const refused = createTestIo({ env });
+    expect(await run(['hints', t.project, '--glossary-file', bad, ...providerArgs(t.server)], refused)).toBe(2);
+    expect(refused.stderr).toContain('line 2: the translation of "Wolf" is empty');
+    expect(t.server.calls.length).toBe(calls);
   });
 
   test('running it again sends nothing, a higher level sends only the new words, and an interrupted run resumes', async () => {

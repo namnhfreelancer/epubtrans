@@ -1,4 +1,4 @@
-import type { Chapter } from '@epubtrans/core';
+import type { Chapter, Segment } from '@epubtrans/core';
 
 /** Where a segment sits in the book: chapter index, then index inside the chapter. */
 export interface SegmentLocation {
@@ -19,13 +19,18 @@ export type StepDirection = 1 | -1;
 
 type Position = Pick<SegmentLocation, 'chapter' | 'segment'>;
 
-/** Collects every segment whose status is `error`, in reading order. */
-export function buildErrorIndex(chapters: readonly Chapter[]): ErrorIndex {
+/** A failed segment. */
+export const isFailedSegment = (s: Segment): boolean => s.status === 'error';
+/** A translated segment carrying a warning (its translation equals the source); never an error at the same time. */
+export const isWarnedSegment = (s: Segment): boolean => s.warning !== undefined && s.status !== 'error' && s.translationHtml !== undefined;
+
+/** Collects every segment matching `flagged` (default: status `error`), in reading order. */
+export function buildErrorIndex(chapters: readonly Chapter[], flagged: (s: Segment) => boolean = isFailedSegment): ErrorIndex {
   const locations: SegmentLocation[] = [];
   const perChapter = chapters.map((chapter, c) => {
     let count = 0;
     chapter.segments.forEach((s, i) => {
-      if (s.status !== 'error') return;
+      if (!flagged(s)) return;
       locations.push({ chapter: c, segment: i, id: s.id });
       count++;
     });

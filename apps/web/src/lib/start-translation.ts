@@ -3,7 +3,7 @@ import type { MessageKey } from '../i18n/messages-en';
 import type { Translate } from '../i18n/translate-message';
 import { refreshJobLocks } from './cross-tab-job-lock';
 import { errorText, pushNotice } from './notices';
-import { updateSettings } from './project-store';
+import { updateSettings } from './project-settings-store';
 import { type StartJobResult, startJob } from './translation-jobs';
 import type { ActiveProviderState } from './use-active-provider';
 
@@ -20,7 +20,7 @@ export async function startTranslation(project: Project, provider: ActiveProvide
   if (provider.problem) return { kind: 'problem', problem: provider.problem };
   try {
     const { provider: chat, settings } = provider.prepare(project);
-    const result = await startJob(project, settings, chat);
+    const result = await startJob(project, provider.settingsFor, chat);
     // Another tab won the lock before this one noticed: re-read the locks so the busy notice shows right away.
     if (result === 'busy-elsewhere') await refreshJobLocks();
     if (result === 'started') {

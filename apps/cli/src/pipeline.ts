@@ -16,7 +16,7 @@ import { createGuideProgressPrinter } from './guide-progress';
 import { wordWiseExportNote } from './hint-flags';
 import type { Io } from './io';
 import { lookupEstimatePrices } from './price-lookup';
-import { countStatuses, createProgress, formatTokens, formatUsd, usageCost } from './progress';
+import { countStatuses, createProgress, formatTokens, formatUsd, identicalWarningLine, tokensUsedLine } from './progress';
 import { createProjectSaver, writeFileAtomic, writeProjectFile } from './project-store';
 
 export const EXIT = { ok: 0, failure: 1, usage: 2, incomplete: 3, interrupted: 130 } as const;
@@ -98,6 +98,7 @@ export async function translateAndExport(opts: PipelineOptions): Promise<number>
   await writeFileAtomic(outPath, epub);
   const after = countStatuses(project);
   io.err(`Wrote ${outPath} (${mode}, ${after.done}/${after.total} segments translated)\n`);
+  io.err(identicalWarningLine(project));
   if (after.pending + after.error > 0) {
     io.err(`${after.pending + after.error} segments are not translated (they keep their source text). Re-run the same command to retry them.\n`);
     return EXIT.incomplete;
@@ -131,8 +132,7 @@ async function runTranslation(opts: PipelineOptions, settings: ProjectSettings):
   // Persist whatever finished, even after an abort or a fatal error, so the next run resumes from here.
   await saver.flush();
 
-  const cost = usageCost(usage, settings.priceInPerM, settings.priceOutPerM);
-  io.err(`Tokens used: ${formatTokens(usage.input)} in / ${formatTokens(usage.output)} out${cost === undefined ? '' : ` (${formatUsd(cost)})`}\n`);
+  io.err(tokensUsedLine(usage, settings));
 
   if (failure === undefined) return false;
   if (io.signal.aborted) {

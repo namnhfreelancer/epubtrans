@@ -35,7 +35,7 @@ const translations = (project: Project) => project.chapters[0]?.segments.map((s)
 
 async function runSample(project: Project, provider: ChatProvider) {
   await addProject(project);
-  expect(await startSampleJob(project, project.settings, provider, { selection })).toBe('started');
+  expect(await startSampleJob(project, (book) => book, provider, { selection })).toBe('started');
   await expect.poll(() => getSampleJobState(project.id).status, { timeout: 20_000 }).not.toBe('running');
   return getSampleJobState(project.id);
 }

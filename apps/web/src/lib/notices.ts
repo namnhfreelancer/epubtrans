@@ -1,4 +1,6 @@
+import type { Translate } from '../i18n/translate-message';
 import { createExternalStore } from './external-store';
+import { SETTINGS_CHANGED_MESSAGE } from './project-repository';
 
 export interface Notice {
   id: number;
@@ -21,3 +23,6 @@ export function dismissNotice(id: number): void {
 }
 
 export const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** An error message in the UI language when it comes from one of the app's own guards; other messages as they are. */
+export const localizedError = (message: string, t: Translate): string => (message === SETTINGS_CHANGED_MESSAGE ? t('common.settingsChanged') : message);

@@ -1,5 +1,6 @@
 import { useI18n } from '../../i18n/i18n-context';
 import type { GuideJobState } from '../../lib/guide-jobs';
+import { localizedError } from '../../lib/notices';
 import { Alert, ProgressBar } from '../ui/layout-primitives';
 
 /** Phase-by-phase progress of guideline and glossary generation, then its outcome. */
@@ -13,7 +14,7 @@ export function GuideGenerationStatus({ state }: { state: GuideJobState }) {
       </Alert>
     );
   }
-  if (state.kind === 'error') return <Alert kind="error">{t('setup.generateFailed', { message: state.message })}</Alert>;
+  if (state.kind === 'error') return <Alert kind="error">{t('setup.generateFailed', { message: localizedError(state.message, t) })}</Alert>;
   if (state.kind !== 'busy') return null;
   const p = state.progress ?? { phase: 'extract', done: 0, total: 1 };
   const label = p.phase === 'glossary' ? t('guide.phase.glossary', { done: p.done, total: p.total }) : t(`guide.phase.${p.phase}`);

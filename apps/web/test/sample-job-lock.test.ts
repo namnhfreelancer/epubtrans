@@ -85,14 +85,14 @@ describe('a sample run and the cross-tab job lock', () => {
     release();
     const releaseLock = await holdLockElsewhere(project.id);
 
-    expect(await startSampleJob(project, project.settings, provider, { selection })).toBe('busy-elsewhere');
+    expect(await startSampleJob(project, (book) => book, provider, { selection })).toBe('busy-elsewhere');
     expect(requests).toHaveLength(0);
     expect(getSampleJobState(project.id).status).toBe('idle');
     // A refused start is forgotten at once: trying again is refused by the lock again, not as "already running".
-    expect(await startSampleJob(project, project.settings, provider, { selection })).toBe('busy-elsewhere');
+    expect(await startSampleJob(project, (book) => book, provider, { selection })).toBe('busy-elsewhere');
 
     await releaseLock();
-    expect(await startSampleJob(project, project.settings, provider, { selection })).toBe('started');
+    expect(await startSampleJob(project, (book) => book, provider, { selection })).toBe('started');
     await expect.poll(() => getSampleJobState(project.id).status).toBe('done');
     expect(requests).toEqual([['s1']]);
     await removeProject(project.id);
@@ -103,14 +103,14 @@ describe('a sample run and the cross-tab job lock', () => {
     await addProject(project);
     const { provider, release, requests } = gatedProvider();
 
-    expect(await startSampleJob(project, project.settings, provider, { selection })).toBe('started');
+    expect(await startSampleJob(project, (book) => book, provider, { selection })).toBe('started');
     await expect.poll(() => requests.length).toBe(1);
     expect(await lockHeld(project.id)).toBe(true);
     // What another tab's Start would do: ask for the lock without waiting.
     const otherTab = await navigator.locks.request(jobLockName(project.id), { ifAvailable: true }, async (lock) => lock !== null);
     expect(otherTab).toBe(false);
     // A second sample in this tab is refused too.
-    expect(await startSampleJob(project, project.settings, provider, { selection })).toBe('already-running');
+    expect(await startSampleJob(project, (book) => book, provider, { selection })).toBe('already-running');
 
     release();
     await expect.poll(() => getSampleJobState(project.id).status).toBe('done');
@@ -125,13 +125,13 @@ describe('a sample run and the cross-tab job lock', () => {
     release();
     const releaseLock = await holdLockElsewhere(project.id);
 
-    expect(await startJob(project, project.settings, provider)).toBe('busy-elsewhere');
+    expect(await startJob(project, (book) => book, provider)).toBe('busy-elsewhere');
     expect(isJobActive(project.id)).toBe(false);
-    expect(await startJob(project, project.settings, provider)).toBe('busy-elsewhere');
+    expect(await startJob(project, (book) => book, provider)).toBe('busy-elsewhere');
     expect(requests).toHaveLength(0);
 
     await releaseLock();
-    expect(await startJob(project, project.settings, provider)).toBe('started');
+    expect(await startJob(project, (book) => book, provider)).toBe('started');
     await expect.poll(() => isJobActive(project.id)).toBe(false);
     expect(requests.flat().sort()).toEqual(['s1', 's2']);
     await removeProject(project.id);

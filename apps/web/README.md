@@ -1,6 +1,6 @@
 # @epubtrans/web
 
-Static, bring-your-own-key web app for epubtrans: import a DRM-free EPUB, MOBI, AZW3 or FB2 book, translate it in the browser with your AI provider, edit the result and export a bilingual EPUB. There is no backend; books and progress live in IndexedDB, and the API key is only sent to the selected provider.
+Static, bring-your-own-key web app for epubtrans: import a DRM-free EPUB, MOBI, AZW3, FB2, TXT or Markdown book, translate it in the browser with your AI provider, edit the result and export a bilingual EPUB. There is no backend; books and progress live in IndexedDB, and the API key is only sent to the selected provider.
 
 ## Scripts
 
@@ -45,6 +45,9 @@ Tabs of the same origin share IndexedDB but each holds its own in-memory project
 - Only one tab at a time can translate a book: a job holds the Web Lock `epubtrans:job:<projectId>` (`src/lib/cross-tab-job-lock.ts`), and so does a sample run (it is a paid job too). Other tabs poll `navigator.locks.query()` (every second, on focus, and when a tab announces a job start or end). While the lock is held elsewhere they disable Start, the sample buttons and the reader's "Retry all failed", show a notice, and lock Edit/Retranslate in the reader. A start that loses the race for the lock resolves `busy-elsewhere` and shows the same notice. Browsers without `navigator.locks` run jobs without this guard.
 - Job results are saved with compare-and-set (`saveSegmentIfUnchanged`): a segment is written only if its stored status and translation still match what the job last saw. An edit or retranslation saved meanwhile in any tab wins, and the job copies it into its own in-memory segment.
 - Every segment write is announced on the BroadcastChannel `epubtrans:<projectId>` (ids only, in `src/lib/cross-tab-channel.ts`). Other tabs re-read that segment from IndexedDB and refresh their views.
+- Settings are saved as a patch merged into the stored settings inside one IndexedDB transaction (`src/lib/project-settings-store.ts`), never as a whole copy from one tab's memory; the nested settings (Word Wise options, export style, glossary) are merged field by field (`src/lib/settings-field-changes.ts`), so two tabs editing different fields both keep their change. Each save is announced as a `settings` message; other tabs re-read the settings (and, after a target-language reset, every segment) and remount the setup cards that keep their own input state.
+- A glossary file import is merged into the glossary as stored when the user confirms merge or replace (re-read from IndexedDB), not into the list that was on screen when the file was picked; while guide generation is running the import is refused, because the generated glossary would replace it.
+- A full run, a sample, a hints run, guide generation and a retranslation re-read the settings from storage before sending anything. Their writes carry a guard (`SettingsGuard`: the settings revision and the target language they read): a new target language or a reset bumps the revision, so a result produced for the old settings is discarded (a run stops, a retranslation or generated guide is not saved) and the user is told why. A hints run also refuses to start when the target, source or gloss language differs from what its plan was made for, sends no further request once they change (here or in another tab), and saves each gloss only while the stored gloss language is still its own.
 
 ## Security notes
 

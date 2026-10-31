@@ -1,9 +1,11 @@
-import { type Project, retranslateSegment, type Segment } from '@epubtrans/core';
+import type { Project, Segment } from '@epubtrans/core';
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
+import { isWarnedSegment } from '../../lib/error-index';
 import { errorText, pushNotice } from '../../lib/notices';
-import { persistSegment, saveTranslationEdit, touchProject } from '../../lib/project-store';
+import { saveTranslationEdit } from '../../lib/project-store';
+import { retranslateLiveSegment } from '../../lib/retranslate-live-segment';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { sanitizeSegmentHtml } from '../../lib/sanitize-segment-html';
 import { segmentErrorText } from '../../lib/segment-error-text';
@@ -69,12 +71,10 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
     abortRef.current = controller;
     setBusy(true);
     try {
-      const { provider: chat, settings } = provider.prepare(project);
-      const updated = await retranslateSegment(project, segment.id, chat, settings, controller.signal);
-      // The fresh machine translation replaces the user's text, so it no longer counts as hand-edited.
-      delete updated.userEdited;
-      touchProject(project.id);
-      await persistSegment(project.id, updated);
+      // The fresh machine translation replaces the user's text; a newer change (or a new target language) wins over it.
+      const outcome = await retranslateLiveSegment(project, segment.id, provider, { signal: controller.signal });
+      if (outcome.kind === 'changed') setRowError(t('reader.retranslateSuperseded'));
+      else if (outcome.kind === 'settings-changed') setRowError(t('common.settingsChanged'));
     } catch (err) {
       if (!controller.signal.aborted) setRowError(t('reader.retranslateFailed', { message: segmentErrorText(errorText(err)) ?? errorText(err) }));
     } finally {
@@ -108,6 +108,7 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
   // The freshest failure wins; the stored one (from a batch run) is shown only when no retranslation just failed.
   const failure = rowError ?? segmentErrorText(segment.error);
   const failed = segment.status === 'error';
+  const warned = isWarnedSegment(segment);
 
   return (
     <article
@@ -117,7 +118,7 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
       data-flash={flash || undefined}
       tabIndex={-1}
       className={`group border-b border-stone-200 py-4 outline-offset-2 last:border-b-0 focus-visible:outline-2 focus-visible:outline-teal-600 dark:border-stone-800 ${
-        failed ? 'border-l-4 border-l-red-500 pl-3' : ''
+        failed ? 'border-l-4 border-l-red-500 pl-3' : warned ? 'border-l-4 border-l-amber-400 pl-3' : ''
       } ${flash ? 'segment-flash' : ''}`}
     >
       <div className={mode === 'side' ? 'grid gap-3 md:grid-cols-2 md:gap-6' : 'space-y-2'}>
@@ -126,6 +127,15 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <StatusBadge status={segment.status} />
+        {warned && (
+          <span
+            data-testid="segment-warning"
+            title={t('reader.identicalHint')}
+            className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          >
+            {t('reader.identicalBadge')}
+          </span>
+        )}
         <span className="ml-auto flex gap-1" title={lockedHint}>
           <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={editing || jobActive} title={lockedHint}>
             {t('reader.edit')}

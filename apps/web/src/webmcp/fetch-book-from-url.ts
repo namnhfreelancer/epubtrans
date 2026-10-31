@@ -12,7 +12,7 @@ export function parseBookUrl(input: string): URL | ToolFailure {
   try {
     url = new URL(input);
   } catch {
-    return fail('The URL is not valid.', 'Pass an absolute https:// URL of an EPUB, MOBI, AZW3, FB2 or .epubtrans file.');
+    return fail('The URL is not valid.', 'Pass an absolute https:// URL of an EPUB, MOBI, AZW3, FB2, TXT, Markdown or .epubtrans file.');
   }
   if (url.protocol !== 'https:') return fail('Only https:// URLs can be imported.', DROP_HINT);
   if (url.username || url.password) return fail('URLs with a user name or password are not accepted.');
@@ -31,6 +31,18 @@ function fileNameOf(url: URL): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are not allowed in file names.
   name = name.replace(/[\u0000-\u001f\u007f\\/:*?"<>|]+/g, ' ').trim();
   return clip(name, 120) || 'book';
+}
+
+/**
+ * Plain text has no signature, so import decides by the file name. A URL without a book extension (".../download")
+ * that serves text/markdown or text/plain gets the matching extension; binary formats are detected from their bytes.
+ */
+export function withTextExtension(name: string, contentType: string | null): string {
+  if (/\.(?:epub|mobi|azw3?|fb2|zip|txt|md|markdown|epubtrans)$/i.test(name)) return name;
+  const type = (contentType ?? '').split(';')[0]?.trim().toLowerCase();
+  if (type === 'text/markdown' || type === 'text/x-markdown') return `${name}.md`;
+  if (type === 'text/plain') return `${name}.txt`;
+  return name;
 }
 
 /** Reads the body, refusing anything over the import size cap (Content-Length first, then a streamed byte count). */
@@ -115,5 +127,5 @@ export async function fetchBookFromUrl(ctx: ToolContext, url: URL, signal: Abort
     return fail(signal?.aborted ? 'The download was cancelled.' : 'The download was interrupted.', DROP_HINT);
   }
   if (!(bytes instanceof Uint8Array)) return bytes;
-  return new File([bytes as Uint8Array<ArrayBuffer>], fileNameOf(url));
+  return new File([bytes as Uint8Array<ArrayBuffer>], withTextExtension(fileNameOf(url), response.headers.get('content-type')));
 }

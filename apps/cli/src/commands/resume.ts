@@ -39,7 +39,7 @@ export async function resumeCommand(argv: string[], io: Io): Promise<number> {
   const selection = selectProvider(flags, project.settings);
   const settings = await applyStyleFlags(applyWordWiseFlags(applyRunFlags(project.settings, flags, selection), flags), flags, io);
   if (!settings.model) throw new UsageError('This project has no model yet. Pass --model <id> (list them with: epubtrans models --provider <id>)');
-  const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io);
+  const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io, { reasoning: settings.reasoning });
 
   const outPath = flags.out ?? defaultOutPath(file, settings.targetLang);
   assertOutputIsSeparate(outPath, file);

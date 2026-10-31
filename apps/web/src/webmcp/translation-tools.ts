@@ -130,8 +130,8 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
         ctx.navigate({ name: 'book', id: project.id, tab: 'setup' });
         let started: Awaited<ReturnType<typeof startSampleJob>>;
         try {
-          const { provider: chat, settings } = provider.prepare(project);
-          started = await startSampleJob(project, settings, chat, request);
+          const { provider: chat } = provider.prepare(project);
+          started = await startSampleJob(project, provider.settingsFor, chat, request);
         } catch (err) {
           return fail(clip(err instanceof Error ? err.message : String(err), 300));
         }

@@ -9,7 +9,7 @@ import {
 } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
 import { errorText } from './notices';
-import { updateSettings } from './project-store';
+import { refreshSettingsFromStorage, updateSettingsForTarget } from './project-settings-store';
 
 /** Guideline and glossary generation of one book, shown by the guideline card whoever started it (the user or an agent). */
 export type GuideJobState =
@@ -51,8 +51,9 @@ export function reportGuideProblem(projectId: string, message: string): void {
 
 /**
  * Drafts the book's guideline and glossary and saves them to the book. A run already in progress for the book is
- * cancelled first (a newer request wins, as the card's button always did). `prepare` builds the provider and run
- * settings; when it throws, the run ends as an error. Never rejects.
+ * cancelled first (a newer request wins, as the card's button always did). The book's settings are re-read from
+ * storage first; `prepare` then builds the provider and run settings from them (when it throws, the run ends as an
+ * error). The result is saved only if the book's target language is still the one it was generated for. Never rejects.
  */
 export async function runGuideJob(
   project: Project,
@@ -64,6 +65,8 @@ export async function runGuideJob(
   controllers.set(project.id, controller);
   setState(project.id, { kind: 'busy' });
   try {
+    const { targetLang } = await refreshSettingsFromStorage(project);
+    if (controller.signal.aborted) return { kind: 'cancelled' };
     const { provider, settings } = prepare();
     const guide = await generateGuide(project, provider, settings, {
       signal: controller.signal,
@@ -74,7 +77,7 @@ export async function runGuideJob(
     });
     // A cancelled run saves nothing: its book may be deleted, or the user moved on.
     if (controller.signal.aborted) return { kind: 'cancelled' };
-    await updateSettings(project, { guideline: guide.guideline, glossary: guide.glossary });
+    await updateSettingsForTarget(project, { guideline: guide.guideline, glossary: guide.glossary }, targetLang);
     if (controller.signal.aborted) return { kind: 'cancelled' };
     setState(project.id, { kind: 'done', entries: guide.glossary.length, candidates: guide.candidates, skippedBatches: guide.skippedBatches });
     return { kind: 'done', guide };

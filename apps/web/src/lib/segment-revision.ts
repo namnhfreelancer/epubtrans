@@ -38,7 +38,8 @@ export function isSegmentStateRow(value: unknown): value is SegmentStateRow {
     STATUSES.has(row.status) &&
     (row.translationHtml === undefined || typeof row.translationHtml === 'string') &&
     (row.error === undefined || typeof row.error === 'string') &&
-    (row.userEdited === undefined || typeof row.userEdited === 'boolean')
+    (row.userEdited === undefined || typeof row.userEdited === 'boolean') &&
+    (row.warning === undefined || row.warning === 'identical')
   );
 }
 
@@ -51,7 +52,13 @@ export function applyStoredState(segment: Segment, since: SegmentRevision, store
   if (!sameRevision(revisionOf(segment), since)) return false;
   const next = revisionOf(stored);
   const target = segment;
-  if (sameRevision(next, since) && segment.error === stored?.error && Boolean(target.userEdited) === Boolean(stored?.userEdited)) return false;
+  if (
+    sameRevision(next, since) &&
+    segment.error === stored?.error &&
+    Boolean(target.userEdited) === Boolean(stored?.userEdited) &&
+    segment.warning === stored?.warning
+  )
+    return false;
   segment.status = next.status;
   if (next.translationHtml === undefined) delete segment.translationHtml;
   else segment.translationHtml = next.translationHtml;
@@ -59,5 +66,7 @@ export function applyStoredState(segment: Segment, since: SegmentRevision, store
   else segment.error = stored.error;
   if (stored?.userEdited) target.userEdited = true;
   else delete target.userEdited;
+  if (stored?.warning) segment.warning = stored.warning;
+  else delete segment.warning;
   return true;
 }

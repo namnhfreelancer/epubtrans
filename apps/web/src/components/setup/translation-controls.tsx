@@ -1,18 +1,34 @@
-import type { Project } from '@epubtrans/core';
+import { type Project, usageCostUsd } from '@epubtrans/core';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
-import { formatDuration, formatNumber } from '../../lib/format';
+import { formatDuration, formatNumber, formatUsd } from '../../lib/format';
 import { useHintsRunning } from '../../lib/hint-jobs';
+import { localizedError } from '../../lib/notices';
+import { type RunPrices, resolveRunPrices } from '../../lib/run-pricing';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { countSegments, remainingWork } from '../../lib/segment-counts';
 import { estimateRemainingMs, pauseJob, useJob } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
+import type { ModelPricingState } from '../../lib/use-model-pricing';
 import { useStartTranslation } from '../../lib/use-start-translation';
 import { Button } from '../ui/button';
 import { Alert, Card, ProgressBar } from '../ui/layout-primitives';
 
+const pickPrices = ({ priceInPerM, priceOutPerM }: RunPrices) => ({ priceInPerM, priceOutPerM });
+
 /** Start / pause / resume, progress, ETA and failed-segment retry for one book. */
-export function TranslationControls({ project, version, provider }: { project: Project; version: number; provider: ActiveProviderState }) {
+export function TranslationControls({
+  project,
+  version,
+  provider,
+  lookup,
+}: {
+  project: Project;
+  version: number;
+  provider: ActiveProviderState;
+  /** Public catalog price of the active model (looked up once by the setup panel). */
+  lookup: ModelPricingState;
+}) {
   const { t, locale } = useI18n();
   const job = useJob(project.id);
   const [now, setNow] = useState(Date.now());
@@ -24,6 +40,9 @@ export function TranslationControls({ project, version, provider }: { project: P
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
   const counts = useMemo(() => countSegments(project), [project, version]);
   const work = remainingWork(counts, project.settings.twoPass);
+  // Cost of the tokens this run used, at the prices the cost card resolves (cached input at its discount).
+  const prices = resolveRunPrices(project.settings, provider.active, lookup.status === 'found' ? lookup.pricing : undefined);
+  const usageUsd = usageCostUsd(job.usage, { ...project.settings, providerId: provider.active.providerId, ...pickPrices(prices) });
 
   useEffect(() => {
     if (!running) return;
@@ -73,7 +92,16 @@ export function TranslationControls({ project, version, provider }: { project: P
             </span>
           )}
           {(job.usage.input > 0 || job.usage.output > 0) && (
-            <span>{t('run.usage', { input: formatNumber(job.usage.input, locale), output: formatNumber(job.usage.output, locale) })}</span>
+            <span data-testid="run-usage">
+              {job.usage.cachedInput
+                ? t('run.usageCached', {
+                    input: formatNumber(job.usage.input, locale),
+                    cached: formatNumber(job.usage.cachedInput, locale),
+                    output: formatNumber(job.usage.output, locale),
+                  })
+                : t('run.usage', { input: formatNumber(job.usage.input, locale), output: formatNumber(job.usage.output, locale) })}
+              {usageUsd !== undefined && ` · ${t('run.usageCost', { usd: formatUsd(usageUsd, locale) })}`}
+            </span>
           )}
         </div>
         {busyElsewhere && (
@@ -82,7 +110,7 @@ export function TranslationControls({ project, version, provider }: { project: P
           </Alert>
         )}
         {startError && <Alert kind="error">{startError}</Alert>}
-        {!running && job.status === 'failed' && job.error && <Alert kind="error">{t('run.failed', { message: job.error })}</Alert>}
+        {!running && job.status === 'failed' && job.error && <Alert kind="error">{t('run.failed', { message: localizedError(job.error, t) })}</Alert>}
         {!running && job.status === 'aborted' && (
           <Alert kind="error">
             <span data-testid="run-book-deleted">{t('run.bookDeleted')}</span>

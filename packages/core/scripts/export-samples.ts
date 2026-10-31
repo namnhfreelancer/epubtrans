@@ -1,5 +1,5 @@
 /**
- * Writes every fixture book (plus a generated EPUB 2 book and a generated fixed-layout EPUB 3 book), translated by the echo test translator, in every export mode
+ * Writes every fixture book (EPUB, MOBI, AZW3, FB2, TXT and Markdown; plus a generated EPUB 2 book and a generated fixed-layout EPUB 3 book), translated by the echo test translator, in every export mode
  * to `test-output/`, plus the hint-capable modes with Word Wise hints (glossed by a mock model) in the ruby and the
  * inline style, with an XML-invalid character planted in one gloss and one translation (raw and as character
  * references). Styled exports follow: every preset, and a custom style with two embedded fonts and the attribution page
@@ -24,7 +24,9 @@ import { buildFixedLayoutBook } from '../test/fixed-layout-fixture';
 import { answerAll, env, glossProvider, loadFontFile, mockProvider, readFixture, readFrequencyList } from '../test/test-helpers';
 
 const FIXTURES: [string, Uint8Array][] = [
-  ...['a-modest-proposal.epub', 'a-modest-proposal.mobi', 'a-modest-proposal.azw3', 'aesop-fables.fb2'].map((n): [string, Uint8Array] => [n, readFixture(n)]),
+  ...['a-modest-proposal.epub', 'a-modest-proposal.mobi', 'a-modest-proposal.azw3', 'aesop-fables.fb2', 'aesop-fables.txt', 'aesop-fables.md'].map(
+    (n): [string, Uint8Array] => [n, readFixture(n)],
+  ),
   ['epub2-sample.epub', buildEpub2Book()],
   ['fixed-layout-sample.epub', buildFixedLayoutBook()],
 ];

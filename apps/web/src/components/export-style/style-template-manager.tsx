@@ -5,7 +5,7 @@ import { downloadBytes } from '../../lib/download-file';
 import { ignoredKeysText } from '../../lib/export-style-edit';
 import { dialogText } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
-import { updateSettings } from '../../lib/project-store';
+import { updateSettings } from '../../lib/project-settings-store';
 import { DuplicateTemplateNameError, type SavedStyleTemplate } from '../../lib/style-template-store';
 import { touchStyleTemplates, useStyleTemplates } from '../../lib/use-style-templates';
 import { Button } from '../ui/button';

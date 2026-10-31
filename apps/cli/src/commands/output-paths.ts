@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { UsageError } from '../args';
 
-const BOOK_EXTENSIONS = /\.(epub|mobi|azw3|fb2)$/i;
+const BOOK_EXTENSIONS = /\.(epub|mobi|azw3|fb2|txt|md|markdown)$/i;
 export const PROJECT_EXTENSION = '.epubtrans';
 
 /** `books/dune.epub` or `books/dune.epub.epubtrans` -> `books/dune.<lang>.epub`. */
