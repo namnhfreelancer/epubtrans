@@ -27,6 +27,8 @@ export interface SegmentStateRow {
   status: SegmentStatus;
   translationHtml?: string;
   error?: string;
+  /** The user saved this translation by hand (kept apart from machine output). */
+  userEdited?: boolean;
 }
 
 export class ProjectDatabase extends Dexie {

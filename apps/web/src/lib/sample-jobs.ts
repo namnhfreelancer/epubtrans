@@ -1,7 +1,15 @@
-import { type ChatProvider, type Project, type ProjectSettings, type SampleSelection, type TokenUsage, translateSample } from '@epubtrans/core';
+import {
+  type ChatProvider,
+  type Project,
+  type ProjectSettings,
+  type SampleRunResult,
+  type SampleSelection,
+  type TokenUsage,
+  translateSample,
+} from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
 import { launchWithJobLock } from './cross-tab-job-lock';
-import { persistLastSample, persistSegment, touchProject } from './project-store';
+import { createJobBaseline, persistJobSegment, persistLastSample, touchProject } from './project-store';
 import { isJobActive, type StartJobResult } from './translation-jobs';
 
 export type SampleJobStatus = 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -11,14 +19,35 @@ export interface SampleJobState {
   done: number;
   total: number;
   usage: TokenUsage;
+  /** Why the run stopped (an exception: provider, storage, lock); absent when it ended because every segment failed. */
   error?: string;
+  /**
+   * Sampled segments whose sample translation failed in the finished run. One that already had a translation keeps
+   * it (so the viewer shows the earlier text); one without becomes an 'error' segment. Status is 'failed' when every
+   * segment that was sent failed, else 'done' with these listed as a warning.
+   */
+  failed: readonly string[];
+  /** Sampled segments the run skipped because the user edited their translation by hand. */
+  keptEdited: readonly string[];
 }
 
 /** Which passages to translate: exactly the given ones, or freshly picked ones (`seed` omitted: a random seed). */
 export type SampleRequest = { selection: SampleSelection } | { passages: number; seed?: number };
 
 const CANCEL = 'cancelled-by-user';
-const IDLE: SampleJobState = { status: 'idle', done: 0, total: 0, usage: { input: 0, output: 0 } };
+const IDLE: SampleJobState = { status: 'idle', done: 0, total: 0, usage: { input: 0, output: 0 }, failed: [], keptEdited: [] };
+
+/**
+ * Final state of a sample run that completed: 'failed' when every segment it sent failed (nothing new to judge),
+ * otherwise 'done', carrying the failed and hand-edited segments so the UI can warn and label them.
+ */
+function finishedSampleState(current: SampleJobState, result: SampleRunResult): SampleJobState {
+  const sampled = new Set(result.selection.passages.flatMap((p) => p.segmentIds)).size;
+  const sent = sampled - result.keptEdited.length;
+  const allFailed = result.failed.length > 0 && result.failed.length >= sent;
+  return { ...current, status: allFailed ? 'failed' : 'done', failed: result.failed, keptEdited: result.keptEdited };
+}
+
 const jobs = new Map<string, SampleJobState>();
 const controllers = new Map<string, AbortController>();
 const listeners = new Set<() => void>();
@@ -46,7 +75,8 @@ export const useSampleRunning = (projectId: string): boolean => useSyncExternalS
  * Translates the sample in the background. A sample run is a paid job like the full run, so it holds the same
  * cross-tab job lock (`launchWithJobLock`): it does not start while another tab translates the book, and other
  * tabs cannot start a run (or edit segments) while it is running. Like the full run, every finished segment is
- * persisted right away and a persistence failure stops the run. Refuses to start while a full run (or another
+ * persisted right away (compare-and-set against the state the run started from, so an edit saved meanwhile in any
+ * tab survives) and a persistence failure stops the run. Refuses to start while a full run (or another
  * sample run) is active in this tab. Resolves once it is known whether the sample started here.
  */
 export function startSampleJob(project: Project, settings: ProjectSettings, provider: ChatProvider, request: SampleRequest): Promise<StartJobResult> {
@@ -80,6 +110,8 @@ async function runSample(
   controller: AbortController,
 ): Promise<void> {
   setJob(project.id, { ...IDLE, status: 'running' });
+  // Same compare-and-set baseline as a full run: an edit saved meanwhile (any tab) wins over the sample's answer.
+  const baseline = createJobBaseline(project);
   let writeError: Error | undefined;
   const writes: Promise<void>[] = [];
   const track = (write: Promise<void>) =>
@@ -91,22 +123,22 @@ async function runSample(
     );
 
   try {
-    await translateSample(project, provider, settings, {
+    const result = await translateSample(project, provider, settings, {
       ...request,
       signal: controller.signal,
       onSelect: (selection) => {
         track(persistLastSample(project.id, selection));
         touchProject(project.id);
       },
-      onProgress: (p) => setJob(project.id, { status: 'running', done: p.done, total: p.total, usage: p.usage }),
+      onProgress: (p) => setJob(project.id, { ...IDLE, status: 'running', done: p.done, total: p.total, usage: p.usage }),
       onSegment: (segment) => {
-        track(persistSegment(project.id, segment));
+        track(persistJobSegment(project, segment, baseline));
         touchProject(project.id);
       },
     });
     await Promise.all(writes);
     if (writeError) throw writeError;
-    setJob(project.id, { ...(jobs.get(project.id) ?? IDLE), status: 'done' });
+    setJob(project.id, finishedSampleState(jobs.get(project.id) ?? IDLE, result));
   } catch (err) {
     await Promise.all(writes);
     const failure = writeError ?? err;

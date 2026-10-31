@@ -25,16 +25,18 @@ const toStateRow = (projectId: string, s: Segment): SegmentStateRow => ({
   status: s.status,
   ...(s.translationHtml !== undefined ? { translationHtml: s.translationHtml } : {}),
   ...(s.error !== undefined ? { error: s.error } : {}),
+  ...(s.userEdited ? { userEdited: true } : {}),
 });
 
 function applyState(s: Segment, row: SegmentStateRow | undefined): Segment {
   if (!row) return s;
-  const { translationHtml, error, ...rest } = s;
+  const { translationHtml, error, userEdited: _stale, ...rest } = s;
   return {
     ...rest,
     status: row.status,
     ...(row.translationHtml !== undefined ? { translationHtml: row.translationHtml } : {}),
     ...(row.error !== undefined ? { error: row.error } : {}),
+    ...(row.userEdited ? { userEdited: true } : {}),
   };
 }
 

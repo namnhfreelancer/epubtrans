@@ -63,33 +63,64 @@ function textUnits(html: string, tags: readonly HtmlTag[]): TextUnit[] {
   return units;
 }
 
-const isEmptyElement = (start: HtmlTag, end: HtmlTag | undefined): end is HtmlTag =>
-  !start.end &&
-  !start.selfClosing &&
-  !VOID_ELEMENTS.has(start.name) &&
-  !FORBIDDEN_ELEMENTS.has(start.name) &&
-  !!end?.end &&
-  end.name === start.name &&
-  end.from === start.to;
+/** A start tag that may open a detachable element: not void, not self-closing, not a forbidden element. */
+const isContainerStart = (tag: HtmlTag) => !tag.end && !tag.selfClosing && !VOID_ELEMENTS.has(tag.name) && !FORBIDDEN_ELEMENTS.has(tag.name);
 
 /**
- * Removes every non-void element without any child node (`<a id="p49"></a>`) from `html` and records its markup and
- * the fraction of text characters before it. Markup the tokenizer cannot fully see (comments, unterminated tags) is
- * returned unchanged, so validation judges it as before.
+ * Outermost elements without any text or void element inside, found with a stack over the tags: `<a id="p49"></a>`,
+ * and wrappers holding only such elements, like `<span><a id="x"></a></span>` (detaching only the inner anchor would
+ * leave an empty `<span></span>` that the model drops just the same). Tags that do not nest cleanly reset the scan.
+ */
+function emptyElementRanges(tags: readonly HtmlTag[]): { from: number; to: number; name: string }[] {
+  const ranges: { from: number; to: number; name: string }[] = [];
+  // Open start tags, each with whether everything since it has been tags of empty elements only.
+  const stack: { index: number; empty: boolean }[] = [];
+  for (let i = 0; i < tags.length; i++) {
+    const tag = tags[i] as HtmlTag;
+    const previous = tags[i - 1];
+    // Text (or anything) between two tags makes every open element non-empty.
+    if (previous && previous.to !== tag.from) for (const open of stack) open.empty = false;
+    if (isContainerStart(tag)) {
+      stack.push({ index: i, empty: true });
+      continue;
+    }
+    if (!tag.end) {
+      // Void or self-closing: real content (an image, a line break) for the model to place.
+      for (const open of stack) open.empty = false;
+      continue;
+    }
+    const open = stack.pop();
+    const start = open ? (tags[open.index] as HtmlTag) : undefined;
+    if (!open || !start || start.name !== tag.name) {
+      stack.length = 0;
+      continue;
+    }
+    // An element nested in one of the same name (`<a href><a id></a></a>`) is detached alone, never as a unit, so the
+    // restore can put it outside: HTML parsers re-parent nested links.
+    const nestsSameName = tags.slice(open.index + 1, i).some((inner) => inner.name === start.name);
+    if (!open.empty || nestsSameName) {
+      for (const outer of stack) outer.empty = false;
+      continue;
+    }
+    // An outer empty element replaces the inner ones it contains.
+    while (ranges.length && (ranges[ranges.length - 1] as { from: number }).from >= start.from) ranges.pop();
+    ranges.push({ from: start.from, to: tag.to, name: start.name });
+  }
+  return ranges;
+}
+
+/**
+ * Removes every non-void element without text or void elements inside (`<a id="p49"></a>`,
+ * `<span><a id="x"></a></span>`) from `html` and records its markup and the fraction of text characters before it.
+ * Markup the tokenizer cannot fully see (comments, unterminated tags) is returned unchanged, so validation judges
+ * it as before.
  */
 export function detachEmptyElements(html: string): DetachedMarkup {
   const unchanged = { html, detached: [] };
   if (HIDDEN_MARKUP.test(html)) return unchanged;
   const tags = tokenizeTags(html);
   if (!tags) return unchanged;
-  const ranges: { from: number; to: number; name: string }[] = [];
-  for (let i = 0; i < tags.length; i++) {
-    const start = tags[i] as HtmlTag;
-    const end = tags[i + 1];
-    if (!isEmptyElement(start, end)) continue;
-    ranges.push({ from: start.from, to: end.to, name: start.name });
-    i++;
-  }
+  const ranges = emptyElementRanges(tags);
   if (ranges.length === 0) return unchanged;
   const units = textUnits(html, tags);
   let before = 0;
@@ -170,7 +201,9 @@ export function restoreDetachedElements(html: string, detached: readonly Detache
   const positions: number[] = [];
   let floor = 0;
   for (const element of detached) {
-    const index = placeElement(element, units.length, offsets, slots, floor) ?? html.length;
+    // Every element name inside the markup, so a restored `<span><a></a></span>` never lands inside an `<a>` either.
+    const names = (tokenizeTags(element.markup) ?? []).filter((t) => !t.end).map((t) => t.name);
+    const index = placeElement(element, names.length ? names : [element.name], units.length, offsets, slots, floor) ?? html.length;
     positions.push(index);
     floor = index;
   }
@@ -202,10 +235,17 @@ function* nearestFirst(offsets: readonly number[], target: number): Generator<nu
   }
 }
 
-function placeElement(element: DetachedElement, total: number, offsets: readonly number[], slots: readonly Slot[][], floor: number): number | undefined {
+function placeElement(
+  element: DetachedElement,
+  names: readonly string[],
+  total: number,
+  offsets: readonly number[],
+  slots: readonly Slot[][],
+  floor: number,
+): number | undefined {
   const target = element.fraction <= 0 ? 0 : element.fraction >= 1 ? total : element.fraction * total;
   for (const k of nearestFirst(offsets, target)) {
-    const allowed = (slots[k] ?? []).filter((s) => s.index >= floor && !s.open.includes(element.name));
+    const allowed = (slots[k] ?? []).filter((s) => s.index >= floor && !names.some((name) => s.open.includes(name)));
     if (allowed.length === 0) continue;
     // Shallowest slot first: the marker stays outside formatting elements whenever the gap allows it.
     return allowed.reduce((best, s) => (s.open.length < best.open.length ? s : best)).index;

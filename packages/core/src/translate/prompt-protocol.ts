@@ -52,7 +52,8 @@ ${GLOSSARY_RULE}
 ${MARKUP_RULES}`;
 }
 
-const stripTags = (html: string) => html.replace(/<[^>]*>/g, ' ');
+/** Text of an HTML fragment with tags replaced by spaces (good enough for glossary matching). */
+export const stripTags = (html: string) => html.replace(/<[^>]*>/g, ' ');
 
 /** Glossary entries whose term occurs in the batch source (and, for a review, in the draft translations). */
 export function batchGlossary(glossary: readonly GlossaryEntry[], segments: readonly Segment[], kind: 'translate' | 'review'): GlossaryEntry[] {

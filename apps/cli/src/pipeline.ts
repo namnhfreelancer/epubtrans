@@ -79,7 +79,7 @@ export async function translateAndExport(opts: PipelineOptions): Promise<number>
       io.err('Generating style guideline and glossary ...\n');
       const guide = await generateGuide(project, provider, settings, { signal: io.signal, onProgress: createGuideProgressPrinter(io) });
       settings = { ...settings, guideline: guide.guideline, glossary: guide.glossary };
-      const skipped = guide.skippedBatches ? `; ${guide.skippedBatches} candidate batches skipped (unusable model answer)` : '';
+      const skipped = guide.skippedBatches ? `; ${guide.skippedBatches} candidate batches skipped (unusable answer or failed request)` : '';
       io.err(`Guide ready: ${guide.glossary.length} glossary entries from ${guide.candidates} candidates${skipped}\n`);
     }
     project.settings = settings;

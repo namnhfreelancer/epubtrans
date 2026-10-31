@@ -4,7 +4,8 @@ import { validateSettings } from './translate-project';
 
 /**
  * Translates one segment again regardless of its status (and reviews it when `twoPass`).
- * The project segment is only replaced on success, so a failed attempt keeps the old translation.
+ * The project segment is only replaced on success, so a failed attempt keeps the old translation; a successful one
+ * clears `userEdited` (this is an explicit user request, unlike the automatic runs that skip edited segments).
  */
 export async function retranslateSegment(
   project: Project,
@@ -24,6 +25,8 @@ export async function retranslateSegment(
   if (settings.twoPass) await runBatch([draft], 'review', ctx);
   segment.translationHtml = draft.translationHtml;
   segment.status = draft.status;
+  // The user asked for a fresh machine translation, which replaces any hand edit.
+  delete segment.userEdited;
   if (draft.error) segment.error = draft.error;
   else delete segment.error;
   project.updatedAt = new Date().toISOString();

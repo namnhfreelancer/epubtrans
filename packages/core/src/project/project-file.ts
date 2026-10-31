@@ -144,6 +144,8 @@ function validateChapter(c: Json, path: string): Chapter {
       if (!STATUSES.includes(status)) fail(`${sp}.status`, STATUSES.join('|'));
       const translationHtml = optStr(seg, 'translationHtml', sp);
       const error = optStr(seg, 'error', sp);
+      // Optional and absent in older files; only `true` is kept, so the field never appears as `false`.
+      if (seg.userEdited !== undefined && typeof seg.userEdited !== 'boolean') fail(`${sp}.userEdited`, 'a boolean');
       return {
         id: str(seg, 'id', sp),
         sourceHtml: str(seg, 'sourceHtml', sp),
@@ -151,6 +153,7 @@ function validateChapter(c: Json, path: string): Chapter {
         status,
         ...(translationHtml !== undefined ? { translationHtml } : {}),
         ...(error !== undefined ? { error } : {}),
+        ...(seg.userEdited === true ? { userEdited: true } : {}),
       };
     }),
   };

@@ -31,6 +31,8 @@ export interface MockProviderState {
   delayMs: number;
   /** Segment ids answered with markup that fails validation, so they end in `error`; clear it to answer validly again. */
   invalidIds: Set<string>;
+  /** Answer every segment with invalid markup (e.g. all sampled passages fail while the rest of the book stays pending). */
+  invalidAll: boolean;
 }
 
 /** Forbidden markup: the translation validator rejects it whatever the source looks like. */
@@ -63,7 +65,7 @@ function answer(body: ChatBody, state: MockProviderState): string {
   return JSON.stringify({
     segments: segments.map((s) => ({
       id: s.id,
-      html: review ? (s.draft ?? '') : state.invalidIds.has(s.id) ? INVALID_MARKUP : `${state.prefix}${s.html ?? ''}`,
+      html: review ? (s.draft ?? '') : state.invalidAll || state.invalidIds.has(s.id) ? INVALID_MARKUP : `${state.prefix}${s.html ?? ''}`,
     })),
   });
 }
@@ -85,6 +87,7 @@ export async function installMockProvider(page: Page, opts: Partial<Pick<MockPro
     prefix: opts.prefix ?? '[vi] ',
     delayMs: opts.delayMs ?? 0,
     invalidIds: new Set(),
+    invalidAll: false,
   };
   await page.route(`${MOCK_BASE}/**`, async (route) => {
     const request = route.request();

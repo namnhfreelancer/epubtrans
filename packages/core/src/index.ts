@@ -24,17 +24,26 @@ export { getProviderPreset, PROVIDER_PRESETS } from './providers/provider-preset
 export { estimateCost } from './translate/estimate-cost';
 export type { GeneratedGuide, GenerateGuideOptions, GuidePhase, GuideProgress } from './translate/generate-guide';
 export { generateGuide } from './translate/generate-guide';
-export { composeGuideline, GENERATED_GUIDELINE_HEADING, GUIDELINE_SECTIONS, type GuidelineSection, splitGuideline } from './translate/generate-guide-guideline';
+export {
+  composeGuideline,
+  GENERATED_GUIDELINE_END,
+  GENERATED_GUIDELINE_HEADING,
+  GENERATED_GUIDELINE_START,
+  GUIDELINE_SECTIONS,
+  type GuidelineSection,
+  splitGuideline,
+} from './translate/generate-guide-guideline';
 export { GUIDELINE_PRESETS, type GuidelinePreset, type GuidelinePresetId, getGuidelinePreset } from './translate/guideline-presets';
 export { retranslateSegment } from './translate/retranslate-segment';
 export { estimateTokens, languageName } from './translate/token-estimate';
-export { MAX_BATCH_TOKENS, MAX_CONCURRENCY, makeBatches, translateProject } from './translate/translate-project';
+export { keepsUserEdit, MAX_BATCH_TOKENS, MAX_CONCURRENCY, makeBatches, translateProject } from './translate/translate-project';
 export {
   DEFAULT_SAMPLE_PASSAGES,
   DEFAULT_SAMPLE_WORDS,
   estimateSampleCost,
   MAX_SAMPLE_PASSAGES,
   randomSampleSeed,
+  type SampleRunResult,
   type SampleSelectionOptions,
   selectSamplePassages,
   type TranslateSampleOptions,
