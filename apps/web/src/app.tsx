@@ -5,10 +5,13 @@ import { useRoute } from './lib/hash-route';
 import { BookPage } from './pages/book-page';
 import { LibraryPage } from './pages/library-page';
 import { SettingsPage } from './pages/settings-page';
+import { useWebMcpTools } from './webmcp/use-webmcp-tools';
 
 function Shell() {
   const route = useRoute();
   const { t } = useI18n();
+  // Tools for in-browser AI agents (WebMCP); does nothing in browsers without `document.modelContext`.
+  useWebMcpTools();
   return (
     <div className="flex min-h-dvh flex-col">
       <AppHeader route={route} />

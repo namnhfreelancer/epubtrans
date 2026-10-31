@@ -46,7 +46,7 @@ function subscribe(listener: () => void): () => void {
 }
 
 /** Runs persistence writes for one project strictly in order; the returned promise rejects on failure. */
-export function enqueueWrite(projectId: string, write: () => Promise<void>): Promise<void> {
+export function enqueueWrite<T>(projectId: string, write: () => Promise<T>): Promise<T> {
   const previous = writeChains.get(projectId) ?? Promise.resolve();
   const next = previous.catch(() => undefined).then(write);
   writeChains.set(projectId, next);
@@ -159,8 +159,9 @@ export function createJobBaseline(project: Project): JobBaseline {
  * Persists a segment finished by a translation job, unless its stored state changed since the job's
  * baseline (an edit or retranslation saved meanwhile, possibly from another tab). In that case the stored
  * state is kept and copied into the job's live segment, so storage and every view agree on it.
+ * Resolves whether the segment was saved (false: the stored state won).
  */
-export function persistJobSegment(project: Project, segment: Segment, baseline: JobBaseline): Promise<void> {
+export function persistJobSegment(project: Project, segment: Segment, baseline: JobBaseline): Promise<boolean> {
   const snapshot: Segment = { ...segment };
   const produced = revisionOf(snapshot);
   return enqueueWrite(project.id, async () => {
@@ -168,9 +169,10 @@ export function persistJobSegment(project: Project, segment: Segment, baseline: 
     if (result.saved) {
       baseline.set(snapshot.id, produced);
       broadcast(project.id, { type: 'segment', segmentId: snapshot.id });
-    } else if (applyStoredState(segment, produced, result.stored)) {
-      touchProject(project.id);
+      return true;
     }
+    if (applyStoredState(segment, produced, result.stored)) touchProject(project.id);
+    return false;
   });
 }
 

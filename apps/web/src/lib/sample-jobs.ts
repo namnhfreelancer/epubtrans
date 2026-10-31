@@ -114,8 +114,8 @@ async function runSample(
   // Same compare-and-set baseline as a full run: an edit saved meanwhile (any tab) wins over the sample's answer.
   const baseline = createJobBaseline(project);
   let writeError: Error | undefined;
-  const writes: Promise<void>[] = [];
-  const track = (write: Promise<void>) =>
+  const writes: Promise<unknown>[] = [];
+  const track = (write: Promise<unknown>) =>
     writes.push(
       write.catch((err: unknown) => {
         writeError ??= err instanceof Error ? err : new Error(String(err));
@@ -150,6 +150,21 @@ async function runSample(
       cancelled ? { ...current, status: 'cancelled' } : { ...current, status: 'failed', error: failure instanceof Error ? failure.message : String(failure) },
     );
   }
+}
+
+/** Resolves with the sample state once no sample is running for the project (right away when none is). */
+export function waitForSampleJob(projectId: string): Promise<SampleJobState> {
+  return new Promise((resolve) => {
+    const check = () => {
+      const state = getSampleJobState(projectId);
+      if (state.status === 'running') return false;
+      unsubscribe();
+      resolve(state);
+      return true;
+    };
+    const unsubscribe = subscribe(() => void check());
+    check();
+  });
 }
 
 /** Stops a running sample; segments that already finished stay translated and persisted. */

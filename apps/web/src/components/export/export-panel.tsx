@@ -2,19 +2,12 @@ import { EXPORT_MODES, type ExportMode, exportEpub, type Project, saveProjectFil
 import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { browserDomEnv } from '../../lib/dom-env';
-import { downloadBytes, safeFileName } from '../../lib/download-file';
+import { downloadBytes, exportFileName, safeFileName } from '../../lib/download-file';
 import { errorText } from '../../lib/notices';
 import { countSegments } from '../../lib/segment-counts';
 import { Button } from '../ui/button';
 import { Alert, Card } from '../ui/layout-primitives';
 import { ExportHintOptions } from './export-hint-options';
-
-const FILE_SUFFIX: Record<ExportMode, string> = {
-  bilingual: 'bilingual',
-  'bilingual-translation-first': 'bilingual-translation-first',
-  'translation-only': 'translated',
-  original: 'original',
-};
 
 /** Builds the EPUB in the chosen layout, and offers the `.epubtrans` project file. */
 export function ExportPanel({ project, version }: { project: Project; version: number }) {
@@ -33,8 +26,7 @@ export function ExportPanel({ project, version }: { project: Project; version: n
     try {
       if (kind === 'epub') {
         const bytes = await exportEpub(project, mode, browserDomEnv());
-        const lang = mode === 'original' ? project.settings.sourceLang.replace('auto', 'source') : project.settings.targetLang;
-        downloadBytes(bytes, `${baseName}.${lang}.${FILE_SUFFIX[mode]}.epub`, 'application/epub+zip');
+        downloadBytes(bytes, exportFileName(project, mode), 'application/epub+zip');
       } else {
         downloadBytes(await saveProjectFile(project), `${baseName}.epubtrans`, 'application/zip');
       }

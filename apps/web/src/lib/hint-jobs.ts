@@ -22,6 +22,8 @@ const CANCEL = 'cancelled-by-user';
 const IDLE: HintJobState = { status: 'idle', done: 0, total: 0, usage: { input: 0, output: 0 }, failed: 0 };
 const jobs = new Map<string, HintJobState>();
 const controllers = new Map<string, AbortController>();
+/** Settles (never rejects) once a project's hints run and its cleanup finished. */
+const runs = new Map<string, Promise<void>>();
 const listeners = new Set<() => void>();
 
 function setJob(id: string, next: HintJobState): void {
@@ -53,7 +55,7 @@ export function startHintJob(project: Project, plan: WordHintsPlan, settings: Pr
   const controller = new AbortController();
   controllers.set(project.id, controller);
   const { started, settled } = launchWithJobLock(project.id, () => runHints(project, plan, settings, provider, controller));
-  void settled
+  const run = settled
     .catch((err: unknown) => {
       setJob(project.id, { ...(jobs.get(project.id) ?? IDLE), status: 'failed', error: err instanceof Error ? err.message : String(err) });
     })
@@ -61,6 +63,10 @@ export function startHintJob(project: Project, plan: WordHintsPlan, settings: Pr
       if (controllers.get(project.id) === controller) controllers.delete(project.id);
       touchProject(project.id);
     });
+  runs.set(project.id, run);
+  void run.finally(() => {
+    if (runs.get(project.id) === run) runs.delete(project.id);
+  });
   return started.then((ran) => {
     if (ran) return 'started';
     if (controllers.get(project.id) === controller) controllers.delete(project.id);
@@ -112,4 +118,10 @@ async function runHints(project: Project, plan: WordHintsPlan, settings: Project
 /** Stops a running hints job; lemmas that already finished stay saved, so generating again resumes. */
 export function cancelHintJob(projectId: string): void {
   controllers.get(projectId)?.abort(CANCEL);
+}
+
+/** Cancels a running hints job and resolves once its run ended, so no write or request follows (used before deleting a book). */
+export async function stopHintJob(projectId: string): Promise<void> {
+  cancelHintJob(projectId);
+  await runs.get(projectId);
 }

@@ -307,4 +307,12 @@ export const vi: Record<MessageKey, string> = {
   'export.maxPerParagraphHint': '0 = không giới hạn. Ưu tiên giữ các từ hiếm nhất.',
   'export.perChapter': 'Số lần mỗi chương',
   'export.perChapterHint': 'Chỉ gợi ý một từ ở N lần xuất hiện đầu tiên trong mỗi chương. 0 = mọi lần.',
+
+  'webmcp.agentAsks': 'Một tác tử AI yêu cầu:\n\n{question}',
+  'webmcp.startConfirm':
+    'Dịch “{title}” bằng {provider}, mô hình {model}? Còn {segments} đoạn; chi phí ước tính: {cost} ({input} token vào / {output} token ra{prices}). Việc này dùng khóa API của bạn và nhà cung cấp sẽ tính phí.',
+  'webmcp.costUnknown': 'chưa rõ (chưa có giá cho mô hình này)',
+  'webmcp.pricesFromBook': '; giá lấy từ cài đặt của sách: {input} vào / {output} ra cho mỗi 1 triệu token',
+  'webmcp.pricesLookedUp': '; giá tra cứu cho mô hình này: {input} vào / {output} ra cho mỗi 1 triệu token',
+  'webmcp.importConfirm': 'Tải một cuốn sách từ {host} vào thư viện?\n\n{url}',
 };

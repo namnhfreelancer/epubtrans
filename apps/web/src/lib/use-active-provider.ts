@@ -1,8 +1,8 @@
 import type { ChatProvider, Project, ProjectSettings } from '@epubtrans/core';
 import type { MessageKey } from '../i18n/messages-en';
-import { apiKeys } from './api-key-store';
+import { type ApiKeyState, apiKeys } from './api-key-store';
 import { useExternalStore } from './external-store';
-import { type ActiveProvider, buildProvider, providerConfig, resolveActiveProvider, settingsForRun } from './provider-config-store';
+import { type ActiveProvider, buildProvider, type ProviderConfig, providerConfig, resolveActiveProvider, settingsForRun } from './provider-config-store';
 
 export interface ActiveProviderState {
   active: ActiveProvider;
@@ -13,9 +13,8 @@ export interface ActiveProviderState {
   prepare(project: Project): { provider: ChatProvider; settings: ProjectSettings };
 }
 
-export function useActiveProvider(): ActiveProviderState {
-  const config = useExternalStore(providerConfig.store);
-  const keys = useExternalStore(apiKeys.store);
+/** The configured provider, its key and what (if anything) blocks a run, from a configuration and key snapshot. */
+export function resolveProviderState(config: ProviderConfig, keys: ApiKeyState): ActiveProviderState {
   const active = resolveActiveProvider(config);
   const apiKey = keys.keys[active.providerId] ?? '';
   let problem: MessageKey | undefined;
@@ -28,4 +27,13 @@ export function useActiveProvider(): ActiveProviderState {
     problem,
     prepare: (project) => ({ provider: buildProvider(active, apiKey), settings: settingsForRun(project.settings, active) }),
   };
+}
+
+/** The provider state right now, for code outside React (e.g. WebMCP tool handlers). */
+export const currentProviderState = (): ActiveProviderState => resolveProviderState(providerConfig.store.get(), apiKeys.store.get());
+
+export function useActiveProvider(): ActiveProviderState {
+  const config = useExternalStore(providerConfig.store);
+  const keys = useExternalStore(apiKeys.store);
+  return resolveProviderState(config, keys);
 }

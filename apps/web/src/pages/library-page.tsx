@@ -7,12 +7,14 @@ import { useI18n } from '../i18n/i18n-context';
 import { apiKeys } from '../lib/api-key-store';
 import { repository } from '../lib/app-services';
 import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
+import { deleteBookFromDevice } from '../lib/delete-book-from-device';
 import { downloadBytes, safeFileName } from '../lib/download-file';
 import { useExternalStore } from '../lib/external-store';
+import { dialogText } from '../lib/format';
 import { BookImportError, isProjectFileName, readProjectFromFile } from '../lib/import-book-file';
 import { errorText, pushNotice } from '../lib/notices';
 import type { ProjectSummary } from '../lib/project-repository';
-import { addProject, ensureProject, removeProject } from '../lib/project-store';
+import { addProject, ensureProject } from '../lib/project-store';
 import { providerConfig } from '../lib/provider-config-store';
 import { discardJob } from '../lib/translation-jobs';
 import { useLibrary } from '../lib/use-library';
@@ -37,7 +39,7 @@ export function LibraryPage() {
             pushNotice('error', t('library.busyElsewhere'));
             continue;
           }
-          if (!window.confirm(t('library.replaceConfirm', { title: project.title }))) continue;
+          if (!window.confirm(t('library.replaceConfirm', { title: dialogText(project.title, 120) }))) continue;
           // A job may have started in another tab while the dialog was open.
           if (await isJobRunningElsewhere(project.id)) {
             pushNotice('error', t('library.busyElsewhere'));
@@ -69,11 +71,10 @@ export function LibraryPage() {
     try {
       // The card disables Delete from a polled snapshot; re-check at click time.
       if (await isJobRunningElsewhere(book.id)) return pushNotice('error', t('library.busyElsewhere'));
-      if (!window.confirm(t('library.deleteConfirm', { title: book.title }))) return;
+      if (!window.confirm(t('library.deleteConfirm', { title: dialogText(book.title, 120) }))) return;
       // A job may have started in another tab while the dialog was open.
       if (await isJobRunningElsewhere(book.id)) return pushNotice('error', t('library.busyElsewhere'));
-      await discardJob(book.id);
-      await removeProject(book.id);
+      await deleteBookFromDevice(book.id);
       pushNotice('info', t('library.deleted', { title: book.title }));
     } catch (err) {
       pushNotice('error', errorText(err));

@@ -1,9 +1,10 @@
-import { estimateCost, type Project } from '@epubtrans/core';
+import type { Project } from '@epubtrans/core';
 import { useI18n } from '../../i18n/i18n-context';
 import { formatNumber, formatUsd, parseOptionalPrice } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
 import { updateSettings } from '../../lib/project-store';
-import { type ActiveProvider, settingsForRun } from '../../lib/provider-config-store';
+import type { ActiveProvider } from '../../lib/provider-config-store';
+import { estimateRunCost } from '../../lib/run-pricing';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { useJobActive } from '../../lib/translation-jobs';
 import { useCostEstimate } from '../../lib/use-cost-estimate';
@@ -21,8 +22,7 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
   const save = (patch: Parameters<typeof updateSettings>[1]) =>
     updateSettings(project, patch).catch((err: unknown) => pushNotice('error', t('common.saveFailed', { message: errorText(err) })));
 
-  const { priceInPerM, priceOutPerM, auto, published, lookup } = useRunPrices(settings, active);
-  const manual = settings.priceInPerM !== undefined || settings.priceOutPerM !== undefined;
+  const { priceInPerM, priceOutPerM, auto, published, manual, lookup } = useRunPrices(settings, active);
 
   const { providerId, baseURL, model } = active;
   // The estimate walks every batch of the book, while `version` changes on every finished segment and every keystroke
@@ -30,7 +30,7 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
   const runActive = useJobActive(project.id);
   const sampleRunning = useSampleRunning(project.id);
   const { estimate, deferred } = useCostEstimate(
-    () => estimateCost(project, { ...settingsForRun(settings, { providerId, baseURL, model }), priceInPerM, priceOutPerM }),
+    () => estimateRunCost(project, { providerId, baseURL, model }, { priceInPerM, priceOutPerM }),
     runActive || sampleRunning,
     // `version` tracks in-place project mutations.
     [project, settings, providerId, baseURL, model, priceInPerM, priceOutPerM, version],
