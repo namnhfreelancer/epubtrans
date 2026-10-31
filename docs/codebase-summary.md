@@ -12,7 +12,7 @@ Bun workspaces monorepo (`packages/*`, `apps/*`), TypeScript strict, Biome for l
 │   │   ├── index.ts          public API
 │   │   ├── dom/              XHTML parse/serialize, HTML -> XHTML, deterministic fragment serializer
 │   │   ├── epub/             OPF parsing, EPUB 3 package builder (+ NCX)
-│   │   ├── formats/          format detection, MOBI/AZW3 -> EPUB, FB2 -> EPUB
+│   │   ├── formats/          format detection, MOBI/AZW3 -> EPUB, FB2 -> EPUB, TXT/Markdown -> EPUB
 │   │   ├── import/           importBook: detect, normalize, segment
 │   │   ├── segment/          split documents into translatable segments
 │   │   ├── translate/        batching, prompts, validation, retries, guide, cost estimate
@@ -22,7 +22,7 @@ Bun workspaces monorepo (`packages/*`, `apps/*`), TypeScript strict, Biome for l
 │   │   ├── lang/             language detection (franc-min)
 │   │   └── util/             zip, text encoding, paths, ids
 │   ├── third-party/foliate-js/   vendored MOBI parser (MIT) with local patches
-│   └── test/                 Vitest suites and public-domain fixtures (EPUB, MOBI, AZW3, FB2)
+│   └── test/                 Vitest suites and public-domain fixtures (EPUB, MOBI, AZW3, FB2, TXT, MD)
 ├── apps/web/                 @epubtrans/web: Vite + React 19 + Tailwind v4 + Dexie PWA, Playwright e2e
 ├── apps/cli/                 @epubtrans/cli: Bun CLI
 │   ├── src/main.ts           entry (signals, exit code)
@@ -57,7 +57,7 @@ Bun workspaces monorepo (`packages/*`, `apps/*`), TypeScript strict, Biome for l
 
 ## Test fixtures
 
-`packages/core/test/fixtures` holds public-domain books used by core and CLI tests: `a-modest-proposal.epub` (Project Gutenberg #1080), the same book as `.mobi` and `.azw3`, and `aesop-fables.fb2`. The CLI tests start a local OpenAI-compatible HTTP server (`Bun.serve` on an ephemeral port) and drive `translate`, interruption, `resume` and `export` against it.
+`packages/core/test/fixtures` holds public-domain books used by core and CLI tests: `a-modest-proposal.epub` (Project Gutenberg #1080), the same book as `.mobi` and `.azw3`, and `aesop-fables.fb2` (also as `.txt` and `.md`). The CLI tests start a local OpenAI-compatible HTTP server (`Bun.serve` on an ephemeral port) and drive `translate`, interruption, `resume` and `export` against it.
 
 ## Key dependencies
 

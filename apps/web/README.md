@@ -1,6 +1,6 @@
 # @epubtrans/web
 
-Static, bring-your-own-key web app for epubtrans: import a DRM-free EPUB, MOBI, AZW3 or FB2 book, translate it in the browser with your AI provider, edit the result and export a bilingual EPUB. There is no backend; books and progress live in IndexedDB, and the API key is only sent to the selected provider.
+Static, bring-your-own-key web app for epubtrans: import a DRM-free EPUB, MOBI, AZW3, FB2, TXT or Markdown book, translate it in the browser with your AI provider, edit the result and export a bilingual EPUB. There is no backend; books and progress live in IndexedDB, and the API key is only sent to the selected provider.
 
 ## Scripts
 

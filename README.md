@@ -6,7 +6,8 @@ Translate DRM-free books into **bilingual EPUB** with the AI model of your choic
 
 - **Web app (no install, no server):** <https://namnhfreelancer.github.io/epubtrans/>
 - **CLI (single binary):** Linux, macOS and Windows, see [Command line](#command-line)
-- Input: EPUB, MOBI, AZW3 and FB2 (DRM-free). Output: valid EPUB 3 (checked with [epubcheck](https://www.w3.org/publishing/epubcheck/)).
+- Input: EPUB, MOBI, AZW3, FB2, plain text and Markdown (DRM-free; Adobe ADEPT, Readium LCP and Apple FairPlay books are refused with a clear message). Output: valid EPUB 3 (checked with [epubcheck](https://www.w3.org/publishing/epubcheck/)).
+- TXT and Markdown are converted to EPUB first: chapters start at headings (Markdown `#`/`##`) or at lines such as "Chapter 3", "CHAPTER IV." or a bare roman numeral (TXT), otherwise the text is cut into parts of about 40 paragraphs. Markdown keeps emphasis, links (http(s) and mailto only) and code; raw HTML is dropped.
 - Any language pair, source language auto-detected. Inline formatting (bold, italics, links, ...) survives translation.
 
 Tiếng Việt: xem [phần tiếng Việt](#tiếng-việt) ở cuối trang.
@@ -35,6 +36,10 @@ You bring your own API key (BYOK). Presets:
 
 Models are listed from the provider's `/models` endpoint; you can always type a model id by hand. Cost is estimated before translating from token counts and the prices you enter (USD per 1M tokens; OpenRouter prices are filled in automatically). No price table is bundled.
 
+Tokens read from the provider's prompt cache are counted separately in the usage shown during and after a run, and priced at a discount: the book's "cached input price" (web) or `--cached-ratio` (CLI), else the provider's documented ratio (Anthropic 0.1 for cache reads and 1.25 for cache writes, OpenAI 0.5, Gemini 0.25, DeepSeek 0.26; OpenRouter and custom endpoints price cached tokens like other input).
+
+**Reasoning models.** Settings (web, per provider) and `--reasoning` (CLI) choose `default`, `low` or `off`: `reasoning_effort` for OpenAI-compatible endpoints, OpenRouter's `reasoning` object, Anthropic's `thinking` (off, or the smallest budget for low). When an endpoint rejects the field (HTTP 400/422), the request is sent again once without it and the field is left out for that endpoint and model for the rest of the session; that rejection never counts toward the stop after five consecutive client errors.
+
 Prices are looked up automatically for the selected model from public catalogs: OpenRouter's `GET https://openrouter.ai/api/v1/models`, then LiteLLM's `model_prices_and_context_window.json` on `raw.githubusercontent.com`. Both are plain unauthenticated GETs of public files: your API key, book and model name are never sent to them (the match happens on your device). The web app shows where the price came from ("Price from OpenRouter (matched: anthropic/claude-opus-5.5)"), caches the parsed prices in `localStorage` for 24 hours, and falls back to manual entry when the model is unknown or the catalogs are unreachable; prices you type always win. The CLI prints the source and matched id before the estimate, gives up after 5 seconds when a catalog does not answer, and skips the lookup with `--no-price-lookup`.
 
 ## Web app
@@ -43,11 +48,11 @@ Prices are looked up automatically for the selected model from public catalogs: 
 2. Drop in a book. The source language is detected automatically; pick the target language.
 3. Optionally let the model draft a **style guideline and glossary** for the book, then edit them; start from a preset (general, fiction, technical, psychology) if you prefer. Turn on the **2-pass review** for higher quality.
 4. Check the token and cost estimate, then translate. Progress is saved continuously: reload or close the tab and it resumes without redoing finished segments.
-5. Read side by side, edit any segment, or re-translate a single segment.
+5. Read side by side, edit any segment, or re-translate a single segment. Failed segments and **warnings** (a translation identical to its source, likely left untranslated; short, numeric and name-only text is ignored) have their own counts, previous/next buttons and filters. Warnings are still exported as they are.
 6. **Preview** the finished EPUB in the browser before downloading it: Kindle, phone, tablet or desktop size, light/sepia/dark theme, pages or scrolling, font size, table of contents and search. Click a paragraph to open it in the editor; failed segments are highlighted. These settings only affect the preview, never the file.
 7. Export the EPUB as **bilingual** (original, then translation, original faded), **bilingual-translation-first**, or **translation-only**.
 
-The library keeps several books. Each book can be exported to, and imported from, a `.epubtrans` project file. The interface is available in English and Vietnamese and the app is an installable PWA.
+The library keeps several books. Each book can be exported to, and imported from, a `.epubtrans` project file. The glossary can be exported as CSV or JSON and imported from CSV, TSV or JSON (merge keeps your existing entries, or replace), for example to reuse names across a series. Changing the target language of a book that already has translations asks whether to keep them or reset them to pending, so a book never silently mixes two languages. The interface is available in English and Vietnamese and the app is an installable PWA.
 
 ### Glossary and style guideline
 
@@ -67,8 +72,8 @@ The web app offers its main actions as [WebMCP](https://webmachinelearning.githu
 |------|--------------|
 | `list_books`, `get_book_status` | Read the library, and one book's settings, progress, job status and cost estimate |
 | `import_book_from_url` | Download a book from an `https://` URL (after you approve the host) |
-| `update_book_settings` | Target/source language, 2-pass review, guideline preset |
-| `configure_provider`, `list_models` | Pick a provider preset and model; presets you have not set up report that they are not ready |
+| `update_book_settings` | Target/source language, 2-pass review, guideline preset; a target change on a translated book needs `resetTranslations: true` and the user's approval |
+| `configure_provider`, `list_models` | Pick a provider preset, model and reasoning setting; presets you have not set up report that they are not ready |
 | `generate_guide`, `translate_sample` | Draft the guideline and glossary, translate a sample (small paid runs) |
 | `start_translation`, `pause_translation` | Start or resume the full paid translation (after you approve it), pause it |
 | `list_errors`, `retranslate_segment` | Find failed segments and translate one again (never a segment you edited by hand) |
@@ -128,10 +133,11 @@ Progress is saved continuously to `book.epub.epubtrans`. After Ctrl-C or a crash
 | `epubtrans models [--provider <id>] [--base-url <url>]` | List models from `/models` |
 | `epubtrans presets` | List providers, guideline presets and export modes |
 | `epubtrans sample <input or file.epubtrans> [--passages N] [--words N] [--seed S] [--new]` | Translate a few passages from different chapters and print them as source/translation pairs, before the full run |
+| `epubtrans glossary export <file.epubtrans> --out <file.csv\|.tsv\|.json>` | Write the project's glossary for reuse (`--glossary-file`, web import) |
 
 **Sample translation.** To check quality before paying for a whole book, translate a sample first: in the web app use the "Sample translation" card on the setup page, on the command line run `epubtrans sample book.epub --to vi --model <id>`. It picks 5 passages of about 350 words from different chapters spread across the book (seeded, so the same seed picks the same passages), translates them with your guideline and glossary, and shows source and translation side by side. Change the guideline or glossary and run it again to compare ("Translate samples again" in the app, the same command in the CLI); "New random samples" or `--new` picks other passages. The sampled segments count as translated, so the full run skips them. The selection is stored in the project file. A sample never loses work: segments you edited by hand are skipped, and when a sample request fails, a segment that already had a translation keeps it. Both are reported: the app shows a warning instead of the success message when some segments failed (an error when all of them did), says how many hand-edited segments were kept, and labels those segments in the sample view; the CLI labels them in its report and exits with an "incomplete" status. Back matter (index, notes, bibliography, acknowledgments) is not sampled.
 
-Common options: `--from <lang>` (default auto), `--provider <preset id>`, `--base-url <url>`, `--model <id>`, `--concurrency <1-16>`, `--two-pass`, `--guideline-preset general|fiction|technical|psychology`, `--guideline-file <path>`, `--generate-guide`, `--mode bilingual|bilingual-translation-first|translation-only`, `--out <file.epub>`, `--project <file>`, `--price-in/--price-out <USD per 1M tokens>`, `--yes`. Run `epubtrans <command> --help` for details.
+Common options: `--from <lang>` (default auto), `--provider <preset id>`, `--base-url <url>`, `--model <id>`, `--concurrency <1-16>`, `--two-pass`, `--guideline-preset general|fiction|technical|psychology`, `--guideline-file <path>`, `--generate-guide`, `--mode bilingual|bilingual-translation-first|translation-only`, `--out <file.epub>`, `--project <file>`, `--price-in/--price-out <USD per 1M tokens>`, `--cached-ratio <0-2>`, `--max-segments <1-200>` (segments per request, default 32), `--reasoning default|low|off`, `--identical-min-letters <n>` (0 turns the identical-translation warning off), `--glossary-file <csv|tsv|json>` (translate and sample; merged, project entries win), `--yes`. Run `epubtrans <command> --help` for details.
 
 `--no-price-lookup` turns off the automatic price lookup used when `--price-in/--price-out` are absent.
 
@@ -166,12 +172,13 @@ See [LICENSE](LICENSE) for the terms that apply to this repository.
 
 ## Tiếng Việt
 
-epubtrans dịch sách **không DRM** (EPUB, MOBI, AZW3, FB2) thành **EPUB song ngữ** bằng mô hình AI mà bạn chọn, ngay trong trình duyệt hoặc bằng dòng lệnh.
+epubtrans dịch sách **không DRM** (EPUB, MOBI, AZW3, FB2, TXT, Markdown) thành **EPUB song ngữ** bằng mô hình AI mà bạn chọn, ngay trong trình duyệt hoặc bằng dòng lệnh.
 
 - **Dùng thử không cần cài đặt:** <https://namnhfreelancer.github.io/epubtrans/>
 - **Riêng tư:** không có máy chủ. Sách và tiến độ dịch lưu trong trình duyệt của bạn. API key chỉ nằm trong trình duyệt và chỉ được gửi tới nhà cung cấp bạn đã chọn (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek hoặc URL tương thích OpenAI). Lưu ý: nếu bật "nhớ khóa", khóa được lưu trong `localStorage` của trình duyệt cho origin `namnhfreelancer.github.io`, origin này dùng chung với các trang GitHub Pages khác của chủ repo; trên máy dùng chung hoặc nếu bạn không muốn vậy, hãy để ô này không chọn.
 - **Tự mang API key (BYOK):** ứng dụng ước tính token và chi phí trước khi dịch, tự tạo hướng dẫn văn phong và bảng thuật ngữ (chỉnh sửa được), có chế độ rà soát 2 lượt, lưu tiến độ liên tục nên tải lại trang vẫn dịch tiếp.
 - **Xem trước** EPUB ngay trong trình duyệt (cỡ Kindle, điện thoại, máy tính bảng hoặc máy tính; nền sáng, giấy cũ hoặc tối; lật trang hoặc cuộn; cỡ chữ; mục lục và tìm kiếm). Bấm vào một đoạn để mở nó trong trình sửa; đoạn lỗi được tô nổi. Các tuỳ chọn này chỉ dùng cho bản xem trước, không đưa vào tệp xuất.
+- **Bảng thuật ngữ dạng tệp:** xuất CSV/JSON, nhập CSV/TSV/JSON (gộp hoặc thay thế) để dùng lại cho cả bộ sách; CLI có `--glossary-file` và `epubtrans glossary export`. Đổi ngôn ngữ đích khi sách đã có bản dịch sẽ hỏi giữ nguyên hay đặt lại về chờ dịch. Bản dịch giống hệt bản gốc được đánh dấu cảnh báo (đếm và lọc riêng với lỗi). Token từ cache prompt được tính riêng và theo giá ưu đãi; có tùy chọn suy luận (mặc định/thấp/tắt) cho mô hình suy luận.
 - **Xuất EPUB** ở 3 chế độ: song ngữ, song ngữ (bản dịch trước), chỉ bản dịch. Giao diện có tiếng Việt và tiếng Anh, cài được như ứng dụng (PWA).
 - **Dòng lệnh:** cài bằng lệnh ở mục [Command line](#command-line), đặt khóa trong biến môi trường `EPUBTRANS_API_KEY`, rồi chạy `epubtrans translate sach.epub --to vi --model <id>` (nhà cung cấp mặc định là `openai`; dùng nhà cung cấp khác thì thêm `--provider <id>` ở mỗi lần chạy). Gặp sự cố hoặc nhấn Ctrl-C, chạy lại cùng lệnh để dịch tiếp; có thể mở tệp `.epubtrans` xuất từ web bằng `epubtrans resume`.
 - **Bảng thuật ngữ và hướng dẫn văn phong:** ứng dụng quét toàn bộ sách (không tốn lượt gọi mô hình) để tìm tên riêng và thuật ngữ lặp lại, rồi nhờ mô hình phân loại (nhân vật, địa danh, tổ chức, thuật ngữ, khác) và dịch chúng; số mục tăng theo độ dài sách (khoảng 1 mục cho mỗi 500 từ, tối đa 400 theo mặc định). Hướng dẫn văn phong được viết từ khoảng 18 đoạn trích khắp cuốn sách, theo các mục cố định, trong đó có cách xưng hô giữa các nhân vật; hướng dẫn bạn đang dùng được giữ nguyên, phần tạo ra được thêm bên dưới. Mỗi yêu cầu dịch chỉ gửi kèm những thuật ngữ xuất hiện trong đoạn đó.
