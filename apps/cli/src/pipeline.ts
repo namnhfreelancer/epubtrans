@@ -11,6 +11,7 @@ import {
 } from '@epubtrans/core';
 import { UsageError } from './args';
 import { domEnv } from './dom-env';
+import { loadFontFile } from './embedded-font-files';
 import { createGuideProgressPrinter } from './guide-progress';
 import { wordWiseExportNote } from './hint-flags';
 import type { Io } from './io';
@@ -93,7 +94,7 @@ export async function translateAndExport(opts: PipelineOptions): Promise<number>
 
   const note = wordWiseExportNote(project, project.settings, mode, projectPath);
   if (note) io.err(note);
-  const epub = await exportEpub(project, mode, domEnv);
+  const epub = await exportEpub(project, mode, domEnv, { loadFontFile });
   await writeFileAtomic(outPath, epub);
   const after = countStatuses(project);
   io.err(`Wrote ${outPath} (${mode}, ${after.done}/${after.total} segments translated)\n`);

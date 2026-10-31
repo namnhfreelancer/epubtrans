@@ -7,6 +7,7 @@ import type { Io } from '../io';
 import { translateAndExport } from '../pipeline';
 import { countStatuses } from '../progress';
 import { applyRunFlags, parseExportMode, selectProvider } from '../settings';
+import { applyStyleFlags } from '../style-flags';
 import { assertOutputIsSeparate, defaultOutPath } from './output-paths';
 import { buildProvider } from './provider-setup';
 
@@ -37,7 +38,7 @@ export async function resumeCommand(argv: string[], io: Io): Promise<number> {
   io.err(`Project "${project.title}" -> ${project.settings.targetLang}: ${c.done}/${c.total} segments translated\n`);
 
   const selection = selectProvider(flags, project.settings);
-  const settings = applyWordWiseFlags(applyRunFlags(project.settings, flags, selection), flags);
+  const settings = await applyStyleFlags(applyWordWiseFlags(applyRunFlags(project.settings, flags, selection), flags), flags);
   if (!settings.model) throw new UsageError('This project has no model yet. Pass --model <id> (list them with: epubtrans models --provider <id>)');
   const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io);
 

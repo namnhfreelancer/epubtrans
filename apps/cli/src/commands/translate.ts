@@ -18,6 +18,7 @@ import type { Io } from '../io';
 import { translateAndExport } from '../pipeline';
 import { countStatuses } from '../progress';
 import { applyRunFlags, parseExportMode, parseLanguage, selectProvider } from '../settings';
+import { applyStyleFlags } from '../style-flags';
 import { assertOutputIsSeparate, defaultOutPath, PROJECT_EXTENSION } from './output-paths';
 import { buildProvider } from './provider-setup';
 
@@ -91,7 +92,7 @@ export async function translateCommand(argv: string[], io: Io): Promise<number> 
   }
 
   const selection = selectProvider(flags, existingBytes ? project.settings : undefined);
-  settings = applyWordWiseFlags(applyRunFlags(settings, flags, selection), flags);
+  settings = await applyStyleFlags(applyWordWiseFlags(applyRunFlags(settings, flags, selection), flags), flags);
   if (!settings.model) throw new UsageError('--model <id> is required. List the available models with: epubtrans models --provider <id>');
   const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io);
 
