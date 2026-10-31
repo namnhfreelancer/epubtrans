@@ -53,6 +53,41 @@ export function readRootfiles(files: FileMap, env: DomEnv): Rootfile[] {
     .filter((r) => r.path !== '');
 }
 
+/** An absolute URL (`scheme:`) rather than a path inside the container. */
+const ABSOLUTE_URL = /^[A-Za-z][A-Za-z\d+.-]*:/;
+
+/**
+ * Local targets of the `<link>` elements of META-INF/container.xml, such as the rendition mapping
+ * document of a multi-rendition EPUB, which no package manifest may list. Paths in container.xml
+ * are relative to the container root; absolute URLs are left out.
+ */
+export function readContainerLinks(files: FileMap, env: DomEnv): string[] {
+  const container = parseXml(env, readText(files, 'META-INF/container.xml'), 'META-INF/container.xml');
+  return byLocalName(container, 'link')
+    .map((el) => el.getAttribute('href') ?? '')
+    .filter((href) => href !== '' && !ABSOLUTE_URL.test(href))
+    .map((href) => resolvePath('', href))
+    .filter(Boolean);
+}
+
+const ENCRYPTION_XML = 'META-INF/encryption.xml';
+
+/**
+ * Paths of the resources META-INF/encryption.xml lists (`CipherReference`, relative to the
+ * container root): obfuscated fonts and other bytes that are not what they appear to be. Empty when
+ * the file is missing or does not parse.
+ */
+export function readEncryptedPaths(files: FileMap, env: DomEnv): Set<string> {
+  if (!files.has(ENCRYPTION_XML)) return new Set();
+  const doc = new env.DOMParser().parseFromString(readText(files, ENCRYPTION_XML), 'application/xml');
+  if (isParserError(doc)) return new Set();
+  return new Set(
+    byLocalName(doc, 'CipherReference')
+      .map((el) => resolvePath('', el.getAttribute('URI') ?? ''))
+      .filter(Boolean),
+  );
+}
+
 /** Reads the OPF package document at `opfPath`, by default the primary rootfile of META-INF/container.xml. */
 export function parsePackage(files: FileMap, env: DomEnv, opfPath = readRootfiles(files, env)[0]?.path): PackageInfo {
   if (!opfPath) throw new Error('container.xml does not declare a rootfile');

@@ -207,7 +207,8 @@ describe('xml-stylesheet instructions', () => {
       expectNoActiveMarkup(out);
       expect(unzipText(out, 'OEBPS/p2.xml')).not.toContain('xml-stylesheet');
       expect(unzipText(out, 'OEBPS/p2.xml')).toContain('xml text');
-      expect(unzipText(out, 'OEBPS/s.css')).not.toContain('template');
+      // A CSS-typed resource is never applied as XSLT once the disguised instruction is gone: it stays as is.
+      expect(readZip(out).get('OEBPS/s.css')).toEqual(readZip(project.sourceEpub).get('OEBPS/s.css'));
     }
   });
 });
@@ -219,12 +220,17 @@ describe('multi-rendition books', () => {
     `<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="uid">urn:uuid:${id}</dc:identifier><dc:title>Two renditions</dc:title><dc:language>en</dc:language><meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>${links}</metadata><manifest>${manifest}</manifest><spine>${spine}</spine></package>`;
   const nav = xhtml('Contents', '<nav epub:type="toc"><ol><li><a href="c1.xhtml">One</a></li></ol></nav>');
   const container = `<?xml version="1.0" encoding="utf-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="A/a.opf" media-type="application/oebps-package+xml"/><rootfile full-path="B/b.opf" media-type="application/oebps-package+xml"/><rootfile full-path="C/c.pdf" media-type="application/pdf"/><rootfile full-path="D/broken.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`;
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="A/a.opf" media-type="application/oebps-package+xml"/><rootfile full-path="B/b.opf" media-type="application/oebps-package+xml"/><rootfile full-path="C/c.pdf" media-type="application/pdf"/><rootfile full-path="D/broken.opf" media-type="application/oebps-package+xml"/></rootfiles><links><link href="mapping.xhtml" rel="mapping" media-type="application/xhtml+xml"/><link href="https://example.com/x.xhtml" rel="mapping"/></links></container>`;
+  const mapping = xhtml(
+    'Renditions',
+    '<nav epub:type="resource-map" onclick="alert(1)"><ul><li><a href="A/a.opf#epubcfi(/6/2)">a</a></li><li><a href="B/b.opf#epubcfi(/6/2)">b</a></li></ul></nav>',
+  );
 
   function multiRenditionEpub(): Uint8Array {
     return zipSync({
       mimetype: [strToU8('application/epub+zip'), { level: 0 }],
       'META-INF/container.xml': strToU8(container),
+      'mapping.xhtml': strToU8(mapping),
       'A/a.opf': strToU8(
         opf(
           'a',
@@ -275,6 +281,7 @@ describe('multi-rendition books', () => {
         'B/record.xml',
         'C/c.pdf',
         'D/broken.opf',
+        'mapping.xhtml',
       ]) {
         expect(files.has(path), path).toBe(true);
       }
@@ -285,6 +292,8 @@ describe('multi-rendition books', () => {
         expect(unzipText(out, 'D/broken.opf')).toContain('<removed/>');
       }
       expect(dec(files.get('META-INF/container.xml') ?? new Uint8Array())).toBe(container);
+      // The rendition mapping document is linked from container.xml, never listed in a manifest.
+      expect(unzipText(out, 'mapping.xhtml')).toContain('resource-map');
       expect(unzipText(out, 'A/c1.xhtml')).toContain('[vi] Primary rendition text.');
       const second = unzipText(out, 'B/c1.xhtml');
       expect(second).toContain('Second rendition text.');
@@ -305,7 +314,10 @@ describe('multi-rendition books', () => {
 
   it('a single-rendition book exports exactly as before', async () => {
     const project = await importBook(readFixture('a-modest-proposal.epub'), 'a.epub', env);
+    const source = readZip(project.sourceEpub);
     const out = readZip(await exportEpub(project, 'translation-only', env));
-    expect([...out.keys()].sort()).toEqual([...readZip(project.sourceEpub).keys()].sort());
+    expect([...out.keys()].sort()).toEqual([...source.keys()].sort());
+    // Only the package document and the XHTML/NCX documents the export rebuilds may change.
+    for (const [path, data] of source) if (!/\.(?:xhtml|ncx|opf)$/.test(path)) expect(out.get(path), path).toEqual(data);
   });
 });
