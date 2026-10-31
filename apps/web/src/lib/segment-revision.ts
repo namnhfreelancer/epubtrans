@@ -1,9 +1,6 @@
 import type { Segment, SegmentStatus } from '@epubtrans/core';
 import type { SegmentStateRow } from './project-database';
 
-/** Assumption: core's `Segment` gains an optional `userEdited` flag; until that lands here, the web app carries it through this type. */
-export type EditableSegment = Segment & { userEdited?: boolean };
-
 /**
  * What a user edit, a retranslation or a translation job changes about a segment (the same fields core
  * compares to detect superseded segments). A missing overlay row means a pristine 'pending' segment.
@@ -53,7 +50,7 @@ export function isSegmentStateRow(value: unknown): value is SegmentStateRow {
 export function applyStoredState(segment: Segment, since: SegmentRevision, stored: SegmentStateRow | undefined): boolean {
   if (!sameRevision(revisionOf(segment), since)) return false;
   const next = revisionOf(stored);
-  const target = segment as EditableSegment;
+  const target = segment;
   if (sameRevision(next, since) && segment.error === stored?.error && Boolean(target.userEdited) === Boolean(stored?.userEdited)) return false;
   segment.status = next.status;
   if (next.translationHtml === undefined) delete segment.translationHtml;

@@ -7,7 +7,6 @@ import { persistSegment, saveTranslationEdit, touchProject } from '../../lib/pro
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { sanitizeSegmentHtml } from '../../lib/sanitize-segment-html';
 import { segmentErrorText } from '../../lib/segment-error-text';
-import type { EditableSegment } from '../../lib/segment-revision';
 import { useJobActive } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
 import { Button } from '../ui/button';
@@ -73,7 +72,7 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
       const { provider: chat, settings } = provider.prepare(project);
       const updated = await retranslateSegment(project, segment.id, chat, settings, controller.signal);
       // The fresh machine translation replaces the user's text, so it no longer counts as hand-edited.
-      delete (updated as EditableSegment).userEdited;
+      delete updated.userEdited;
       touchProject(project.id);
       await persistSegment(project.id, updated);
     } catch (err) {

@@ -1,10 +1,9 @@
 import 'fake-indexeddb/auto';
-import { type ChatProvider, createDefaultSettings, type Project } from '@epubtrans/core';
+import { type ChatProvider, createDefaultSettings, type Project, type Segment } from '@epubtrans/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { database, repository } from '../src/lib/app-services';
 import { addProject, removeProject, saveTranslationEdit } from '../src/lib/project-store';
 import { getSampleJobState, startSampleJob } from '../src/lib/sample-jobs';
-import type { EditableSegment } from '../src/lib/segment-revision';
 
 function makeProject(id: string): Project {
   const now = new Date('2026-10-31T00:00:00Z').toISOString();
@@ -87,7 +86,7 @@ describe('manual edits are flagged', () => {
   it('saves userEdited with a hand-written translation and clears it when the segment is reset', async () => {
     const project = makeProject('user-edited');
     await addProject(project);
-    const segment = project.chapters[0]?.segments[0] as EditableSegment;
+    const segment = project.chapters[0]?.segments[0] as Segment;
 
     await saveTranslationEdit(project, segment, 'Bản dịch của tôi');
     expect(segment.userEdited).toBe(true);
