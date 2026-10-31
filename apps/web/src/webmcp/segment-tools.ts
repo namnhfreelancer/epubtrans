@@ -17,6 +17,8 @@ const exportFileSuffix = (mode: ExportMode): string => (mode === 'translation-on
 /** Segments whose retranslation is in flight from a tool call, so the same segment is not sent twice at once. */
 const retranslating = new Set<string>();
 
+const EDITED_HINT = 'Ask the user to retranslate it in the reader if they want to replace their edit.';
+
 /** Segment tools: failed segments, single-segment retranslation, EPUB export. */
 export function segmentTools(ctx: ToolContext): ToolSpec[] {
   return [
@@ -61,7 +63,7 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
       name: 'retranslate_segment',
       title: 'Retranslate one segment',
       description:
-        'Translates one segment again with the configured model (one small paid request), e.g. a failed one from list_errors, saves the result and shows it in the reader. The old translation is kept when it fails. Unavailable while a translation or sample of the book runs.',
+        'Translates one segment again with the configured model (one small paid request), e.g. a failed one from list_errors, saves the result and shows it in the reader. The old translation is kept when it fails. Segments the user edited by hand are refused: ask the user to retranslate those in the reader. Unavailable while a translation or sample of the book runs.',
       inputSchema: objectSchema({ bookId: BOOK_ID, segmentId: { type: 'string', description: 'Segment id from list_errors.', maxLength: 200 } }, [
         'bookId',
         'segmentId',
@@ -71,8 +73,8 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
         const project = await findBook(args.string('bookId'));
         if (isFailure(project)) return project;
         const segmentId = args.string('segmentId');
-        if (!locateSegment(project.chapters, segmentId))
-          return fail(`No segment with id "${segmentId.slice(0, 80)}" in this book.`, 'Use ids from list_errors.');
+        const location = locateSegment(project.chapters, segmentId);
+        if (!location) return fail(`No segment with id "${segmentId.slice(0, 80)}" in this book.`, 'Use ids from list_errors.');
         const provider = currentProviderState();
         const notReady = providerFailure(provider);
         if (notReady) return notReady;
@@ -81,6 +83,10 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
         if (busy) return busyFailure(busy);
         const key = `${project.id}\u0000${segmentId}`;
         if (retranslating.has(key)) return fail('This segment is already being retranslated.', 'Wait for the earlier call to finish.');
+        // Hand edits are the user's own work: a retranslation would replace them for good, so only the user may.
+        // Checked after the busy check, so an edit saved meanwhile counts.
+        if (project.chapters[location.chapter]?.segments[location.segment]?.userEdited)
+          return fail('The user edited this segment by hand, so tools do not retranslate it.', EDITED_HINT);
         retranslating.add(key);
         ctx.navigate({ name: 'book', id: project.id, tab: 'read', segment: segmentId });
         try {

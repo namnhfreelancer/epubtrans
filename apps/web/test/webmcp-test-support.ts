@@ -35,8 +35,14 @@ export interface FakeProviderState {
   invalidIds: Set<string>;
   /** Makes /models fail with an error that echoes the API key, like some misbehaving endpoints do. */
   echoKeyOnModels: boolean;
+  /** Characters of filler before the echoed key, to place it across a clip boundary. */
+  modelsErrorPadding: number;
   /** Holds every chat answer until released (for "a job is running" states). */
   gate?: Promise<void>;
+  /** Price catalog lookups so far (answered 404). */
+  catalogFetches: number;
+  /** Holds every price catalog answer until released (for "the estimate is still loading" states). */
+  catalogGate?: Promise<void>;
   urlFetches: string[];
   /** Answers for non-provider URLs (book downloads); undefined: a network/CORS failure. */
   urls: Map<string, () => Response>;
@@ -49,7 +55,7 @@ export function fakeFetch(state: FakeProviderState): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (url.startsWith(`${MOCK_BASE}/models`)) {
-      if (state.echoKeyOnModels) return json(401, { error: { message: `Incorrect API key provided: ${SENTINEL_KEY}` } });
+      if (state.echoKeyOnModels) return json(401, { error: { message: `${'x'.repeat(state.modelsErrorPadding)}Incorrect API key provided: ${SENTINEL_KEY}` } });
       return json(200, { data: [{ id: 'mock-model' }, { id: 'mock-model-pro' }, { id: 'other-model' }] });
     }
     if (url.startsWith(`${MOCK_BASE}/chat/completions`)) {
@@ -70,16 +76,29 @@ export function fakeFetch(state: FakeProviderState): typeof fetch {
       }
       return json(200, { choices: [{ message: { role: 'assistant', content } }], usage: { prompt_tokens: 100, completion_tokens: 50 } });
     }
+    if (/openrouter\.ai|githubusercontent\.com/.test(url)) {
+      state.catalogFetches++;
+      if (state.catalogGate) await state.catalogGate;
+      return json(404, {});
+    }
     state.urlFetches.push(url);
     const answer = state.urls.get(url);
     if (answer) return answer();
-    if (/openrouter\.ai|githubusercontent\.com/.test(url)) return json(404, {});
     throw new TypeError('Failed to fetch');
   };
 }
 
 export function newProviderState(): FakeProviderState {
-  return { chatRequests: 0, segmentIds: [], invalidIds: new Set(), echoKeyOnModels: false, urlFetches: [], urls: new Map() };
+  return {
+    chatRequests: 0,
+    segmentIds: [],
+    invalidIds: new Set(),
+    echoKeyOnModels: false,
+    modelsErrorPadding: 0,
+    catalogFetches: 0,
+    urlFetches: [],
+    urls: new Map(),
+  };
 }
 
 /** Configures the custom preset against the fake provider, with the sentinel key in memory. */
@@ -194,4 +213,13 @@ export async function eventually(check: () => boolean | Promise<boolean>, timeou
     if (Date.now() - start > timeoutMs) throw new Error('condition not met in time');
     await new Promise((r) => setTimeout(r, 20));
   }
+}
+
+/** A gate that holds fake answers until `open` is called. */
+export function gate(): { promise: Promise<void>; open: () => void } {
+  let open: () => void = () => {};
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { promise, open };
 }

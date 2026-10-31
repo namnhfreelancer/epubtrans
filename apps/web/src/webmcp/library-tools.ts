@@ -1,11 +1,12 @@
 import { repository } from '../lib/app-services';
 import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
-import { cancelGuideJob } from '../lib/guide-jobs';
+import { deleteBookFromDevice } from '../lib/delete-book-from-device';
+import { dialogText } from '../lib/format';
 import { BookImportError, isProjectFileName, readProjectFromFile } from '../lib/import-book-file';
 import { pushNotice } from '../lib/notices';
-import { addProject, removeProject } from '../lib/project-store';
+import { addProject } from '../lib/project-store';
 import { countSegments } from '../lib/segment-counts';
-import { discardJob, getJobState } from '../lib/translation-jobs';
+import { getJobState } from '../lib/translation-jobs';
 import { fetchBookFromUrl, parseBookUrl } from './fetch-book-from-url';
 import { busyFailure, englishMessage, findBook, isFailure, type ToolContext } from './tool-context';
 import { BOOK_ID, objectSchema, type ToolSpec } from './tool-definition';
@@ -48,7 +49,7 @@ export function libraryTools(ctx: ToolContext): ToolSpec[] {
       run: async (args, signal) => {
         const url = parseBookUrl(args.string('url'));
         if (isFailure(url)) return url;
-        const question = ctx.t('webmcp.importConfirm', { host: url.host, url: clip(url.href, 300) });
+        const question = ctx.t('webmcp.importConfirm', { host: dialogText(url.host, 120), url: dialogText(url.href, 300) });
         if (!ctx.confirm(ctx.t('webmcp.agentAsks', { question }))) return ok({ imported: false, reason: 'declined' });
         const file = await fetchBookFromUrl(ctx, url, signal);
         if (isFailure(file)) return file;
@@ -78,7 +79,7 @@ export function libraryTools(ctx: ToolContext): ToolSpec[] {
       name: 'delete_book',
       title: 'Delete a book',
       description:
-        'Deletes a book and its translation progress from this device after the user confirms in the page. A running translation of the book is stopped first. This cannot be undone.',
+        'Deletes a book and its translation progress from this device after the user confirms in the page. A running translation, sample or guideline generation of the book is stopped first. This cannot be undone.',
       inputSchema: objectSchema({ bookId: BOOK_ID }, ['bookId']),
       annotations: { consequentialHint: true, untrustedContentHint: true },
       run: async (args) => {
@@ -86,13 +87,11 @@ export function libraryTools(ctx: ToolContext): ToolSpec[] {
         if (isFailure(project)) return project;
         const title = project.title;
         if (await isJobRunningElsewhere(project.id)) return busyFailure('busy-elsewhere');
-        const question = ctx.t('library.deleteConfirm', { title: clip(title, 120) });
+        const question = ctx.t('library.deleteConfirm', { title: dialogText(title, 120) });
         if (!ctx.confirm(ctx.t('webmcp.agentAsks', { question }))) return ok({ deleted: false, reason: 'declined' });
         // A job may have started in another tab while the dialog was open.
         if (await isJobRunningElsewhere(project.id)) return busyFailure('busy-elsewhere');
-        cancelGuideJob(project.id);
-        await discardJob(project.id);
-        await removeProject(project.id);
+        await deleteBookFromDevice(project.id);
         pushNotice('info', ctx.t('library.deleted', { title }));
         ctx.navigate({ name: 'library' });
         return ok({ deleted: true, bookId: project.id, title: untrustedText(title, 100) });

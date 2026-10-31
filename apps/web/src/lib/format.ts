@@ -23,3 +23,18 @@ export function parseOptionalPrice(input: string): number | undefined {
   const value = Number(input.replace(',', '.'));
   return input.trim() !== '' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
+
+/**
+ * Book- or agent-supplied text placed in a confirm dialog: control, line-break and bidi-override characters become
+ * spaces (so a title cannot lay out fake lines or reorder the question), whitespace is collapsed, and the result is
+ * clipped to `max` characters with an ellipsis.
+ */
+export function dialogText(value: string, max: number): string {
+  const flat = value
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are exactly what is removed here.
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const chars = Array.from(flat);
+  return chars.length > max ? `${chars.slice(0, Math.max(0, max - 1)).join('')}…` : flat;
+}

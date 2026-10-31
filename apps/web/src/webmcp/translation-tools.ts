@@ -9,14 +9,14 @@ import {
   type Segment,
 } from '@epubtrans/core';
 import { refreshJobLocks } from '../lib/cross-tab-job-lock';
-import { formatNumber, formatUsd } from '../lib/format';
+import { dialogText, formatNumber, formatUsd } from '../lib/format';
 import { cancelGuideJob, runGuideJob } from '../lib/guide-jobs';
 import { settingsForRun } from '../lib/provider-config-store';
 import { cancelSampleJob, type SampleRequest, startSampleJob, waitForSampleJob } from '../lib/sample-jobs';
 import { countSegments, remainingWork } from '../lib/segment-counts';
 import { startTranslation } from '../lib/start-translation';
 import { getJobState, isJobActive, pauseJob } from '../lib/translation-jobs';
-import { currentProviderState } from '../lib/use-active-provider';
+import { type ActiveProviderState, currentProviderState } from '../lib/use-active-provider';
 import {
   busyFailure,
   busyReason,
@@ -30,10 +30,31 @@ import {
   type ToolContext,
 } from './tool-context';
 import { BOOK_ID, CANCELLED, objectSchema, type ToolSpec } from './tool-definition';
-import { clip, fail, ok, untrustedText } from './tool-result';
+import { clip, fail, fitList, ok, untrustedText } from './tool-result';
 
 const PREVIEW_SEGMENTS = 3;
 const MAX_LISTED_IDS = 10;
+
+const SETTINGS_CHANGED = 'settings changed after confirmation — call start_translation again';
+
+/** Everything a full run's cost and destination depend on, as shown in (or implied by) the start confirmation. */
+interface RunTerms {
+  providerId: string;
+  baseURL: string;
+  model: string;
+  /** Compared, never returned: a replaced key would bill another account than the one the user approved. */
+  apiKey: string;
+  twoPass: boolean;
+  remaining: number;
+}
+
+function runTerms(project: Project, provider: ActiveProviderState): RunTerms {
+  const { providerId, baseURL, model } = provider.active;
+  const { twoPass } = project.settings;
+  return { providerId, baseURL, model, apiKey: provider.apiKey, twoPass, remaining: remainingWork(countSegments(project), twoPass) };
+}
+
+const sameRunTerms = (a: RunTerms, b: RunTerms): boolean => (Object.keys(a) as (keyof RunTerms)[]).every((key) => a[key] === b[key]);
 
 function segmentsById(project: Project, ids: readonly string[]): Segment[] {
   const wanted = new Set(ids);
@@ -134,24 +155,27 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
         const cost = selection ? estimateSampleCost(project, runSettings, selection).usd : undefined;
         const preview = segmentsById(project, selection?.passages.flatMap((p) => p.segmentIds) ?? [])
           .slice(0, PREVIEW_SEGMENTS)
-          .map((s) => ({ id: s.id, status: s.status, source: untrustedText(s.sourceHtml, 200), translation: untrustedText(s.translationHtml, 200) }));
-        return ok({
-          done: final.done,
-          total: final.total,
-          usage: final.usage,
-          estimatedUsd: roundUsd(cost),
-          failed: final.failed.length,
-          keptEdited: final.keptEdited.length,
-          ...(final.failed.length > 0 ? { failedIds: final.failed.slice(0, MAX_LISTED_IDS) } : {}),
-          preview,
-        });
+          .map((s) => ({ id: s.id, status: s.status, source: untrustedText(s.sourceHtml, 150), translation: untrustedText(s.translationHtml, 150) }));
+        // Long segments could push the preview past the output budget; fitList drops trailing preview items instead.
+        return fitList(preview, (shown) =>
+          ok({
+            done: final.done,
+            total: final.total,
+            usage: final.usage,
+            estimatedUsd: roundUsd(cost),
+            failed: final.failed.length,
+            keptEdited: final.keptEdited.length,
+            ...(final.failed.length > 0 ? { failedIds: final.failed.slice(0, MAX_LISTED_IDS) } : {}),
+            preview: shown,
+          }),
+        );
       },
     },
     {
       name: 'start_translation',
       title: 'Start the full translation',
       description:
-        'Starts or resumes the full paid translation of a book with the configured provider and model. The user sees the cost estimate and must approve it in the page. Returns at once; poll get_book_status for progress.',
+        'Starts or resumes the full paid translation of a book with the configured provider and model. The user sees the cost estimate and must approve it in the page. If the provider, model, two-pass mode or remaining work changes before the run starts, nothing starts and the call must be repeated. Returns at once; poll get_book_status for progress.',
       inputSchema: objectSchema({ bookId: BOOK_ID }, ['bookId']),
       annotations: { consequentialHint: true },
       run: async (args, signal) => {
@@ -163,26 +187,43 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
         if (busy) return ok({ started: false, reason: busy === 'job-running' ? 'already-running' : busy });
         const remaining = remainingWork(countSegments(project), project.settings.twoPass);
         if (remaining === 0) return ok({ started: false, reason: 'nothing-to-translate' });
+        // What the user is asked to approve; the run starts only if this is still what would run after the dialog.
+        const confirmed = runTerms(project, provider);
         const estimate = await estimateRemaining(project, provider, signal);
         if (signal?.aborted) return CANCELLED();
         ctx.navigate({ name: 'book', id: project.id, tab: 'setup' });
         const { t } = ctx;
         const locale = ctx.locale();
+        const prices = estimate.pricesPerM && {
+          input: formatUsd(estimate.pricesPerM.input, locale),
+          output: formatUsd(estimate.pricesPerM.output, locale),
+        };
         const question = t('webmcp.startConfirm', {
-          title: clip(project.title, 120),
+          title: dialogText(project.title, 120),
           provider: getProviderPreset(provider.active.providerId).label,
-          model: clip(provider.active.model, 100),
+          model: dialogText(provider.active.model, 100),
           segments: formatNumber(remaining, locale),
           cost: estimate.usd === null ? t('webmcp.costUnknown') : formatUsd(estimate.usd, locale),
           input: formatNumber(estimate.inputTokens, locale),
           output: formatNumber(estimate.outputTokens, locale),
+          prices: prices ? t(estimate.priceSource === 'book-settings' ? 'webmcp.pricesFromBook' : 'webmcp.pricesLookedUp', prices) : '',
         });
         if (!ctx.confirm(t('webmcp.agentAsks', { question }))) return ok({ started: false, reason: 'declined', estimate });
         // A sample or run may have started (here or in another tab) while the dialog was open.
         const busyAfter = await busyReason(project.id);
         if (busyAfter) return ok({ started: false, reason: busyAfter === 'job-running' ? 'already-running' : busyAfter });
-        // The run uses the provider configured now; the job lock decides if another tab won meanwhile.
-        const outcome = await startTranslation(project, currentProviderState(), t);
+        // Other tool calls, or a Settings tab, may have changed the provider, model, key, two-pass mode or the book
+        // while the estimate loaded or the dialog was open: never bill something other than what the user approved.
+        const latest = await findBook(project.id);
+        if (isFailure(latest)) return latest;
+        if (!sameRunTerms(confirmed, runTerms(latest, currentProviderState()))) {
+          return Object.assign(fail('The provider, model, API key, two-pass mode or remaining work changed after the user confirmed; nothing was started.'), {
+            started: false,
+            reason: SETTINGS_CHANGED,
+          });
+        }
+        // Started with the confirmed provider snapshot; the job lock decides if another tab won meanwhile.
+        const outcome = await startTranslation(latest, provider, t);
         if (outcome.kind === 'started') return ok({ started: true, remaining, estimate, next: 'Poll get_book_status for progress.' });
         if (outcome.kind === 'problem') return ok({ started: false, reason: 'provider-not-ready', problem: englishMessage(outcome.problem) });
         if (outcome.kind === 'error') return fail(`Could not start: ${clip(outcome.message, 300)}`);

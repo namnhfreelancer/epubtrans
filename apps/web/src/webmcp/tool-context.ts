@@ -93,11 +93,20 @@ export function providerFailure(provider: ActiveProviderState): ToolFailure | un
   return fail(englishMessage(provider.problem), 'The user must finish the provider setup in Settings (API keys and the custom endpoint are user-only).');
 }
 
+/**
+ * Where the estimate's prices came from: entered in the book's settings (they may come from an imported project
+ * file), looked up automatically (the provider's model list or the public catalogs), or not known.
+ */
+export type PriceSource = 'book-settings' | 'looked-up' | 'unknown';
+
 /** The remaining work's estimate as reported to agents; `usd` is null when no price is known for the model. */
 export interface AgentEstimate {
   inputTokens: number;
   outputTokens: number;
   usd: number | null;
+  priceSource: PriceSource;
+  /** USD per 1M input/output tokens used for `usd`; absent when no price is known. */
+  pricesPerM?: { input: number; output: number };
 }
 
 /** Prices as the setup page's cost card resolves them: manual book prices, else the provider's list, else the public catalogs. */
@@ -111,6 +120,15 @@ export const roundUsd = (usd: number | undefined): number | null => (usd === und
 
 /** The same estimate of the remaining work as the setup page's cost card. */
 export async function estimateRemaining(project: Project, provider: ActiveProviderState, signal?: AbortSignal): Promise<AgentEstimate> {
-  const estimate = estimateRunCost(project, provider.active, await resolveAgentPrices(project, provider, signal));
-  return { inputTokens: estimate.inputTokens, outputTokens: estimate.outputTokens, usd: roundUsd(estimate.usd) };
+  const prices = await resolveAgentPrices(project, provider, signal);
+  const estimate = estimateRunCost(project, provider.active, prices);
+  const { priceInPerM, priceOutPerM } = prices;
+  const known = estimate.usd !== undefined && priceInPerM !== undefined && priceOutPerM !== undefined;
+  return {
+    inputTokens: estimate.inputTokens,
+    outputTokens: estimate.outputTokens,
+    usd: roundUsd(estimate.usd),
+    priceSource: !known ? 'unknown' : prices.manual ? 'book-settings' : 'looked-up',
+    ...(known ? { pricesPerM: { input: priceInPerM, output: priceOutPerM } } : {}),
+  };
 }

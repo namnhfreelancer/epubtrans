@@ -20,9 +20,31 @@ export const ok = (data: Record<string, unknown> = {}): ToolSuccess => Object.as
 
 export const fail = (error: string, hint?: string): ToolFailure => (hint ? { ok: false, error, hint } : { ok: false, error });
 
-/** Clips text to `max` characters, marking the cut with an ellipsis. */
+/** Where the stored API keys come from; registered once by {@link setSecretSource} when the tools are created. */
+let secretSource: () => readonly string[] = () => [];
+
+/**
+ * Registers the source of the values that must never reach an agent. {@link clip} redacts them before cutting text,
+ * because a key cut in half by a clip would no longer match the final redaction in {@link serializeResult}.
+ */
+export function setSecretSource(source: () => readonly string[]): void {
+  secretSource = source;
+}
+
+/** Replaces every secret (raw and JSON-escaped forms) in `text` with a marker. */
+export function redactSecrets(text: string, secrets: readonly string[] = secretSource()): string {
+  let out = text;
+  for (const secret of secrets) {
+    if (secret.length < MIN_SECRET_LENGTH) continue;
+    // The raw value and its JSON-escaped form (a key with quotes or backslashes would appear escaped).
+    for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)])) out = out.split(form).join(REDACTED);
+  }
+  return out;
+}
+
+/** Clips text to `max` characters, marking the cut with an ellipsis. Secrets are redacted first, so no key prefix survives the cut. */
 export function clip(text: string, max: number): string {
-  const value = text.trim();
+  const value = redactSecrets(text).trim();
   return value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value;
 }
 
@@ -64,22 +86,12 @@ export function fitList<T>(items: readonly T[], build: (items: readonly T[]) => 
   return result;
 }
 
-function redact(json: string, secrets: readonly string[]): string {
-  let out = json;
-  for (const secret of secrets) {
-    if (secret.length < MIN_SECRET_LENGTH) continue;
-    // The raw value and its JSON-escaped form (a key with quotes or backslashes would appear escaped).
-    for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)])) out = out.split(form).join(REDACTED);
-  }
-  return out;
-}
-
 /**
  * Serializes a result for the agent: redacts every secret, then enforces the output budget. Output that is still too
  * long is replaced by a valid JSON object carrying its beginning as a string, flagged `truncated`.
  */
 export function serializeResult(result: ToolResult, secrets: readonly string[]): string {
-  const json = redact(JSON.stringify(result), secrets);
+  const json = redactSecrets(JSON.stringify(result), secrets);
   if (json.length <= MAX_OUTPUT_CHARS) return json;
   const note = 'Output exceeded 1500 characters and was cut; request fewer items or a narrower range.';
   let keep = MAX_OUTPUT_CHARS - 200;

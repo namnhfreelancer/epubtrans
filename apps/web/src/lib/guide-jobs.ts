@@ -72,6 +72,8 @@ export async function runGuideJob(
         if (!controller.signal.aborted) setState(project.id, { kind: 'busy', progress });
       },
     });
+    // A cancelled run saves nothing: its book may be deleted, or the user moved on.
+    if (controller.signal.aborted) return { kind: 'cancelled' };
     await updateSettings(project, { guideline: guide.guideline, glossary: guide.glossary });
     if (controller.signal.aborted) return { kind: 'cancelled' };
     setState(project.id, { kind: 'done', entries: guide.glossary.length, candidates: guide.candidates, skippedBatches: guide.skippedBatches });

@@ -64,9 +64,21 @@ async function readCapped(response: Response): Promise<Uint8Array | ToolFailure>
   return bytes;
 }
 
+/** The URL the response finally came from (after redirects); the requested one when the browser does not report it. */
+function finalUrlOf(response: Response, requested: URL): URL {
+  if (!response.url) return requested;
+  try {
+    return new URL(response.url);
+  } catch {
+    // An unparsable final URL cannot be shown to match the approved host.
+    return new URL('about:blank');
+  }
+}
+
 /**
  * Downloads a book from an approved https URL as a File, without cookies or referrer. Fails with a clear message when
- * the host does not allow cross-origin downloads (CORS), answers an error, redirects off https, or the file is too big.
+ * the host does not allow cross-origin downloads (CORS), answers an error, redirects off https or to another host, or
+ * the file is too big.
  */
 export async function fetchBookFromUrl(ctx: ToolContext, url: URL, signal: AbortSignal | undefined): Promise<File | ToolFailure> {
   let response: Response;
@@ -85,7 +97,16 @@ export async function fetchBookFromUrl(ctx: ToolContext, url: URL, signal: Abort
     // The browser deliberately hides the exact reason (CORS, DNS, offline) from the page.
     return fail(`The host ${url.host} does not allow downloads from web pages (no CORS headers), or it could not be reached.`, DROP_HINT);
   }
-  if (response.url && new URL(response.url).protocol !== 'https:') return fail('The download was redirected away from https.', DROP_HINT);
+  // Redirects are followed, but the bytes must come from the host the user approved (over https).
+  const finalUrl = finalUrlOf(response, url);
+  if (finalUrl.protocol !== 'https:' || finalUrl.host !== url.host) {
+    await response.body?.cancel().catch(() => undefined);
+    if (finalUrl.protocol !== 'https:') return fail('The download was redirected away from https.', DROP_HINT);
+    return fail(
+      `The download was redirected from ${url.host} to ${clip(finalUrl.host, 100)}, a host the user did not approve; nothing was imported.`,
+      'Call import_book_from_url again with the final URL so the user can approve that host, or ask the user to drop the file on the library page.',
+    );
+  }
   if (!response.ok) return fail(`The host answered HTTP ${response.status}.`, 'Check the URL, or ask the user to drop the file on the library page.');
   let bytes: Uint8Array | ToolFailure;
   try {

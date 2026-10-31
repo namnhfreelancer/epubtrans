@@ -1,6 +1,6 @@
 import { composeGuideline, GUIDELINE_PRESETS, type ProjectSettings, splitGuideline } from '@epubtrans/core';
 import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
-import { getGuideJobState } from '../lib/guide-jobs';
+import { getGuideJobState, isGuideJobRunning } from '../lib/guide-jobs';
 import { normalizeLanguageTag } from '../lib/languages';
 import { updateSettings } from '../lib/project-store';
 import { getSampleJobState } from '../lib/sample-jobs';
@@ -12,6 +12,7 @@ import { BOOK_ID, objectSchema, type ToolSpec } from './tool-definition';
 import { fail, ok, untrustedText } from './tool-result';
 
 const PRESET_IDS = GUIDELINE_PRESETS.map((p) => p.id);
+const GUIDE_LOCKED_HINT = 'Wait until generate_guide finishes (poll get_book_status), then set the preset again.';
 
 /** Book tools: read the status, change the language pair, two-pass mode and guideline preset. */
 export function bookTools(ctx: ToolContext): ToolSpec[] {
@@ -74,7 +75,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
       name: 'update_book_settings',
       title: 'Update book settings',
       description:
-        'Changes a book’s target language, source language, two-pass review mode or guideline preset. Languages are BCP 47 tags such as vi, fr or zh-Hans (source also accepts auto). A preset replaces only the base guideline and keeps the generated book-specific block; replacing custom guideline text needs the user’s approval in the page.',
+        'Changes a book’s target language, source language, two-pass review mode or guideline preset. Languages are BCP 47 tags such as vi, fr or zh-Hans (source also accepts auto). A preset replaces only the base guideline and keeps the generated book-specific block; replacing custom guideline text needs the user’s approval in the page, and the preset is not applied while guideline generation runs (reported in notApplied).',
       inputSchema: objectSchema(
         {
           bookId: BOOK_ID,
@@ -108,8 +109,14 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
           patch.sourceLang = tag;
         }
         if (twoPass !== undefined) patch.twoPass = twoPass;
+        // Like the setup page, the guideline is locked while generation runs: its result is merged into the guideline
+        // it started from and would silently overwrite a preset applied now.
+        const guideLocked = presetId !== undefined && isGuideJobRunning(project.id);
+        if (guideLocked && Object.keys(patch).length === 0) {
+          return fail('The guideline is locked while guideline and glossary generation runs for this book.', GUIDE_LOCKED_HINT);
+        }
         let preset: 'applied' | 'declined' | undefined;
-        const chosen = GUIDELINE_PRESETS.find((p) => p.id === presetId);
+        const chosen = guideLocked ? undefined : GUIDELINE_PRESETS.find((p) => p.id === presetId);
         if (chosen) {
           const { base, generated } = splitGuideline(project.settings.guideline);
           // Text the user wrote (not an unchanged preset) is only replaced with their approval, as in the setup page.
@@ -131,6 +138,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
           sourceLang: settings.sourceLang,
           twoPass: settings.twoPass,
           ...(preset ? { guidelinePreset: preset === 'applied' ? chosen?.id : 'declined by the user' } : {}),
+          ...(guideLocked ? { notApplied: ['guidelinePreset'], note: `guidelinePreset: generation is running. ${GUIDE_LOCKED_HINT}` } : {}),
         });
       },
     },

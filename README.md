@@ -67,19 +67,19 @@ The web app offers its main actions as [WebMCP](https://webmachinelearning.githu
 | `list_books`, `get_book_status` | Read the library, and one book's settings, progress, job status and cost estimate |
 | `import_book_from_url` | Download a book from an `https://` URL (after you approve the host) |
 | `update_book_settings` | Target/source language, 2-pass review, guideline preset |
-| `configure_provider`, `list_models` | Pick a provider preset and model from the ones you set up |
+| `configure_provider`, `list_models` | Pick a provider preset and model; presets you have not set up report that they are not ready |
 | `generate_guide`, `translate_sample` | Draft the guideline and glossary, translate a sample (small paid runs) |
 | `start_translation`, `pause_translation` | Start or resume the full paid translation (after you approve it), pause it |
-| `list_errors`, `retranslate_segment` | Find failed segments and translate one again |
+| `list_errors`, `retranslate_segment` | Find failed segments and translate one again (never a segment you edited by hand) |
 | `export_epub` | Build and download the EPUB in any export mode |
 | `delete_book` | Delete a book (after you approve it) |
 
 What an agent cannot do:
 
 - **API keys:** agents never receive, set or change a key. Tools only report whether a key is stored, and every tool output is scrubbed of stored keys before it is returned.
-- **Custom endpoint:** agents cannot change the custom base URL, so a stored key cannot be redirected to another host. Switching providers only uses presets you already configured.
-- **Spending and deleting:** `start_translation` shows a confirmation in the page with the provider, model, remaining segments and cost estimate, and `delete_book` asks before deleting. If you decline, or the browser suppresses dialogs, nothing is spent or deleted. `generate_guide`, `translate_sample` and `retranslate_segment` cost a few requests and run without a dialog. Like the buttons, they refuse while the book is being translated in this tab or another one.
-- **Downloads:** `import_book_from_url` accepts only `https://` URLs and asks you to approve the host before fetching. No cookies or referrer are sent, and the usual 300 MB limit applies. Many sites (for example Project Gutenberg) do not allow downloads from other web pages (CORS); the agent is then told to ask you to drop the file instead.
+- **Custom endpoint:** agents cannot change the custom base URL, so a stored key cannot be redirected to another host. An agent can select any provider preset, but one without a stored key (or, for Custom, without the base URL you entered) only reports that it is not ready.
+- **Spending and deleting:** `start_translation` shows a confirmation in the page with the provider, model, remaining segments, cost estimate and where its prices come from (your book's settings or looked up for the model), and `delete_book` asks before deleting. If you decline, or the browser suppresses dialogs, nothing is spent or deleted. If the provider, model, API key, 2-pass mode or remaining work changes before the run starts, nothing starts and the agent must ask again. `generate_guide`, `translate_sample` and `retranslate_segment` cost a few requests and run without a dialog. Like the buttons, they refuse while the book is being translated in this tab or another one. `retranslate_segment` refuses segments you edited by hand. Deleting a book also stops its guideline generation and sample.
+- **Downloads:** `import_book_from_url` accepts only `https://` URLs and asks you to approve the host before fetching; a redirect to another host is refused. No cookies or referrer are sent, and the usual 300 MB limit applies. Many sites (for example Project Gutenberg) do not allow downloads from other web pages (CORS); the agent is then told to ask you to drop the file instead.
 - **Other sites:** tools are only visible on the app's own origin (no cross-origin exposure).
 
 Tool outputs that contain book text, model output or provider error messages are flagged as untrusted content (`untrustedContentHint`), so agents treat them as data rather than instructions. Each output stays under 1,500 characters. A dialog accepted by an agent that drives the browser itself (for example over the DevTools protocol) cannot be told apart from your own click. Agents that respect the `consequentialHint` flag on `start_translation` and `delete_book` should ask you first.
