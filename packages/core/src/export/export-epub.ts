@@ -8,13 +8,16 @@ import { type FileMap, readZip, writeEpubZip } from '../util/zip-archive';
 import { dirname, relativeHref } from '../util/zip-path';
 import { markPreviewSegment } from './preview-markers';
 import { prunePackageFiles } from './prune-package-files';
-import { type PlacementContext, placeTranslation, SOURCE_CLASS, setLang, textLabel } from './segment-placement';
+import { addClass, type PlacementContext, placeTranslation, SOURCE_CLASS, setLang, textLabel } from './segment-placement';
 import { stripActiveContent, stripActiveContentFromPackage, unmarkScripted } from './strip-active-content';
+import { applyWordHints, HINT_PARAGRAPH_CLASS, HINT_STYLESHEET, planWordHintExport } from './word-hint-markup';
 import { cssStylesheetInstructions } from './xml-prolog';
 
-export const EXPORT_MODES: ExportMode[] = ['bilingual', 'bilingual-translation-first', 'translation-only'];
+export const EXPORT_MODES: ExportMode[] = ['bilingual', 'bilingual-translation-first', 'translation-only', 'original'];
+/** Modes that keep the source text, so they can carry Word Wise hints. */
+export const HINT_EXPORT_MODES: ExportMode[] = ['bilingual', 'bilingual-translation-first', 'original'];
 
-const STYLESHEET = `/* epubtrans: bilingual layout */\n.${SOURCE_CLASS} { opacity: 0.55; }\n`;
+const STYLESHEET = `/* epubtrans: bilingual layout and Word Wise hints */\n.${SOURCE_CLASS} { opacity: 0.55; }\n${HINT_STYLESHEET}`;
 const STYLESHEET_NAME = 'epubtrans.css';
 
 /** Options for {@link exportEpub}. */
@@ -32,7 +35,9 @@ const isDone = (s: Segment | undefined): s is Segment & { translationHtml: strin
 /**
  * Builds the output EPUB. Untranslated segments keep their source text. Segment markers are
  * removed, translated blocks get `lang`/`xml:lang`, and bilingual modes link a small stylesheet
- * that fades the source text. Translations apply to the primary rendition; other renditions of a
+ * that fades the source text. `original` keeps the source text only. When Word Wise hints are enabled
+ * and generated, every mode except `translation-only` writes them into the source text (ruby, or inline
+ * text for the inline style and for EPUB 2) and links the stylesheet. Translations apply to the primary rendition; other renditions of a
  * multi-rendition book are kept (listing the stylesheet when they share a translated document).
  * Files no package document references and XSLT stylesheets are dropped, and scripts, event
  * handlers and script URLs are stripped from every remaining markup file, package documents
@@ -48,8 +53,9 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
   const xmlLangOnly = isEpub2Package(pkg);
   const segments = new Map(project.chapters.flatMap((c) => c.segments).map((s) => [s.id, s]));
   const cssPath = `${dirname(pkg.opfPath) ? `${dirname(pkg.opfPath)}/` : ''}${STYLESHEET_NAME}`;
-  const bilingual = mode !== 'translation-only';
+  const bilingual = mode === 'bilingual' || mode === 'bilingual-translation-first';
   const base = { env, mode, targetLang: project.settings.targetLang, xmlLangOnly };
+  const hints = planWordHintExport(project, mode, xmlLangOnly);
   const sanitized = new Set<string>();
   const linked = new Set<string>();
 
@@ -60,15 +66,23 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
     const doc = parseXhtmlDocument(env, markup);
     const ctx: PlacementContext = { ...base, inline: chapter.href === pkg.nav?.path };
     let changed = false;
+    let hinted = false;
     for (const el of Array.from(doc.querySelectorAll(`[${SEGMENT_ATTR}]`))) {
-      const segment = segments.get(el.getAttribute(SEGMENT_ATTR) ?? '');
+      const id = el.getAttribute(SEGMENT_ATTR) ?? '';
+      const segment = segments.get(id);
       if (options.preview) markPreviewSegment(el, segment, isDone(segment));
       else el.removeAttribute(SEGMENT_ATTR);
-      if (!isDone(segment)) continue;
-      placeTranslation(el, segment.translationHtml, ctx);
-      changed = true;
+      // Hints go into the source text before the translation is placed; never into the table of contents.
+      const placements = hints && !ctx.inline ? hints.placements.get(id) : undefined;
+      const hintCount = hints && placements ? applyWordHints(el, placements, hints, xmlLangOnly) : 0;
+      if (hintCount > 0) hinted = true;
+      if (isDone(segment) && mode !== 'original') {
+        placeTranslation(el, segment.translationHtml, ctx);
+        changed = true;
+      }
+      if (hintCount > 0 && hints?.style === 'ruby') addClass(el, HINT_PARAGRAPH_CLASS);
     }
-    if (changed && bilingual) {
+    if ((changed && bilingual) || hinted) {
       ensureStylesheet(doc, relativeHref(chapter.href, cssPath));
       linked.add(chapter.href);
     }
@@ -82,8 +96,9 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
   if (pkg.nav && files.has(pkg.nav.path)) repairNavDocument(files, pkg.nav.path, xmlLangOnly, env);
   if (pkg.ncx && files.has(pkg.ncx.path)) updateNcx(files, pkg, project, mode, env);
   stripActiveContentFromPackage(files, renditions, sanitized, env);
-  if (bilingual) files.set(cssPath, encodeUtf8(STYLESHEET));
-  updateOpf(pkg, project, mode, bilingual ? cssPath : undefined);
+  const withCss = bilingual || linked.size > 0;
+  if (withCss) files.set(cssPath, encodeUtf8(STYLESHEET));
+  updateOpf(pkg, project, mode, withCss ? cssPath : undefined);
   for (const other of renditions.slice(1)) {
     if (other.manifest.some((m) => linked.has(m.path))) addStylesheetItem(other, cssPath);
   }
@@ -131,7 +146,7 @@ function updateOpf(pkg: PackageInfo, project: Project, mode: ExportMode, cssPath
   if (first?.parentNode) {
     const source = project.settings.sourceLang !== 'auto' ? project.settings.sourceLang : textOf(first);
     const target = project.settings.targetLang;
-    const wanted = mode === 'translation-only' ? [target] : mode === 'bilingual' ? [source, target] : [target, source];
+    const wanted = mode === 'translation-only' ? [target] : mode === 'original' ? [source] : mode === 'bilingual' ? [source, target] : [target, source];
     for (const lang of [...new Set(wanted.filter(Boolean))]) {
       const el = first.cloneNode(false) as Element;
       el.removeAttribute('id');

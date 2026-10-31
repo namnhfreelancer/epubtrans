@@ -25,6 +25,8 @@ export interface MockProviderState {
   guideRequests: number;
   /** Glossary-candidate classification requests (one per batch of candidates). */
   glossaryRequests: number;
+  /** Lemmas sent in each Word Wise gloss request, in arrival order. */
+  hintRequests: string[][];
   /** Prefix prepended to every translated segment. */
   prefix: string;
   /** Artificial latency per chat request. */
@@ -59,6 +61,11 @@ function answer(body: ChatBody, state: MockProviderState): string {
     state.guideRequests++;
     return JSON.stringify({ sections: MOCK_GUIDE.sections });
   }
+  if (system.includes('Word Wise hints')) {
+    const { items } = JSON.parse(user) as { items: { id: string; lemma: string }[] };
+    state.hintRequests.push(items.map((i) => i.lemma));
+    return JSON.stringify({ items: items.map((i) => ({ id: i.id, sense: 'main', gloss: `≈${i.lemma}` })) });
+  }
   const { segments } = JSON.parse(user) as { segments: { id: string; html?: string; draft?: string }[] };
   const review = segments.some((s) => s.draft !== undefined);
   state.segmentRequests.push({ kind: review ? 'review' : 'translate', ids: segments.map((s) => s.id) });
@@ -78,12 +85,13 @@ async function fulfill(route: Route, status: number, json?: unknown): Promise<vo
   }
 }
 
-/** Installs the fake provider on `page`: GET /models, POST /chat/completions (translate, review, guideline, glossary). */
+/** Installs the fake provider on `page`: GET /models, POST /chat/completions (translate, review, guideline, glossary, Word Wise glosses). */
 export async function installMockProvider(page: Page, opts: Partial<Pick<MockProviderState, 'delayMs' | 'prefix'>> = {}): Promise<MockProviderState> {
   const state: MockProviderState = {
     segmentRequests: [],
     guideRequests: 0,
     glossaryRequests: 0,
+    hintRequests: [],
     prefix: opts.prefix ?? '[vi] ',
     delayMs: opts.delayMs ?? 0,
     invalidIds: new Set(),

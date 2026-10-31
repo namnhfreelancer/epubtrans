@@ -8,6 +8,7 @@ import { browserDomEnv } from '../lib/dom-env';
 import { downloadBytes } from '../lib/download-file';
 import { isGuideJobRunning } from '../lib/guide-jobs';
 import { navigate, type Route } from '../lib/hash-route';
+import { isHintJobActive } from '../lib/hint-jobs';
 import { ensureProject } from '../lib/project-store';
 import { estimateRunCost, lookupRunPricing, type RunPrices, resolveRunPrices } from '../lib/run-pricing';
 import { getSampleJobState } from '../lib/sample-jobs';
@@ -65,11 +66,12 @@ export const isFailure = (value: unknown): value is ToolFailure =>
   typeof value === 'object' && value !== null && (value as { ok?: unknown }).ok === false && typeof (value as { error?: unknown }).error === 'string';
 
 /** Why the book cannot take another paid job or a segment change right now, or undefined when it can. */
-export type BusyReason = 'job-running' | 'sample-running' | 'guide-running' | 'busy-elsewhere';
+export type BusyReason = 'job-running' | 'sample-running' | 'hints-running' | 'guide-running' | 'busy-elsewhere';
 
 export async function busyReason(projectId: string, opts: { ignoreGuide?: boolean } = {}): Promise<BusyReason | undefined> {
   if (isJobActive(projectId)) return 'job-running';
   if (getSampleJobState(projectId).status === 'running') return 'sample-running';
+  if (isHintJobActive(projectId)) return 'hints-running';
   if (!opts.ignoreGuide && isGuideJobRunning(projectId)) return 'guide-running';
   if (await isJobRunningElsewhere(projectId)) return 'busy-elsewhere';
   return undefined;
@@ -78,6 +80,10 @@ export async function busyReason(projectId: string, opts: { ignoreGuide?: boolea
 const BUSY_TEXT: Record<BusyReason, { error: string; hint: string }> = {
   'job-running': { error: 'A translation run is in progress for this book.', hint: 'Wait for it (poll get_book_status) or call pause_translation first.' },
   'sample-running': { error: 'A sample translation is in progress for this book.', hint: 'Wait until it finishes, then try again.' },
+  'hints-running': {
+    error: 'Word Wise hints are being generated for this book.',
+    hint: 'Wait until the user’s hints run finishes or is cancelled, then try again.',
+  },
   'guide-running': { error: 'Guideline and glossary generation is in progress for this book.', hint: 'Wait until it finishes, then try again.' },
   'busy-elsewhere': {
     error: 'This book is being translated in another browser tab.',

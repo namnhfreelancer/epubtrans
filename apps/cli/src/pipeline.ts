@@ -12,6 +12,7 @@ import {
 import { UsageError } from './args';
 import { domEnv } from './dom-env';
 import { createGuideProgressPrinter } from './guide-progress';
+import { wordWiseExportNote } from './hint-flags';
 import type { Io } from './io';
 import { lookupEstimatePrices } from './price-lookup';
 import { countStatuses, createProgress, formatTokens, formatUsd, usageCost } from './progress';
@@ -90,6 +91,8 @@ export async function translateAndExport(opts: PipelineOptions): Promise<number>
     io.err('Every segment is already translated; exporting.\n');
   }
 
+  const note = wordWiseExportNote(project, project.settings, mode, projectPath);
+  if (note) io.err(note);
   const epub = await exportEpub(project, mode, domEnv);
   await writeFileAtomic(outPath, epub);
   const after = countStatuses(project);

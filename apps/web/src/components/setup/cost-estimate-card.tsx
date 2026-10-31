@@ -4,11 +4,11 @@ import { formatNumber, formatUsd, parseOptionalPrice } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
 import { updateSettings } from '../../lib/project-store';
 import type { ActiveProvider } from '../../lib/provider-config-store';
-import { estimateRunCost, resolveRunPrices } from '../../lib/run-pricing';
+import { estimateRunCost } from '../../lib/run-pricing';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { useJobActive } from '../../lib/translation-jobs';
 import { useCostEstimate } from '../../lib/use-cost-estimate';
-import { useModelPricing } from '../../lib/use-model-pricing';
+import { useRunPrices } from '../../lib/use-run-prices';
 import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
 import { Card, Field } from '../ui/layout-primitives';
@@ -22,9 +22,7 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
   const save = (patch: Parameters<typeof updateSettings>[1]) =>
     updateSettings(project, patch).catch((err: unknown) => pushNotice('error', t('common.saveFailed', { message: errorText(err) })));
 
-  // Automatic price: the provider's own model list (OpenRouter "Test connection") wins, else the public catalogs.
-  const lookup = useModelPricing(active.model, active.providerId);
-  const { auto, published, manual, priceInPerM, priceOutPerM } = resolveRunPrices(settings, active, lookup.status === 'found' ? lookup.pricing : undefined);
+  const { priceInPerM, priceOutPerM, auto, published, manual, lookup } = useRunPrices(settings, active);
 
   const { providerId, baseURL, model } = active;
   // The estimate walks every batch of the book, while `version` changes on every finished segment and every keystroke

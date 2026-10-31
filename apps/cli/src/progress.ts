@@ -14,8 +14,11 @@ export function usageCost(usage: TokenUsage, priceInPerM?: number, priceOutPerM?
   return (usage.input * priceInPerM + usage.output * priceOutPerM) / 1e6;
 }
 
+/** Progress of a phase: translation phases, or another label such as "hints". */
+export type PhaseProgress = Omit<TranslationProgress, 'phase'> & { phase: string };
+
 export interface Progress {
-  update(p: TranslationProgress): void;
+  update(p: PhaseProgress): void;
   /** Ends the in-place line so later output starts on a fresh row. */
   finish(): void;
 }
@@ -29,7 +32,7 @@ export function createProgress(io: Io, prices: { priceInPerM?: number; priceOutP
   let lastPlain = 0;
   let drewInPlace = false;
 
-  const line = (p: TranslationProgress): string => {
+  const line = (p: PhaseProgress): string => {
     const pct = p.total ? Math.floor((p.done / p.total) * 100) : 100;
     const cost = usageCost(p.usage, prices.priceInPerM, prices.priceOutPerM);
     const elapsed = Math.round((Date.now() - startedAt) / 1000);

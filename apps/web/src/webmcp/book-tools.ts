@@ -1,6 +1,7 @@
-import { composeGuideline, GUIDELINE_PRESETS, type ProjectSettings, splitGuideline } from '@epubtrans/core';
+import { composeGuideline, GUIDELINE_PRESETS, type ProjectSettings, splitGuideline, wordHintSettingsOf } from '@epubtrans/core';
 import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
 import { getGuideJobState, isGuideJobRunning } from '../lib/guide-jobs';
+import { getHintJobState } from '../lib/hint-jobs';
 import { normalizeLanguageTag } from '../lib/languages';
 import { updateSettings } from '../lib/project-store';
 import { getSampleJobState } from '../lib/sample-jobs';
@@ -21,7 +22,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
       name: 'get_book_status',
       title: 'Get book status',
       description:
-        'Returns one book’s settings and progress: languages, two-pass mode, segment counts, remaining work, the translation job (status, phase, progress, token usage), sample and guide generation status, glossary size, the configured provider and model, and the cost estimate of the remaining work. Poll it to follow a running translation.',
+        'Returns one book’s settings and progress: languages, two-pass mode, segment counts, remaining work, the translation job (status, phase, progress, token usage), sample and guide generation status, glossary size, Word Wise hints state (enabled, level, glossed words, job status), the configured provider and model, and the cost estimate of the remaining work. Poll it to follow a running translation.',
       inputSchema: objectSchema({ bookId: BOOK_ID }, ['bookId']),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       run: async (args, signal) => {
@@ -32,6 +33,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
         const job = getJobState(project.id);
         const sample = getSampleJobState(project.id);
         const guide = getGuideJobState(project.id);
+        const hints = wordHintSettingsOf(settings);
         const provider = currentProviderState();
         return ok({
           bookId: project.id,
@@ -59,6 +61,12 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
             ...(sample.error ? { error: untrustedText(sample.error, 160) } : {}),
           },
           guide: { status: guide.kind, ...(guide.kind === 'error' ? { error: untrustedText(guide.message, 160) } : {}) },
+          wordHints: {
+            enabled: hints.enabled,
+            level: hints.level,
+            glossedWords: project.wordHints?.entries.length ?? 0,
+            job: getHintJobState(project.id).status,
+          },
           guidelineChars: settings.guideline.length,
           glossaryEntries: settings.glossary.length,
           provider: {

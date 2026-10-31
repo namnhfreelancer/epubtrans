@@ -2,6 +2,7 @@ import { type ChatProvider, type Project, type ProjectSettings, type TokenUsage,
 import { useSyncExternalStore } from 'react';
 import { repository } from './app-services';
 import { launchWithJobLock } from './cross-tab-job-lock';
+import { isHintJobActive } from './hint-jobs';
 import { ProjectNotFoundError } from './project-repository';
 import { createJobBaseline, persistJobSegment, touchProject } from './project-store';
 
@@ -70,7 +71,7 @@ export function estimateRemainingMs(job: Pick<JobState, 'done' | 'total' | 'phas
  * any tab wins), and a persistence failure stops the run so progress is never lost silently.
  */
 export function startJob(project: Project, settings: ProjectSettings, provider: ChatProvider): Promise<StartJobResult> {
-  if (controllers.has(project.id)) return Promise.resolve('already-running');
+  if (controllers.has(project.id) || isHintJobActive(project.id)) return Promise.resolve('already-running');
   const controller = new AbortController();
   controllers.set(project.id, controller);
   const { started, settled } = launchWithJobLock(project.id, () => runJob(project, settings, provider, controller));

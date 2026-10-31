@@ -59,6 +59,63 @@ export interface ProjectSettings {
   priceInPerM?: number;
   /** USD per 1M output tokens. */
   priceOutPerM?: number;
+  /** Word Wise hints for this book; absent in projects that never configured them. */
+  wordHints?: WordHintSettings;
+}
+
+/** How a hint is written into the exported book. EPUB 2 packages always get `inline` (ruby is invalid there). */
+export type WordHintStyle = 'ruby' | 'inline';
+
+/** Per-book Word Wise options: hints are short glosses over difficult words of the ORIGINAL text. */
+export interface WordHintSettings {
+  /** Exported in the bilingual modes and in `original` (hints on the source text); never in `translation-only`. */
+  enabled: boolean;
+  /** 1 (fewest hints: only the rarest words) … 5 (most hints), mapped to word frequency ranks. */
+  level: number;
+  /** Language the glosses are written in; absent means the book's target language. */
+  glossLang?: string;
+  style: WordHintStyle;
+  /** At most this many hints per paragraph, rarest words first (0: no limit). Applied at export. */
+  maxPerParagraph: number;
+  /** Only the first N occurrences of a word sense in each chapter get a hint (0: every occurrence). Applied at export. */
+  perChapter: number;
+}
+
+/** One place where a hinted word occurs: the `nth` (0-based) occurrence of exactly `word` among the words of a segment. */
+export interface WordHintOccurrence {
+  segmentId: string;
+  word: string;
+  nth: number;
+  /** Id of the sense of the lemma used here (see `WordHintEntry.senses`). */
+  sense: string;
+  /**
+   * Frequency rank of this form (higher is rarer): export shows the occurrence only at levels whose threshold is
+   * below it. Absent in files written before per-form ranks; the entry's rank applies then.
+   */
+  rank?: number;
+}
+
+export interface WordHintSense {
+  /** Short label chosen by the model; the cache key of a gloss together with the lemma. */
+  id: string;
+  gloss: string;
+}
+
+/** Glosses of one lemma, reused for every occurrence with the same sense. */
+export interface WordHintEntry {
+  lemma: string;
+  /** Frequency rank of the rarest form of the lemma (higher is rarer); the fallback for occurrences without a rank. */
+  rank: number;
+  /** Empty when the model judged the word not worth a hint (a name, a non-word); such a lemma is never sent again. */
+  senses: WordHintSense[];
+  occurrences: WordHintOccurrence[];
+}
+
+/** Generated hints of a book. Entries are written for one language pair; another pair starts over. */
+export interface WordHints {
+  sourceLang: string;
+  glossLang: string;
+  entries: WordHintEntry[];
 }
 
 export interface Project {
@@ -74,6 +131,8 @@ export interface Project {
   sourceEpub: Uint8Array;
   /** The passages picked by the last sample translation; absent in projects that never ran one. */
   lastSample?: SampleSelection;
+  /** Generated Word Wise glosses; absent until hints were generated. */
+  wordHints?: WordHints;
 }
 
 /** A contiguous run of segments of one chapter, translated as a quality check before the full run. */
@@ -91,7 +150,8 @@ export interface SampleSelection {
 
 export type BookFormat = 'epub' | 'mobi' | 'azw3' | 'fb2';
 
-export type ExportMode = 'bilingual' | 'bilingual-translation-first' | 'translation-only';
+/** `original`: the source text only (with Word Wise hints when enabled), no translation needed. */
+export type ExportMode = 'bilingual' | 'bilingual-translation-first' | 'translation-only' | 'original';
 
 export interface ChatRequest {
   system: string;

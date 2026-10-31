@@ -14,7 +14,7 @@ interface ReaderErrorControlsProps {
     running: boolean;
     /** Untranslated work remains: the button opens the setup page (estimate + Start) instead of retrying directly. */
     resume?: { pending: number; failed: number };
-    /** Why "Retry all failed" is disabled (samples running, or a job in another tab). */
+    /** Why "Retry all failed" is disabled (samples or hints running, or a job in another tab). */
     blockedHint?: string;
     /** Another tab is translating the book: the hint is also shown as a notice. */
     busyElsewhere?: boolean;

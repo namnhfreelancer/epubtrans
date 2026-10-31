@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { loadProjectFile } from '@epubtrans/core';
 import { expectPositionals, parseArgs, UsageError } from '../args';
 import { RESUME_FLAGS } from '../flag-specs';
+import { applyWordWiseFlags } from '../hint-flags';
 import type { Io } from '../io';
 import { translateAndExport } from '../pipeline';
 import { countStatuses } from '../progress';
@@ -36,7 +37,7 @@ export async function resumeCommand(argv: string[], io: Io): Promise<number> {
   io.err(`Project "${project.title}" -> ${project.settings.targetLang}: ${c.done}/${c.total} segments translated\n`);
 
   const selection = selectProvider(flags, project.settings);
-  const settings = applyRunFlags(project.settings, flags, selection);
+  const settings = applyWordWiseFlags(applyRunFlags(project.settings, flags, selection), flags);
   if (!settings.model) throw new UsageError('This project has no model yet. Pass --model <id> (list them with: epubtrans models --provider <id>)');
   const provider = await buildProvider(selection, flags['api-key-file'], settings.model, io);
 

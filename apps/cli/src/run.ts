@@ -2,6 +2,7 @@ import { redactSecrets } from '@epubtrans/core';
 import rootPackage from '../../../package.json';
 import { UsageError } from './args';
 import { exportCommand } from './commands/export';
+import { hintsCommand } from './commands/hints';
 import { modelsCommand } from './commands/models';
 import { presetsCommand } from './commands/presets';
 import { resumeCommand } from './commands/resume';
@@ -19,6 +20,7 @@ const COMMANDS: Record<string, Command> = {
   translate: translateCommand,
   resume: resumeCommand,
   sample: sampleCommand,
+  hints: hintsCommand,
   export: exportCommand,
   models: modelsCommand,
   presets: presetsCommand,

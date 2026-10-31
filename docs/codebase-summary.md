@@ -17,24 +17,26 @@ Bun workspaces monorepo (`packages/*`, `apps/*`), TypeScript strict, Biome for l
 │   │   ├── segment/          split documents into translatable segments
 │   │   ├── translate/        batching, prompts, validation, retries, guide, cost estimate
 │   │   ├── providers/        OpenAI-compatible and Anthropic adapters, presets
-│   │   ├── export/           exportEpub (3 modes)
+│   │   ├── export/           exportEpub (4 modes), Word Wise hint markup
+│   │   ├── word-hints/       Word Wise: frequency lists, lemmatizer, candidate selection, gloss protocol and run, estimate
 │   │   ├── project/          .epubtrans save/load, default settings
 │   │   ├── lang/             language detection (franc-min)
 │   │   └── util/             zip, text encoding, paths, ids
+│   ├── data/wordfreq/        word frequency rank lists (wordfreq, CC BY-SA 4.0) for Word Wise hints
 │   ├── third-party/foliate-js/   vendored MOBI parser (MIT) with local patches
 │   └── test/                 Vitest suites and public-domain fixtures (EPUB, MOBI, AZW3, FB2)
 ├── apps/web/                 @epubtrans/web: Vite + React 19 + Tailwind v4 + Dexie PWA, Playwright e2e
 ├── apps/cli/                 @epubtrans/cli: Bun CLI
 │   ├── src/main.ts           entry (signals, exit code)
 │   ├── src/run.ts            command dispatch, usage errors
-│   ├── src/commands/         translate, resume, export, models, presets
+│   ├── src/commands/         translate, resume, sample, hints, export, models, presets
 │   ├── src/pipeline.ts       estimate, confirm, translate with saves, export
 │   ├── src/args.ts           argv parser (rejects keys on the command line)
 │   ├── src/api-key.ts        key resolution
 │   ├── src/project-store.ts  atomic writes, throttled project saver
 │   ├── src/dom-env.ts        linkedom DomEnv + XMLSerializer shim
 │   └── test/                 argv, key resolution, translate/resume against a mock server
-├── scripts/                  install_unix.sh, install_windows.ps1, build-cli.ts, smoke-cli-binary.ts
+├── scripts/                  install_unix.sh, install_windows.ps1, build-cli.ts, smoke-cli-binary.ts, generate-word-frequency-lists.ts
 ├── .github/workflows/        ci.yml, pages.yml, release.yml
 ├── release-please-config.json, .release-please-manifest.json
 └── docs/
@@ -51,7 +53,8 @@ Bun workspaces monorepo (`packages/*`, `apps/*`), TypeScript strict, Biome for l
 | `bun run test` | Test script of every workspace (Vitest for core, `bun test` for cli) |
 | `bun run build` | Core type check, CLI host binary into `dist/`, web production build |
 | `bun scripts/build-cli.ts --all` | Binaries for all five release targets plus `dist/SHA256SUMS` |
-| `bun scripts/smoke-cli-binary.ts` | Runs the compiled binary: `--version`, `presets`, `export` in three modes |
+| `bun scripts/smoke-cli-binary.ts` | Runs the compiled binary: `--version`, `presets`, `export` in every mode and with hints, `hints` (embedded frequency list) |
+| `bun scripts/generate-word-frequency-lists.ts` | Regenerates `packages/core/data/wordfreq/*.txt` from wordfreq (network; not run in CI) |
 
 `bun run --filter '*' <script>` skips workspaces that do not define the script.
 

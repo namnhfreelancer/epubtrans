@@ -1,5 +1,15 @@
-import { EXPORT_MODES, type ExportMode, exportEpub, type Project, retranslateSegment } from '@epubtrans/core';
-import { safeFileName } from '../lib/download-file';
+import {
+  EXPORT_MODES,
+  exportEpub,
+  HINT_EXPORT_MODES,
+  MAX_HINTS_PER_CHAPTER_LIMIT,
+  MAX_HINTS_PER_PARAGRAPH_LIMIT,
+  type Project,
+  retranslateSegment,
+  WORD_HINT_STYLES,
+  wordHintSettingsOf,
+} from '@epubtrans/core';
+import { exportFileName } from '../lib/download-file';
 import { buildErrorIndex, locateSegment } from '../lib/error-index';
 import { persistJobSegment, touchProject } from '../lib/project-store';
 import { countSegments } from '../lib/segment-counts';
@@ -11,9 +21,6 @@ import { BOOK_ID, CANCELLED, objectSchema, type ToolSpec } from './tool-definiti
 import { clip, fail, fitList, ok, untrustedText } from './tool-result';
 
 const MAX_ERRORS_PER_PAGE = 20;
-
-/** Same file names as the Export tab; modes added to core later fall back to their own id. */
-const exportFileSuffix = (mode: ExportMode): string => (mode === 'translation-only' ? 'translated' : mode);
 
 /** Segments whose retranslation is in flight from a tool call, so the same segment is not sent twice at once. */
 const retranslating = new Set<string>();
@@ -123,29 +130,63 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
     {
       name: 'export_epub',
       title: 'Export the EPUB',
-      description:
-        'Builds the translated EPUB of a book in the chosen layout and downloads it in the browser. Untranslated segments keep their source text. Layouts include bilingual (source, then translation), bilingual-translation-first and translation-only (no source text).',
-      inputSchema: objectSchema({ bookId: BOOK_ID, mode: { type: 'string', enum: [...EXPORT_MODES], description: 'Layout of the exported book.' } }, [
-        'bookId',
-        'mode',
-      ]),
+      description: `Builds the EPUB of a book in the chosen layout and downloads it in the browser. Layouts: ${EXPORT_MODES.join(', ')}. Untranslated segments keep their source text; translation-only has no source text; original keeps only the source text and needs no translation. Word Wise hints the user generated are included in ${HINT_EXPORT_MODES.join(', ')}; the hint options override the book's saved ones for this export only.`,
+      inputSchema: objectSchema(
+        {
+          bookId: BOOK_ID,
+          mode: { type: 'string', enum: [...EXPORT_MODES], description: 'Layout of the exported book.' },
+          hintStyle: { type: 'string', enum: [...WORD_HINT_STYLES], description: 'ruby: gloss above the word; inline: "word (gloss)".' },
+          maxHintsPerParagraph: {
+            type: 'integer',
+            minimum: 0,
+            maximum: MAX_HINTS_PER_PARAGRAPH_LIMIT,
+            description: 'At most this many hints per paragraph; 0 = no limit.',
+          },
+          hintsPerChapter: {
+            type: 'integer',
+            minimum: 0,
+            maximum: MAX_HINTS_PER_CHAPTER_LIMIT,
+            description: 'Hint a word sense only its first N occurrences per chapter; 0 = every occurrence.',
+          },
+        },
+        ['bookId', 'mode'],
+      ),
       annotations: { untrustedContentHint: true },
       run: async (args) => {
-        const project = await findBook(args.string('bookId'));
-        if (isFailure(project)) return project;
+        const found = await findBook(args.string('bookId'));
+        if (isFailure(found)) return found;
         const mode = EXPORT_MODES.find((m) => m === args.string('mode'));
         if (!mode) return fail(`Unknown mode. Use one of: ${EXPORT_MODES.join(', ')}.`);
+        // Hint options given to the call apply to this export only: the book's saved options are not changed.
+        const saved = wordHintSettingsOf(found.settings);
+        const style = WORD_HINT_STYLES.find((st) => st === args.optString('hintStyle'));
+        const maxPerParagraph = args.optInt('maxHintsPerParagraph');
+        const perChapter = args.optInt('hintsPerChapter');
+        const overridden = style !== undefined || maxPerParagraph !== undefined || perChapter !== undefined;
+        const hintOptions = {
+          ...saved,
+          ...(style ? { style } : {}),
+          ...(maxPerParagraph !== undefined ? { maxPerParagraph } : {}),
+          ...(perChapter !== undefined ? { perChapter } : {}),
+        };
+        const project: Project = overridden ? { ...found, settings: { ...found.settings, wordHints: hintOptions } } : found;
         let bytes: Uint8Array;
         try {
           bytes = await exportEpub(project, mode, ctx.domEnv());
         } catch (err) {
           return fail(`Export failed: ${clip(err instanceof Error ? err.message : String(err), 300)}`);
         }
-        const fileName = `${safeFileName(project.title)}.${project.settings.targetLang}.${exportFileSuffix(mode)}.epub`;
+        const fileName = exportFileName(project, mode);
         ctx.navigate({ name: 'book', id: project.id, tab: 'export' });
         ctx.download(bytes, fileName, 'application/epub+zip');
         const counts = countSegments(project);
-        return ok({ fileName: untrustedText(fileName, 160), bytes: bytes.byteLength, untranslated: counts.pending + counts.error });
+        const glossed = project.wordHints?.entries.length ?? 0;
+        return ok({
+          fileName: untrustedText(fileName, 160),
+          bytes: bytes.byteLength,
+          untranslated: counts.pending + counts.error,
+          hints: { included: hintOptions.enabled && glossed > 0 && HINT_EXPORT_MODES.includes(mode), enabled: hintOptions.enabled, glossedWords: glossed },
+        });
       },
     },
   ];

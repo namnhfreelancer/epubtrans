@@ -1,8 +1,20 @@
 import { strFromU8, strToU8 } from 'fflate';
 import { isGlossaryTermType } from '../glossary/glossary-entry';
-import type { Chapter, GlossaryEntry, Project, ProjectSettings, SampleSelection, Segment, SegmentStatus } from '../types';
+import type {
+  Chapter,
+  GlossaryEntry,
+  Project,
+  ProjectSettings,
+  SampleSelection,
+  Segment,
+  SegmentStatus,
+  WordHintEntry,
+  WordHintSettings,
+  WordHints,
+} from '../types';
 import { redactSecrets } from '../util/redact-secrets';
 import { readZip, writeZip } from '../util/zip-archive';
+import { clampHintLevel, defaultWordHintSettings, MAX_HINTS_PER_CHAPTER_LIMIT, MAX_HINTS_PER_PARAGRAPH_LIMIT } from '../word-hints/hint-levels';
 
 /**
  * `.epubtrans` project file: a zip with `project.json` (schema-versioned state without the
@@ -73,6 +85,7 @@ export function validateProjectState(input: unknown): Omit<Project, 'sourceEpub'
   if (p.schemaVersion !== 1) throw new Error(`Unsupported project schema version: ${String(p.schemaVersion)}`);
   const author = optStr(p, 'author', 'project');
   const lastSample = p.lastSample === undefined ? undefined : validateSample(obj(p.lastSample, 'project.lastSample'));
+  const wordHints = p.wordHints === undefined || p.wordHints === null ? undefined : validateWordHints(obj(p.wordHints, 'project.wordHints'));
   return {
     schemaVersion: 1,
     id: str(p, 'id', 'project'),
@@ -83,6 +96,7 @@ export function validateProjectState(input: unknown): Omit<Project, 'sourceEpub'
     settings: validateSettings(obj(p.settings, 'project.settings')),
     chapters: arr(p, 'chapters', 'project').map((c, i) => validateChapter(obj(c, `chapters[${i}]`), `chapters[${i}]`)),
     ...(lastSample !== undefined ? { lastSample } : {}),
+    ...(wordHints !== undefined ? { wordHints } : {}),
   };
 }
 
@@ -109,6 +123,7 @@ function validateSettings(s: Json): ProjectSettings {
   const concurrency = optNum(s, 'concurrency', path) ?? fail(`${path}.concurrency`, 'a number');
   const priceInPerM = optNum(s, 'priceInPerM', path);
   const priceOutPerM = optNum(s, 'priceOutPerM', path);
+  const wordHints = s.wordHints === undefined || s.wordHints === null ? undefined : validateWordHintSettings(obj(s.wordHints, `${path}.wordHints`));
   return {
     sourceLang: str(s, 'sourceLang', path),
     targetLang: str(s, 'targetLang', path),
@@ -121,6 +136,69 @@ function validateSettings(s: Json): ProjectSettings {
     glossary: arr(s, 'glossary', path).map((g, i) => validateGlossaryEntry(obj(g, `${path}.glossary[${i}]`), `${path}.glossary[${i}]`)),
     ...(priceInPerM !== undefined ? { priceInPerM } : {}),
     ...(priceOutPerM !== undefined ? { priceOutPerM } : {}),
+    ...(wordHints !== undefined ? { wordHints } : {}),
+  };
+}
+
+const countLimit = (v: number | undefined, fallback: number, max: number) => (v === undefined ? fallback : Math.min(max, Math.max(0, Math.round(v))));
+
+/** Hint options are clamped to their ranges (an unknown style becomes ruby), so a slightly off file still loads. */
+function validateWordHintSettings(h: Json): WordHintSettings {
+  const path = 'settings.wordHints';
+  const defaults = defaultWordHintSettings();
+  if (h.enabled !== undefined && typeof h.enabled !== 'boolean') fail(`${path}.enabled`, 'a boolean');
+  const level = optNum(h, 'level', path);
+  const glossLang = optStr(h, 'glossLang', path)?.trim();
+  return {
+    enabled: h.enabled === true,
+    level: level === undefined ? defaults.level : clampHintLevel(level),
+    ...(glossLang ? { glossLang } : {}),
+    style: h.style === 'inline' ? 'inline' : 'ruby',
+    maxPerParagraph: countLimit(optNum(h, 'maxPerParagraph', path), defaults.maxPerParagraph, MAX_HINTS_PER_PARAGRAPH_LIMIT),
+    perChapter: countLimit(optNum(h, 'perChapter', path), defaults.perChapter, MAX_HINTS_PER_CHAPTER_LIMIT),
+  };
+}
+
+/** Longest gloss or label accepted from a file: generation caps them far lower, this only bounds untrusted input. */
+const MAX_HINT_TEXT = 200;
+
+function validateWordHints(h: Json): WordHints {
+  const path = 'wordHints';
+  return {
+    sourceLang: str(h, 'sourceLang', path),
+    glossLang: str(h, 'glossLang', path),
+    entries: arr(h, 'entries', path).map((raw, i) => validateWordHintEntry(obj(raw, `${path}.entries[${i}]`), `${path}.entries[${i}]`)),
+  };
+}
+
+function boundedStr(o: Json, key: string, path: string): string {
+  const v = str(o, key, path);
+  return v.length <= MAX_HINT_TEXT ? v : fail(`${path}.${key}`, `at most ${MAX_HINT_TEXT} characters`);
+}
+
+/** Every occurrence must name a sense of its entry; a gloss is plain text and is only ever written as a text node. */
+function validateWordHintEntry(e: Json, path: string): WordHintEntry {
+  const rank = optNum(e, 'rank', path) ?? fail(`${path}.rank`, 'a number');
+  const senses = arr(e, 'senses', path).map((raw, i) => {
+    const s = obj(raw, `${path}.senses[${i}]`);
+    return { id: boundedStr(s, 'id', `${path}.senses[${i}]`), gloss: boundedStr(s, 'gloss', `${path}.senses[${i}]`) };
+  });
+  const ids = new Set(senses.map((s) => s.id));
+  return {
+    lemma: boundedStr(e, 'lemma', path),
+    rank,
+    senses,
+    occurrences: arr(e, 'occurrences', path).map((raw, i) => {
+      const op = `${path}.occurrences[${i}]`;
+      const o = obj(raw, op);
+      const nth = optNum(o, 'nth', op);
+      if (nth === undefined || nth < 0 || !Number.isInteger(nth)) fail(`${op}.nth`, 'a non-negative integer');
+      const sense = str(o, 'sense', op);
+      if (!ids.has(sense)) fail(`${op}.sense`, 'the id of a sense of its entry');
+      // Optional: absent in files written before per-form ranks (the entry's rank applies then).
+      const occRank = optNum(o, 'rank', op);
+      return { segmentId: str(o, 'segmentId', op), word: boundedStr(o, 'word', op), nth, sense, ...(occRank !== undefined ? { rank: occRank } : {}) };
+    }),
   };
 }
 

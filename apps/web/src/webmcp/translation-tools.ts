@@ -139,7 +139,7 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
           await refreshJobLocks();
           return busyFailure('busy-elsewhere');
         }
-        if (started === 'already-running') return busyFailure(isJobActive(project.id) ? 'job-running' : 'sample-running');
+        if (started === 'already-running') return busyFailure((await busyReason(project.id)) ?? 'sample-running');
         const onAbort = () => cancelSampleJob(project.id);
         signal?.addEventListener('abort', onAbort, { once: true });
         const final = await waitForSampleJob(project.id).finally(() => signal?.removeEventListener('abort', onAbort));

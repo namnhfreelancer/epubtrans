@@ -1,4 +1,13 @@
-import type { Project, ProjectSettings, SampleSelection, Segment } from '@epubtrans/core';
+import {
+  type Project,
+  type ProjectSettings,
+  type SampleSelection,
+  type Segment,
+  type WordHintEntry,
+  type WordHintSettings,
+  type WordHints,
+  wordHintSettingsOf,
+} from '@epubtrans/core';
 import { useEffect, useSyncExternalStore } from 'react';
 import { repository } from './app-services';
 import { broadcast, closeProjectChannel, onCrossTabMessage, watchProjectChannel } from './cross-tab-channel';
@@ -114,6 +123,11 @@ export function updateSettings(project: Project, patch: Partial<ProjectSettings>
   return enqueueWrite(project.id, () => repository.saveSettings(project.id, snapshot));
 }
 
+/** Applies a patch to the book's Word Wise options (defaults filled in) and persists them with the settings. */
+export function updateHintSettings(project: Project, patch: Partial<WordHintSettings>): Promise<void> {
+  return updateSettings(project, { wordHints: { ...wordHintSettingsOf(project.settings), ...patch } });
+}
+
 const findSegment = (project: Project, segmentId: string): Segment | undefined => {
   for (const chapter of project.chapters) {
     const found = chapter.segments.find((s) => s.id === segmentId);
@@ -202,3 +216,41 @@ export function persistLastSample(projectId: string, selection: SampleSelection)
   const snapshot: SampleSelection = { seed: selection.seed, passages: selection.passages.map((p) => ({ ...p, segmentIds: [...p.segmentIds] })) };
   return enqueueWrite(projectId, () => repository.saveLastSample(projectId, snapshot));
 }
+
+/** Records the language pair of a hints run (deleting the entries of another pair when `clear`). */
+export function persistHintsStart(projectId: string, hints: WordHints, clear: boolean): Promise<void> {
+  const pair = { sourceLang: hints.sourceLang, glossLang: hints.glossLang };
+  return enqueueWrite(projectId, async () => {
+    await repository.startHints(projectId, pair, clear);
+    broadcast(projectId, { type: 'hints' });
+  });
+}
+
+/**
+ * Persists one lemma finished by a hints run for `pair` (a copy: the run keeps mutating the live project), only while
+ * the stored hints still belong to that pair (compare-and-set; rejects otherwise, which stops the run). Other tabs are
+ * told once the run ends (`announceHints`), not per lemma: each message makes them re-read every entry.
+ */
+export function persistHintEntry(projectId: string, pair: Pick<WordHints, 'sourceLang' | 'glossLang'>, entry: WordHintEntry): Promise<void> {
+  const snapshot = structuredClone(entry);
+  const expected = { sourceLang: pair.sourceLang, glossLang: pair.glossLang };
+  return enqueueWrite(projectId, () => repository.saveHintEntry(projectId, expected, snapshot));
+}
+
+/** Tells other tabs that the stored hints changed, after this tab's pending writes. */
+export function announceHints(projectId: string): Promise<void> {
+  return enqueueWrite(projectId, async () => broadcast(projectId, { type: 'hints' }));
+}
+
+/** Another tab added or replaced hints of a project open here: re-read them (queued behind this tab's writes). */
+onCrossTabMessage((projectId, message) => {
+  if (message.type !== 'hints') return;
+  const project = entries.get(projectId)?.project;
+  if (!project) return;
+  enqueueWrite(projectId, async () => {
+    const hints = await repository.loadHints(projectId);
+    if (hints) project.wordHints = hints;
+    else delete project.wordHints;
+    touchProject(projectId);
+  }).catch((err: unknown) => console.warn('epubtrans: could not refresh hints changed in another tab', err));
+});

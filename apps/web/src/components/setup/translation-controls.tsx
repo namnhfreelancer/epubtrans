@@ -2,6 +2,7 @@ import type { Project } from '@epubtrans/core';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { formatDuration, formatNumber } from '../../lib/format';
+import { useHintsRunning } from '../../lib/hint-jobs';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { countSegments, remainingWork } from '../../lib/segment-counts';
 import { estimateRemainingMs, pauseJob, useJob } from '../../lib/translation-jobs';
@@ -17,6 +18,7 @@ export function TranslationControls({ project, version, provider }: { project: P
   const [now, setNow] = useState(Date.now());
   const running = job.status === 'running' || job.status === 'pausing';
   const sampleRunning = useSampleRunning(project.id);
+  const hintsRunning = useHintsRunning(project.id);
   // Only one tab may translate a book at a time (cross-tab job lock).
   const { start, error: startError, busyElsewhere } = useStartTranslation(project, provider);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
@@ -46,8 +48,8 @@ export function TranslationControls({ project, version, provider }: { project: P
               variant="primary"
               data-testid="start-translation"
               onClick={() => void start()}
-              disabled={sampleRunning || busyElsewhere}
-              title={sampleRunning ? t('sample.blocksRun') : busyElsewhere ? t('run.busyElsewhere') : undefined}
+              disabled={sampleRunning || hintsRunning || busyElsewhere}
+              title={sampleRunning ? t('sample.blocksRun') : hintsRunning ? t('hints.blocksRun') : busyElsewhere ? t('run.busyElsewhere') : undefined}
             >
               {label}
             </Button>

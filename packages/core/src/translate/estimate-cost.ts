@@ -164,7 +164,12 @@ export function estimateCost(project: Project, settings: ProjectSettings, opts: 
       outputTokens += draft + batch.length * ANSWER_OVERHEAD;
     }
   }
-  const { priceInPerM: pin, priceOutPerM: pout } = settings;
+  return priceEstimate(inputTokens, outputTokens, settings);
+}
+
+/** A token estimate with its USD cost when both prices are set (rounded to 1/100 cent). */
+export function priceEstimate(inputTokens: number, outputTokens: number, prices: Pick<ProjectSettings, 'priceInPerM' | 'priceOutPerM'>): CostEstimate {
+  const { priceInPerM: pin, priceOutPerM: pout } = prices;
   const priced = typeof pin === 'number' && typeof pout === 'number' && pin >= 0 && pout >= 0;
   return {
     inputTokens,
