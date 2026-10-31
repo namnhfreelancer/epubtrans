@@ -6,6 +6,7 @@ import { Alert } from '../components/ui/layout-primitives';
 import { useI18n } from '../i18n/i18n-context';
 import { apiKeys } from '../lib/api-key-store';
 import { repository } from '../lib/app-services';
+import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
 import { downloadBytes, safeFileName } from '../lib/download-file';
 import { useExternalStore } from '../lib/external-store';
 import { BookImportError, isProjectFileName, readProjectFromFile } from '../lib/import-book-file';
@@ -32,7 +33,16 @@ export function LibraryPage() {
       try {
         const project = await readProjectFromFile(file);
         if (isProjectFileName(file.name) && (await repository.exists(project.id))) {
+          if (await isJobRunningElsewhere(project.id)) {
+            pushNotice('error', t('library.busyElsewhere'));
+            continue;
+          }
           if (!window.confirm(t('library.replaceConfirm', { title: project.title }))) continue;
+          // A job may have started in another tab while the dialog was open.
+          if (await isJobRunningElsewhere(project.id)) {
+            pushNotice('error', t('library.busyElsewhere'));
+            continue;
+          }
           await discardJob(project.id);
         }
         await addProject(project);
@@ -56,8 +66,12 @@ export function LibraryPage() {
   };
 
   const deleteBook = async (book: ProjectSummary) => {
-    if (!window.confirm(t('library.deleteConfirm', { title: book.title }))) return;
     try {
+      // The card disables Delete from a polled snapshot; re-check at click time.
+      if (await isJobRunningElsewhere(book.id)) return pushNotice('error', t('library.busyElsewhere'));
+      if (!window.confirm(t('library.deleteConfirm', { title: book.title }))) return;
+      // A job may have started in another tab while the dialog was open.
+      if (await isJobRunningElsewhere(book.id)) return pushNotice('error', t('library.busyElsewhere'));
       await discardJob(book.id);
       await removeProject(book.id);
       pushNotice('info', t('library.deleted', { title: book.title }));

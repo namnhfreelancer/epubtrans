@@ -1,10 +1,12 @@
 import { exportDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
-import { byLocalName, CDATA_SECTION_NODE, ELEMENT_NODE, isParserError, nameOf, PROCESSING_INSTRUCTION_NODE } from '../dom/xml-dom-helpers';
-import { isEpub2Package, type PackageInfo, readText } from '../epub/package-document';
+import { byLocalName, CDATA_SECTION_NODE, COMMENT_NODE, ELEMENT_NODE, isParserError, nameOf, PROCESSING_INSTRUCTION_NODE } from '../dom/xml-dom-helpers';
+import { isEpub2Package, type PackageInfo, readEncryptedPaths, readText } from '../epub/package-document';
 import type { DomEnv } from '../types';
-import { normalizeMediaType } from '../util/media-type';
 import { encodeUtf8 } from '../util/text-encoding';
 import type { FileMap } from '../util/zip-archive';
+import { isActiveAttribute } from './active-attributes';
+import { isNonMarkupPath, type MarkupKind, markupKindOf, sniffMarkupKind, startsWithMarkup } from './markup-file-kind';
+import { cssStylesheetInstructions, hasStylesheetInstruction } from './xml-prolog';
 
 /**
  * Defense in depth for exported books: neither model output nor the source book may leave a
@@ -24,48 +26,6 @@ const REMOVED_ELEMENTS = new Set(['script', 'template', 'iframe', 'frame', 'fram
 const UNWRAPPED_ELEMENT = 'object';
 /** Children of `<object>` that only configure the embedded resource. */
 const OBJECT_PARAM = 'param';
-
-/** Attributes whose whole value is a URL (compared by un-prefixed local name, so `xlink:href` counts as `href`). */
-const URL_ATTRS = new Set([
-  'href',
-  'src',
-  'action',
-  'formaction',
-  'data',
-  'poster',
-  'background',
-  'codebase',
-  'cite',
-  'longdesc',
-  'usemap',
-  'manifest',
-  'classid',
-  'archive',
-  'lowsrc',
-  'dynsrc',
-  'icon',
-  'profile',
-]);
-/** Attributes that can embed a URL anywhere in their value (CSS, meta refresh, URL lists, SVG animation). */
-const EMBEDDED_URL_ATTRS = new Set(['style', 'content', 'srcset', 'ping', 'values', 'to', 'from', 'by']);
-const SCRIPT_URL = /(?:javascript|vbscript):|data:(?:text\/html|application\/xhtml\+xml)/;
-const SCRIPT_URL_PREFIX = new RegExp(`^(?:${SCRIPT_URL.source})`);
-
-/** Browsers ignore ASCII whitespace and control characters inside a URL scheme. */
-const normalize = (value: string) =>
-  Array.from(value)
-    .filter((c) => c.charCodeAt(0) > 0x20 && c.charCodeAt(0) !== 0x7f)
-    .join('')
-    .toLowerCase();
-
-function isActiveAttribute(attrName: string, value: string): boolean {
-  const name = attrName.toLowerCase();
-  if (name.startsWith('xmlns')) return false;
-  const local = name.slice(name.indexOf(':') + 1);
-  if (local.startsWith('on') || local === 'srcdoc') return true;
-  if (URL_ATTRS.has(local)) return SCRIPT_URL_PREFIX.test(normalize(value));
-  return EMBEDDED_URL_ATTRS.has(local) && SCRIPT_URL.test(normalize(value));
-}
 
 /**
  * Strips active content from a document in place; returns true when anything was removed.
@@ -112,17 +72,21 @@ function unwrapObject(el: Element): void {
 }
 
 /**
- * Processing instructions and CDATA sections are inert in XML, but a browser that parses the
- * serialized file as HTML (an `.html` file served over HTTP) reads `<?` and `<![CDATA[` as bogus
- * comments ending at the first `>`, so markup hidden inside them would come alive. Processing
- * instructions inside the document element are removed, CDATA sections become equivalent text
- * (serialized escaped). Neither changes the XML meaning, so neither counts as a removal: the
- * prolog of a re-serialized document is never written, and a file left as is stays XML-parsed.
+ * Processing instructions, CDATA sections and comments are inert in XML, but a browser that parses
+ * the serialized file as HTML (an `.html` file served over HTTP) reads `<?` and `<![CDATA[` as
+ * bogus comments ending at the first `>`, and ends a raw-text element (`<style>`, `<title>`,
+ * `<noscript>`, `<textarea>`, `<xmp>`, `<noembed>`) at its end tag even inside `<!-- -->`, so
+ * markup hidden inside them would come alive. Processing instructions and comments inside the
+ * document element are removed, CDATA sections become equivalent text (serialized escaped). None
+ * changes the XML meaning, so none counts as a removal: the prolog of a re-serialized document is
+ * never written (except validated CSS stylesheet instructions). A file left as is has an XML
+ * extension or media type, so it stays XML-parsed; a file recognized as markup by content only is
+ * always rewritten (`sanitizeMarkupFile`).
  */
 function neutralizeXmlOnlySyntax(doc: Document, parent: Node): void {
   for (let node = parent.firstChild; node; ) {
     const next = node.nextSibling;
-    if (node.nodeType === PROCESSING_INSTRUCTION_NODE) parent.removeChild(node);
+    if (node.nodeType === PROCESSING_INSTRUCTION_NODE || node.nodeType === COMMENT_NODE) parent.removeChild(node);
     else if (node.nodeType === CDATA_SECTION_NODE) parent.replaceChild(doc.createTextNode((node as CDATASection).data), node);
     else if (node.nodeType === ELEMENT_NODE) neutralizeXmlOnlySyntax(doc, node);
     node = next;
@@ -141,60 +105,40 @@ export function unmarkScripted(pkg: PackageInfo, path: string, doc: Document): v
   else el.removeAttribute('properties');
 }
 
-type MarkupKind = 'xhtml' | 'svg' | 'xml';
-
 /** Stand-ins for files that are not well-formed: browsers run scripts that precede the first XML error. */
 const EMPTY_SVG = '<svg xmlns="http://www.w3.org/2000/svg"/>';
 const EMPTY_XML = '<removed/>';
 
-/** Extensions a browser parses as HTML when the file is served over HTTP. */
-const HTML_PARSED_PATH = /\.s?html?$/i;
-
-/**
- * How a reading system or browser may interpret a package file. Files a browser parses as HTML
- * by extension are always XHTML (so they are rebuilt), whatever their declared media type;
- * otherwise the manifest media type (parameters ignored) decides, else the extension.
- */
-export function markupKindOf(path: string, mediaType = ''): MarkupKind | undefined {
-  const type = normalizeMediaType(mediaType);
-  if (HTML_PARSED_PATH.test(path) || type === 'application/xhtml+xml' || type === 'text/html') return 'xhtml';
-  if (type === 'image/svg+xml') return 'svg';
-  if (/[/+]xml$/.test(type)) return 'xml';
-  if (/\.xht(?:ml)?$/i.test(path)) return 'xhtml';
-  if (/\.svg$/i.test(path)) return 'svg';
-  if (/\.xml$/i.test(path)) return 'xml';
-  return undefined;
-}
-
-const XML_STYLESHEET_PI = /<\?xml-stylesheet\b([\s\S]*?)\?>/gi;
-const PSEUDO_ATTR_TYPE = /(?:^|\s)type\s*=\s*(["'])(.*?)\1/i;
-
-/**
- * True when the markup has an `xml-stylesheet` processing instruction that is not plain CSS:
- * browsers apply XSLT (`text/xsl`, `application/xslt+xml`, `text/xml`, ...) stylesheets, whose
- * output may contain scripts. Detected in the text because some DOMs (linkedom) drop the prolog's
- * processing instructions while parsing.
- */
-export function hasXslStylesheet(markup: string): boolean {
-  for (const [, data = ''] of markup.matchAll(XML_STYLESHEET_PI)) {
-    const type = normalizeMediaType(PSEUDO_ATTR_TYPE.exec(data)?.[2] ?? '');
-    if (type !== '' && type !== 'text/css') return true;
-  }
-  return false;
+/** How `sanitizeMarkupFile` treats one file. */
+export interface SanitizeMarkupOptions {
+  /** Recognized as markup by content only (always rewritten). */
+  byContent?: boolean;
+  /** Belongs to an EPUB 2 package: XHTML is written without the HTML5 doctype (`exportDoctype`). */
+  epub2?: boolean;
 }
 
 /**
  * Sanitizes one markup file and returns its new text, or undefined when it can stay as is.
  * XHTML is always rebuilt (markup that is not well-formed is re-parsed as HTML and written as
- * XHTML); SVG and other XML that is not well-formed is replaced by an empty stand-in. Rewritten
- * files lose their prolog, which drops XSL `xml-stylesheet` instructions; a file that has one is
- * always rewritten.
+ * XHTML); SVG and other XML that is not well-formed is replaced by an empty stand-in. A file with
+ * any `xml-stylesheet` instruction is always rewritten, keeping only validated CSS instructions:
+ * the rest of the prolog is dropped, and with it XSL stylesheets. A file recognized as markup by
+ * content only (`byContent`) is always rewritten too: it may be served without a media type and
+ * sniffed as HTML, and only a re-serialized document is sure to carry no comment, processing
+ * instruction, CDATA section or doctype an HTML parser would misread.
  */
-export function sanitizeMarkupFile(env: DomEnv, kind: MarkupKind, markup: string, epub2 = false): { text: string; doc: Document } | undefined {
+export function sanitizeMarkupFile(
+  env: DomEnv,
+  kind: MarkupKind,
+  markup: string,
+  options: SanitizeMarkupOptions = {},
+): { text: string; doc: Document } | undefined {
+  const { byContent = false, epub2 = false } = options;
+  const stylesheets = cssStylesheetInstructions(markup);
   if (kind === 'xhtml') {
     const doc = parseXhtmlDocument(env, markup);
     stripActiveContent(doc);
-    return { text: serializeXhtmlDocument(env, doc, exportDoctype(markup, epub2)), doc };
+    return { text: serializeXhtmlDocument(env, doc, exportDoctype(markup, epub2), stylesheets), doc };
   }
   const mime = kind === 'svg' ? 'image/svg+xml' : 'application/xml';
   const parse = (text: string) => new env.DOMParser().parseFromString(text, mime);
@@ -206,24 +150,45 @@ export function sanitizeMarkupFile(env: DomEnv, kind: MarkupKind, markup: string
   if (isParserError(doc)) return standIn();
   const stripped = stripActiveContent(doc);
   if (!doc.documentElement) return standIn(); // the root element itself was active content
-  return stripped || hasXslStylesheet(markup) ? { text: serializeXmlDocument(env, doc), doc } : undefined;
+  return stripped || byContent || hasStylesheetInstruction(markup) ? { text: serializeXmlDocument(env, doc, stylesheets), doc } : undefined;
 }
 
 /**
- * Sanitizes every markup file of the package that the export did not rewrite itself (`done`):
- * manifest XHTML/SVG items such as covers and image pages, other XML items, and markup files under
- * `META-INF/`. Run after `prunePackageFiles`, so no unreferenced file is left. `mimetype` and the
- * OPF (rewritten from `pkg`) are skipped.
+ * Sanitizes every file of the package that the export does not write itself (`done` and the
+ * package documents): manifest XHTML/SVG items such as covers and image pages, other XML items,
+ * files under `META-INF/`, and any other file whose content starts with markup (`<`), whatever
+ * its declared media type. Content is not checked for resources META-INF/encryption.xml lists
+ * (obfuscated fonts are opaque bytes) or whose extension marks them as non-markup
+ * (`isNonMarkupPath`: CSS, scripts, images, fonts, media, ...); unknown extensions are checked.
+ * Run after `prunePackageFiles`, so no unreferenced file is left. `mimetype` is skipped.
+ * `renditions` lists the primary package first; its media types win for files several renditions
+ * share.
  */
-export function stripActiveContentFromPackage(files: FileMap, pkg: PackageInfo, done: Set<string>, env: DomEnv): void {
-  const mediaTypes = new Map(pkg.manifest.map((m) => [m.path, m.mediaType]));
-  for (const path of Array.from(files.keys())) {
-    if (done.has(path) || path === 'mimetype' || path === pkg.opfPath) continue;
-    const kind = markupKindOf(path, mediaTypes.get(path));
-    if (!kind) continue;
-    const result = sanitizeMarkupFile(env, kind, readText(files, path), isEpub2Package(pkg));
+export function stripActiveContentFromPackage(files: FileMap, renditions: PackageInfo[], done: Set<string>, env: DomEnv): void {
+  const packageDocs = new Set(renditions.map((r) => r.opfPath));
+  const mediaTypes = new Map<string, string>();
+  const epub2Paths = new Map<string, boolean>();
+  for (const rendition of renditions) {
+    const epub2 = isEpub2Package(rendition);
+    for (const item of rendition.manifest) {
+      if (mediaTypes.has(item.path)) continue;
+      mediaTypes.set(item.path, item.mediaType);
+      epub2Paths.set(item.path, epub2);
+    }
+  }
+  const primaryEpub2 = renditions[0] ? isEpub2Package(renditions[0]) : false;
+  const encrypted = readEncryptedPaths(files, env);
+  for (const [path, data] of Array.from(files)) {
+    if (done.has(path) || path === 'mimetype' || packageDocs.has(path)) continue;
+    const declared = markupKindOf(path, mediaTypes.get(path));
+    if (!declared && (encrypted.has(path) || isNonMarkupPath(path) || !startsWithMarkup(data))) continue;
+    const markup = readText(files, path);
+    const epub2 = epub2Paths.get(path) ?? primaryEpub2;
+    const result = declared
+      ? sanitizeMarkupFile(env, declared, markup, { epub2 })
+      : sanitizeMarkupFile(env, sniffMarkupKind(markup), markup, { byContent: true, epub2 });
     if (!result) continue;
-    unmarkScripted(pkg, path, result.doc);
+    for (const pkg of renditions) unmarkScripted(pkg, path, result.doc);
     files.set(path, encodeUtf8(result.text));
   }
 }

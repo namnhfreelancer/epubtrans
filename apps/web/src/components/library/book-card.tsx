@@ -1,4 +1,5 @@
 import { useI18n } from '../../i18n/i18n-context';
+import { useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { formatNumber } from '../../lib/format';
 import { routeHref } from '../../lib/hash-route';
 import { languageLabel } from '../../lib/languages';
@@ -14,6 +15,8 @@ interface BookCardProps {
 
 export function BookCard({ book, onExport, onDelete }: BookCardProps) {
   const { t, locale } = useI18n();
+  // A book cannot be deleted while another tab translates it (the job would keep spending API calls).
+  const busyElsewhere = useJobRunningElsewhere(book.id);
   return (
     <li
       data-testid="book-card"
@@ -43,7 +46,15 @@ export function BookCard({ book, onExport, onDelete }: BookCardProps) {
         <Button size="sm" onClick={() => onExport(book)}>
           {t('library.exportProject')}
         </Button>
-        <Button size="sm" variant="danger" className="ml-auto" onClick={() => onDelete(book)}>
+        <Button
+          size="sm"
+          variant="danger"
+          className="ml-auto"
+          data-testid="delete-book"
+          disabled={busyElsewhere}
+          title={busyElsewhere ? t('library.busyElsewhere') : undefined}
+          onClick={() => onDelete(book)}
+        >
           {t('library.delete')}
         </Button>
       </div>

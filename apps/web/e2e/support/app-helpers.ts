@@ -86,3 +86,36 @@ export async function persistedSegments(page: Page): Promise<{ id: string; statu
       }),
   );
 }
+
+/**
+ * Stores a segment state row straight into IndexedDB, bypassing the app (so no cross-tab broadcast is sent):
+ * what another tab's edit looks like to a tab that has not heard about it.
+ */
+export async function writeSegmentRowSilently(page: Page, row: { id: string; status: string; translationHtml: string }): Promise<void> {
+  await page.evaluate(
+    (segment) =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open('epubtrans');
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const done = (error?: unknown) => {
+            db.close();
+            if (error) reject(error);
+            else resolve();
+          };
+          const read = db.transaction('projects', 'readonly').objectStore('projects').getAllKeys();
+          read.onerror = () => done(read.error);
+          read.onsuccess = () => {
+            const projectId = read.result[0];
+            if (typeof projectId !== 'string') return done(new Error('no project in IndexedDB'));
+            const tx = db.transaction('segments', 'readwrite');
+            tx.objectStore('segments').put({ projectId, ...segment });
+            tx.oncomplete = () => done();
+            tx.onerror = () => done(tx.error);
+          };
+        };
+      }),
+    row,
+  );
+}

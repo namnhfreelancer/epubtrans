@@ -1,6 +1,7 @@
 import type { Project } from '@epubtrans/core';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
+import { useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { formatDuration, formatNumber } from '../../lib/format';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { countSegments, remainingWork } from '../../lib/segment-counts';
@@ -18,6 +19,8 @@ export function TranslationControls({ project, version, provider }: { project: P
   const running = job.status === 'running' || job.status === 'pausing';
   const sampleRunning = useSampleRunning(project.id);
   const { start, error: startError } = useStartTranslation(project, provider);
+  // Only one tab may translate a book at a time (cross-tab job lock).
+  const busyElsewhere = useJobRunningElsewhere(project.id) && !running;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
   const counts = useMemo(() => countSegments(project), [project, version]);
   const work = remainingWork(counts, project.settings.twoPass);
@@ -45,7 +48,7 @@ export function TranslationControls({ project, version, provider }: { project: P
               variant="primary"
               data-testid="start-translation"
               onClick={start}
-              disabled={sampleRunning}
+              disabled={sampleRunning || busyElsewhere}
               title={sampleRunning ? t('sample.blocksRun') : undefined}
             >
               {label}
@@ -73,8 +76,18 @@ export function TranslationControls({ project, version, provider }: { project: P
             <span>{t('run.usage', { input: formatNumber(job.usage.input, locale), output: formatNumber(job.usage.output, locale) })}</span>
           )}
         </div>
+        {busyElsewhere && (
+          <Alert>
+            <span data-testid="run-busy-elsewhere">{t('run.busyElsewhere')}</span>
+          </Alert>
+        )}
         {startError && <Alert kind="error">{startError}</Alert>}
         {!running && job.status === 'failed' && job.error && <Alert kind="error">{t('run.failed', { message: job.error })}</Alert>}
+        {!running && job.status === 'aborted' && (
+          <Alert kind="error">
+            <span data-testid="run-book-deleted">{t('run.bookDeleted')}</span>
+          </Alert>
+        )}
         {!running && job.status === 'paused' && <Alert>{t('run.paused')}</Alert>}
         {!running && work === 0 && (
           <Alert kind="success">

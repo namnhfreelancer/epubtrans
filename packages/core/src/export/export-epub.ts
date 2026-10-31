@@ -1,7 +1,7 @@
 import { SEGMENT_ATTR } from '../dom/fragment-markup';
 import { ensureStylesheet, exportDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
 import { byLocalName, firstByLocalName, parseXml, textOf } from '../dom/xml-dom-helpers';
-import { isEpub2Package, type PackageInfo, parsePackage, readText } from '../epub/package-document';
+import { isEpub2Package, type PackageInfo, parseOtherRenditions, parsePackage, readContainerLinks, readRootfiles, readText } from '../epub/package-document';
 import type { DomEnv, ExportMode, Project, Segment } from '../types';
 import { encodeUtf8 } from '../util/text-encoding';
 import { type FileMap, readZip, writeEpubZip } from '../util/zip-archive';
@@ -9,6 +9,7 @@ import { dirname, relativeHref } from '../util/zip-path';
 import { prunePackageFiles } from './prune-package-files';
 import { type PlacementContext, placeTranslation, SOURCE_CLASS, setLang, textLabel } from './segment-placement';
 import { stripActiveContent, stripActiveContentFromPackage, unmarkScripted } from './strip-active-content';
+import { cssStylesheetInstructions } from './xml-prolog';
 
 export const EXPORT_MODES: ExportMode[] = ['bilingual', 'bilingual-translation-first', 'translation-only'];
 
@@ -21,21 +22,26 @@ const isDone = (s: Segment | undefined): s is Segment & { translationHtml: strin
 /**
  * Builds the output EPUB. Untranslated segments keep their source text. Segment markers are
  * removed, translated blocks get `lang`/`xml:lang`, and bilingual modes link a small stylesheet
- * that fades the source text. Files the OPF does not reference and XSLT stylesheets are dropped,
- * and scripts, event handlers and script URLs are stripped from every remaining markup file.
- * `mimetype` is written first and stored.
+ * that fades the source text. Translations apply to the primary rendition; other renditions of a
+ * multi-rendition book are kept (listing the stylesheet when they share a translated document).
+ * Files no package document references and XSLT stylesheets are dropped, and scripts, event
+ * handlers and script URLs are stripped from every remaining markup file, package documents
+ * included. `mimetype` is written first and stored.
  */
 export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv): Promise<Uint8Array> {
   if (!EXPORT_MODES.includes(mode)) throw new Error(`Unknown export mode: ${mode}`);
   const files = readZip(project.sourceEpub);
   const pkg = parsePackage(files, env);
-  prunePackageFiles(files, pkg);
+  const renditions = [pkg, ...parseOtherRenditions(files, env, pkg)];
+  const containerTargets = [...readRootfiles(files, env).map((r) => r.path), ...readContainerLinks(files, env)];
+  prunePackageFiles(files, renditions, containerTargets);
   const xmlLangOnly = isEpub2Package(pkg);
   const segments = new Map(project.chapters.flatMap((c) => c.segments).map((s) => [s.id, s]));
   const cssPath = `${dirname(pkg.opfPath) ? `${dirname(pkg.opfPath)}/` : ''}${STYLESHEET_NAME}`;
   const bilingual = mode !== 'translation-only';
   const base = { env, mode, targetLang: project.settings.targetLang, xmlLangOnly };
   const sanitized = new Set<string>();
+  const linked = new Set<string>();
 
   for (const chapter of project.chapters) {
     if (!files.has(chapter.href)) continue;
@@ -51,19 +57,29 @@ export async function exportEpub(project: Project, mode: ExportMode, env: DomEnv
       placeTranslation(el, segment.translationHtml, ctx);
       changed = true;
     }
-    if (changed && bilingual) ensureStylesheet(doc, relativeHref(chapter.href, cssPath));
+    if (changed && bilingual) {
+      ensureStylesheet(doc, relativeHref(chapter.href, cssPath));
+      linked.add(chapter.href);
+    }
     if (changed && mode === 'translation-only') setLang(doc.documentElement, ctx);
     stripActiveContent(doc);
-    unmarkScripted(pkg, chapter.href, doc);
+    for (const r of renditions) unmarkScripted(r, chapter.href, doc);
     sanitized.add(chapter.href);
-    files.set(chapter.href, encodeUtf8(serializeXhtmlDocument(env, doc, exportDoctype(markup, xmlLangOnly))));
+    files.set(chapter.href, encodeUtf8(serializeXhtmlDocument(env, doc, exportDoctype(markup, xmlLangOnly), cssStylesheetInstructions(markup))));
   }
 
   if (pkg.nav && files.has(pkg.nav.path)) repairNavDocument(files, pkg.nav.path, xmlLangOnly, env);
   if (pkg.ncx && files.has(pkg.ncx.path)) updateNcx(files, pkg, project, mode, env);
-  stripActiveContentFromPackage(files, pkg, sanitized, env);
+  stripActiveContentFromPackage(files, renditions, sanitized, env);
   if (bilingual) files.set(cssPath, encodeUtf8(STYLESHEET));
-  files.set(pkg.opfPath, encodeUtf8(serializeXmlDocument(env, updateOpf(pkg, project, mode, bilingual ? cssPath : undefined))));
+  updateOpf(pkg, project, mode, bilingual ? cssPath : undefined);
+  for (const other of renditions.slice(1)) {
+    if (other.manifest.some((m) => linked.has(m.path))) addStylesheetItem(other, cssPath);
+  }
+  for (const { opfPath, opf } of renditions) {
+    stripActiveContent(opf);
+    files.set(opfPath, encodeUtf8(serializeXmlDocument(env, opf)));
+  }
   return writeEpubZip(files);
 }
 
@@ -77,7 +93,7 @@ function repairNavDocument(files: FileMap, path: string, epub2: boolean, env: Do
   const labelled = byLocalName(doc, 'nav').filter((nav) => nav.hasAttribute('aria-label'));
   if (labelled.length === 0) return;
   for (const nav of labelled) nav.removeAttribute('aria-label');
-  files.set(path, encodeUtf8(serializeXhtmlDocument(env, doc, exportDoctype(markup, epub2))));
+  files.set(path, encodeUtf8(serializeXhtmlDocument(env, doc, exportDoctype(markup, epub2), cssStylesheetInstructions(markup))));
 }
 
 /** NCX labels are text only: segment markers are applied directly, or labels are matched by source text. */
@@ -96,7 +112,7 @@ function updateNcx(files: FileMap, pkg: PackageInfo, project: Project, mode: Exp
   files.set(path, encodeUtf8(serializeXmlDocument(env, doc)));
 }
 
-function updateOpf(pkg: PackageInfo, project: Project, mode: ExportMode, cssPath: string | undefined): Document {
+function updateOpf(pkg: PackageInfo, project: Project, mode: ExportMode, cssPath: string | undefined): void {
   const opf = pkg.opf;
   const metadata = firstByLocalName(opf, 'metadata');
   const languages = metadata ? byLocalName(metadata, 'language') : [];
@@ -116,9 +132,14 @@ function updateOpf(pkg: PackageInfo, project: Project, mode: ExportMode, cssPath
   for (const meta of metadata ? byLocalName(metadata, 'meta') : []) {
     if (meta.getAttribute('property') === 'dcterms:modified') meta.textContent = `${new Date().toISOString().slice(0, 19)}Z`;
   }
-  const manifest = firstByLocalName(opf, 'manifest');
+  if (cssPath) addStylesheetItem(pkg, cssPath);
+}
+
+/** Declares the bilingual stylesheet in a package's manifest (once). */
+function addStylesheetItem(pkg: PackageInfo, cssPath: string): void {
+  const manifest = firstByLocalName(pkg.opf, 'manifest');
   const sample = manifest ? byLocalName(manifest, 'item')[0] : undefined;
-  if (cssPath && manifest && sample && !byLocalName(manifest, 'item').some((i) => i.getAttribute('id') === 'epubtrans-css')) {
+  if (manifest && sample && !byLocalName(manifest, 'item').some((i) => i.getAttribute('id') === 'epubtrans-css')) {
     const item = sample.cloneNode(false) as Element;
     for (const attr of Array.from(item.attributes)) item.removeAttribute(attr.name);
     item.setAttribute('id', 'epubtrans-css');
@@ -126,5 +147,4 @@ function updateOpf(pkg: PackageInfo, project: Project, mode: ExportMode, cssPath
     item.setAttribute('media-type', 'text/css');
     manifest.appendChild(item);
   }
-  return opf;
 }
