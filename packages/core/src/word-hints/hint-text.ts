@@ -3,9 +3,9 @@ import { ELEMENT_NODE, getAttrLocal, nameOf, TEXT_NODE } from '../dom/xml-dom-he
 /**
  * Text that Word Wise hints may annotate, read the same way from a segment's `sourceHtml` (selection, no DOM needed)
  * and from the exported DOM (placement): text nodes in document order, outside code, math, ruby, sub/sup, note
- * references, link text, form controls and fallback content. Both sides tokenize each text node separately with the
- * same segmenter, count occurrences of a word per segment and apply the same "glued" rule, so an occurrence stored as
- * (word, nth) finds the same text node at export.
+ * references, link text, form controls and their labels, and fallback content. Both sides tokenize each text node
+ * separately with the same segmenter, count occurrences of a word per segment and apply the same "glued" rule, so an
+ * occurrence stored as (word, nth) finds the same text node at export.
  */
 const SKIP_ELEMENTS = new Set([
   'code',
@@ -28,6 +28,7 @@ const SKIP_ELEMENTS = new Set([
   'button',
   'select',
   'option',
+  'label',
   'noscript',
   'object',
   'video',

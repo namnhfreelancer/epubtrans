@@ -15,6 +15,7 @@ import {
 } from '../src';
 import { parseXhtmlDocument } from '../src/dom/xhtml-document';
 import { applyWordHints, planWordHintExport, type WordHintExport } from '../src/export/word-hint-markup';
+import { stripXmlInvalidChars } from '../src/util/xml-chars';
 import { readZip, writeEpubZip } from '../src/util/zip-archive';
 import { env, fakeTranslate, glossProvider, makeProject, readFixture, readFrequencyList, segment, unzipText } from './test-helpers';
 
@@ -337,6 +338,22 @@ describe('XML-invalid characters from the model or a crafted file', () => {
       expect(html).toContain('badgloss');
       expect(html).not.toMatch(/[\uFFFE\uFFFF]/);
       expect(html.includes('\u0001')).toBe(false);
+    }
+  });
+
+  it('drops them when a translation holds them as character references, in text and attribute values', async () => {
+    const project = await hintedProject({ translated: true });
+    const target = project.chapters.flatMap((c) => c.segments).find((s) => s.translationHtml?.includes('I think it is agreed'));
+    if (!target) throw new Error('fixture changed');
+    target.translationHtml = 'x&#xFFFE;&#1;y <span title="a&#1;b&#xFFFF;c">z&#0;&#x1F;w</span>';
+    for (const mode of ['bilingual', 'translation-only'] as ExportMode[]) {
+      const out = await exportEpub(project, mode, env);
+      expectWellFormed(out);
+      const html = unzipText(out, CHAPTER);
+      // The HTML parser itself turns &#0; into U+FFFD, a valid character.
+      expect(html, mode).toContain('xy <span title="abc">z\uFFFDw</span>');
+      expect(stripXmlInvalidChars(html), mode).toBe(html);
+      expect(html, mode).not.toMatch(/&#(x?0*(1|fffe|ffff|1f)|0);/i);
     }
   });
 });

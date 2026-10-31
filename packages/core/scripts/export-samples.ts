@@ -1,7 +1,7 @@
 /**
  * Writes every fixture book, translated by the echo test translator, in every export mode to `test-output/`,
  * plus the hint-capable modes with Word Wise hints (glossed by a mock model) in the ruby and the inline style, with an
- * XML-invalid character planted in one gloss and one translation.
+ * XML-invalid character planted in one gloss and one translation (raw and as character references).
  * CI runs epubcheck over the result to prove exported EPUBs are valid.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -31,7 +31,8 @@ for (const name of FIXTURES) {
   const glossed = project.wordHints?.entries.find((e) => e.senses.length > 0);
   if (glossed?.senses[0]) glossed.senses[0].gloss += '\uFFFF';
   const translated = project.chapters.flatMap((c) => c.segments).find((s) => s.translationHtml);
-  if (translated) translated.translationHtml = `${translated.translationHtml}\uFFFE`;
+  // Also as character references, which the HTML parser decodes into raw characters.
+  if (translated) translated.translationHtml = `${translated.translationHtml}\uFFFE&#xFFFE;<span title="a&#1;b">c&#1;d</span>`;
   for (const style of ['ruby', 'inline'] as const) {
     const wordHints = { enabled: true, level: 5, style, maxPerParagraph: 3, perChapter: 2 };
     for (const mode of HINT_EXPORT_MODES) {

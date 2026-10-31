@@ -1,3 +1,4 @@
+import { stripXmlInvalidChars } from '../util/xml-chars';
 import { ELEMENT_NODE, NS, nameOf, TEXT_NODE } from './xml-dom-helpers';
 
 /**
@@ -72,6 +73,11 @@ const ELEMENT_ATTRS: Record<string, string[]> = {
 };
 const XML_NAME = /^[A-Za-z_][\w.-]*$/;
 
+/**
+ * Converts HTML-parsed nodes into nodes of `target`. Text and attribute values lose the characters XML 1.0 forbids: the
+ * HTML parser decodes references such as `&#xFFFE;` or `&#1;` into raw characters, which would make the serialized
+ * XHTML not well-formed.
+ */
 export function convertHtmlNodes(nodes: Iterable<Node>, target: Document, opts: ConvertOptions): Node[] {
   const out: Node[] = [];
   for (const node of nodes) out.push(...convertNode(node, target, opts, NS.XHTML));
@@ -79,7 +85,7 @@ export function convertHtmlNodes(nodes: Iterable<Node>, target: Document, opts: 
 }
 
 function convertNode(node: Node, target: Document, opts: ConvertOptions, ns: string): Node[] {
-  if (node.nodeType === TEXT_NODE) return [target.createTextNode((node as Text).data)];
+  if (node.nodeType === TEXT_NODE) return [target.createTextNode(stripXmlInvalidChars((node as Text).data))];
   if (node.nodeType !== ELEMENT_NODE) return [];
   const src = node as Element;
   const raw = (src.localName ?? src.nodeName).toLowerCase();
@@ -115,7 +121,7 @@ function convertChildren(src: Element, target: Document, opts: ConvertOptions, n
 function copyAttributes(src: Element, el: Element, name: string, ns: string, opts: ConvertOptions): void {
   for (const attr of Array.from(src.attributes)) {
     const attrName = attr.name.toLowerCase();
-    const value = attr.value;
+    const value = stripXmlInvalidChars(attr.value);
     if (attrName.startsWith('xmlns')) continue;
     if (attrName === 'xml:lang') {
       el.setAttributeNS(NS.XML, 'xml:lang', value);

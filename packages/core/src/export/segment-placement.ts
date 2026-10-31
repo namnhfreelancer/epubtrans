@@ -34,7 +34,8 @@ export function addClass(el: Element, cls: string): void {
 
 /**
  * Inserts the translation of segment block `el` according to the export mode. Characters XML 1.0 forbids (model output
- * or a crafted project file may hold them) are dropped first, so the exported document stays well-formed.
+ * or a crafted project file may hold them, raw or as character references) are dropped before and after parsing, so the
+ * exported document stays well-formed.
  */
 export function placeTranslation(el: Element, translationHtml: string, ctx: PlacementContext): void {
   const doc = el.ownerDocument;
@@ -86,7 +87,8 @@ function stripIds(node: Node): void {
 /** Plain-text label for contexts that cannot hold markup (NCX). */
 export function textLabel(sourceText: string, translationHtml: string, ctx: Pick<PlacementContext, 'env' | 'mode'>): string {
   if (ctx.mode === 'original') return sourceText;
-  const translated = textOf(parseHtmlFragment(ctx.env, stripXmlInvalidChars(translationHtml)));
+  // Stripped after parsing too: the parser decodes references such as `&#xFFFE;` into raw characters.
+  const translated = stripXmlInvalidChars(textOf(parseHtmlFragment(ctx.env, translationHtml)));
   if (ctx.mode === 'translation-only') return translated;
   return ctx.mode === 'bilingual' ? `${sourceText} / ${translated}` : `${translated} / ${sourceText}`;
 }

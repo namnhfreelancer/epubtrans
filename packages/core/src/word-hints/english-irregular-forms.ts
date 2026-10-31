@@ -39,7 +39,7 @@ seed:seed need:need feed:feed weed:weed reed:reed deed:deed bleed:bleed breed:br
 bed:bed red:red wed:wed shed:shed sled:sled fled:flee bred:breed led:lead fed:feed sped:speed
 united:united naked:naked wicked:wicked rugged:rugged ragged:ragged crooked:crooked learned:learned beloved:beloved
 sacred:sacred hundred:hundred kindred:kindred hatred:hatred
-glasses:glass lens:lens bus:bus gas:gas yes:yes this:this thus:thus us:us was:be
+glasses:glass lens:lens bus:bus gas:gas busses:bus gasses:gas yes:yes this:this thus:thus us:us was:be
 alas:alas ground:ground found:found wound:wound rent:rent lay:lay saw:saw left:left`;
 
 function build(): Map<string, string> {

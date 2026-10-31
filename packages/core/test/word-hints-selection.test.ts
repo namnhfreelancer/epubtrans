@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hintContext, hintRankThreshold, lemmatizeEnglish, parseFrequencyList, selectHintCandidates, UNLISTED_RANK, wordHintLanguage } from '../src';
 import { cleanGloss } from '../src/word-hints/gloss-protocol';
+import { hanCompoundRank, isTraditionalChinese } from '../src/word-hints/han-unlisted-words';
 import { hintTextChunks } from '../src/word-hints/hint-text';
 import { makeProject, rankedList, readFrequencyList, segment } from './test-helpers';
 
@@ -66,8 +67,28 @@ describe('lemmatizeEnglish', () => {
     ['quoting', 'quote'],
     ['based', 'base'],
     ['caused', 'cause'],
+    // … but never a list entry that is only a name ("moore", "tampere", "busse").
+    ['moored', 'moor'],
+    ['mooring', 'moor'],
+    ['tampered', 'tamper'],
+    ['ransomed', 'ransom'],
+    ['busses', 'bus'],
+    // A doubled final s/z is undoubled only when the doubled form is unlisted.
+    ['quizzes', 'quiz'],
+    ['caresses', 'caress'],
+    ['hisses', 'hiss'],
   ];
   for (const [word, lemma] of cases) it(`${word} → ${lemma}`, () => expect(lemmatizeEnglish(word, en.rank)).toBe(lemma));
+
+  it('prefers the reading the book writes in lowercase over one the book never uses', () => {
+    const book = (words: string[]) => ({ lowercase: (w: string) => words.includes(w), present: (w: string) => words.includes(w) });
+    const list = rankedList('en', { foo: 100, fooe: 10, fooed: 5_000 });
+    expect(lemmatizeEnglish('fooed', list.rank)).toBe('fooe');
+    expect(lemmatizeEnglish('fooed', list.rank, book(['foo']))).toBe('foo');
+    // A frequent reading the book also uses keeps winning.
+    expect(lemmatizeEnglish('fooed', list.rank, book(['foo', 'fooe']))).toBe('fooe');
+    expect(lemmatizeEnglish('pleasing', en.rank, book(['please', 'pleas']))).toBe('please');
+  });
 
   it('lowercases and keeps unknown words as they are', () => {
     expect(lemmatizeEnglish('Obfuscated', en.rank)).toBe('obfuscate');
@@ -201,14 +222,82 @@ describe('selectHintCandidates', () => {
     for (const lemma of found) expect(zh.rank(lemma) ?? UNLISTED_RANK).toBeGreaterThan(hintRankThreshold(3));
   });
 
-  it('hints unlisted Japanese kanji words even at levels 1–2, but no unlisted single characters, kana or Korean word forms', () => {
+  // Lu Xun (1881–1936, public domain): 《狂人日记》, 《孔乙己》, 《一件小事》, 《故乡》.
+  const LU_XUN_SIMPLIFIED = [
+    '某君昆仲，今隐其名，皆余昔日在中学时良友；分隔多年，消息渐阙。',
+    '此时已经聚集了几个人，便和掌柜都笑了。孔乙己看着问他的人，显出不屑置辩的神气。',
+    '我料定这老女人并没有伤，又没有别人看见，便很怪他多事，要自己惹出是非，也误了我的路。',
+    '车夫听了这老女人的话，却毫不踌躇，仍然搀着伊的臂膊，便一步一步的向前走。',
+    '我吃了一吓，赶忙抬起头，却见一个凸颧骨，薄嘴唇，五十岁上下的女人站在我面前。',
+  ];
+  const LU_XUN_TRADITIONAL = [
+    '某君昆仲，今隱其名，皆余昔日在中學時良友；分隔多年，消息漸闕。',
+    '這就是我們的並未產生的《新生》的結局。我們覺得他的話很對，大家都記得。',
+    '此時已經聚集了幾個人，便和掌櫃都笑了。孔乙己看著問他的人，顯出不屑置辯的神氣。',
+  ];
+  const chineseBook = (paragraphs: string[]) => {
+    const project = makeProject([paragraphs.map((p, i) => segment(`c1-${i}`, p))]);
+    project.settings.sourceLang = 'zh';
+    return project;
+  };
+
+  it('an unlisted Chinese word made of listed words is a compound, not a rare word (笑了, 我的, 他的)', () => {
+    const zh = readFrequencyList('zh');
+    for (const word of ['笑了', '我的', '他的', '都是']) {
+      expect(zh.rank(word), word).toBeUndefined();
+      expect(hanCompoundRank(word, zh.rank), word).toBeLessThanOrEqual(hintRankThreshold(5));
+    }
+    const project = chineseBook(LU_XUN_SIMPLIFIED);
+    for (const level of [1, 2, 3, 4, 5]) {
+      const found = lemmas(project, zh, level);
+      for (const word of ['笑了', '我的', '他的']) expect(found, `${word} at level ${level}`).not.toContain(word);
+      // A part missing from the list (踌, 躇, 颧) or rarer than every threshold (仲) keeps the word rare.
+      for (const word of ['踌躇', '昆仲', '颧骨']) expect(found, `${word} at level ${level}`).toContain(word);
+    }
+  });
+
+  it('ranks a compound by its rarest part, so it appears exactly at the levels that part qualifies for', () => {
+    const zh = readFrequencyList('zh');
+    const rank = hanCompoundRank('置辩', zh.rank) as number;
+    expect(rank).toBe(Math.max(zh.rank('置') as number, zh.rank('辩') as number));
+    const project = chineseBook(LU_XUN_SIMPLIFIED);
+    for (const level of [1, 2, 3, 4, 5]) {
+      const candidate = selectHintCandidates(project, zh, { level }).find((c) => c.lemma === '置辩');
+      expect(candidate !== undefined, `level ${level}`).toBe(rank > hintRankThreshold(level));
+      if (candidate) expect(candidate.occurrences.map((o) => o.rank)).toEqual([rank]);
+    }
+  });
+
+  it('splits a compound at its best point and gives up on words with an unlisted part', () => {
+    const list = rankedList('zh', { 甲: 10, 乙: 900, 甲乙: 50, 丙: 20 });
+    expect(hanCompoundRank('甲乙丙', list.rank)).toBe(50); // 甲乙 + 丙 beats 甲 + 乙 + 丙
+    expect(hanCompoundRank('甲丁', list.rank)).toBeUndefined();
+    expect(hanCompoundRank('甲', list.rank)).toBeUndefined();
+  });
+
+  it('detects Traditional characters in a book tagged zh and stops treating unlisted words as rare there', () => {
+    expect(isTraditionalChinese(LU_XUN_TRADITIONAL)).toBe(true);
+    expect(isTraditionalChinese(LU_XUN_SIMPLIFIED)).toBe(false);
+    const zh = readFrequencyList('zh');
+    const project = chineseBook(LU_XUN_TRADITIONAL);
+    for (const level of [1, 3, 5]) {
+      const found = lemmas(project, zh, level);
+      for (const word of ['我們', '覺得', '記得', '昆仲']) expect(found, `${word} at level ${level}`).not.toContain(word);
+      // Words the Simplified list still covers keep their ranks.
+      for (const lemma of found) expect(zh.rank(lemma), lemma).toBeGreaterThan(hintRankThreshold(level));
+    }
+  });
+
+  it('hints unlisted Japanese kanji words even at levels 1–2, but no compounds of common kanji, unlisted single characters, kana or Korean word forms', () => {
     const ja = readFrequencyList('ja');
-    const project = makeProject([[segment('c1-0', '彼は躊躇し、逡巡したあと韜晦して、顰蹙を買った。矜持を忖度し、慟哭のあと邂逅した。')]]);
+    const project = makeProject([[segment('c1-0', '彼は躊躇し、逡巡したあと韜晦して、顰蹙を買った。矜持を忖度し、慟哭のあと邂逅した。十分に一度見た。')]]);
     project.settings.sourceLang = 'ja';
     const hard = ['逡巡', '韜晦', '顰蹙', '矜持', '慟哭'];
     for (const level of [1, 2]) {
       const found = lemmas(project, ja, level);
       for (const word of hard) expect(found, `${word} at level ${level}`).toContain(word);
+      // Unlisted compounds of common kanji are not rare words.
+      for (const word of ['十分', '一度']) expect(found, `${word} at level ${level}`).not.toContain(word);
       for (const lemma of found) expect([...lemma].length > 1 || (ja.rank(lemma) ?? 0) > hintRankThreshold(level), lemma).toBe(true);
     }
     for (const word of hard) expect(ja.rank(word)).toBeUndefined();
@@ -292,12 +381,44 @@ describe('selection edge cases', () => {
     expect(lemmas(makeProject([[segment('c0-0', 'Ostensibly, he left.')]]), en, 3)).toContain('ostensibly');
   });
 
-  it('never hints link text, form controls, fallback content or ruby, but keeps plain anchors', () => {
+  it('settles a word with two readings from the whole book, also when the evidence comes later', () => {
+    // "fooed" reads as the far more frequent "fooe", unless the book writes "foo" and never "fooe".
+    const list = rankedList('en', { they: 1, it: 2, the: 3, was: 4, later: 5, there: 6, fooe: 100, foo: 12_000, fooed: 20_000 });
+    const withFoo = makeProject([[segment('c0-0', 'They fooed it.'), segment('c0-1', 'Later the foo was there.')]]);
+    const found = selectHintCandidates(withFoo, list, { level: 3 });
+    expect(found.map((c) => c.lemma)).toEqual(['foo']);
+    expect(found[0]?.occurrences.map((o) => [o.word, o.rank])).toEqual([
+      ['fooed', 12_000],
+      ['foo', 12_000],
+    ]);
+    // Without that evidence the frequent reading stands, and it is too common for the level.
+    expect(lemmas(makeProject([[segment('c0-0', 'They fooed it.')]]), list, 3)).toEqual([]);
+  });
+
+  it('keeps common words that the book capitalizes only at sentence starts or after a quote opening', () => {
+    const list = rankedList('en', { similarly: 12_000, universally: 14_000, quimbyson: 40_000, darcyton: 60_000 });
+    const project = makeProject([
+      [
+        segment('c0-0', 'Similarly, he left. Similarly, she stayed. Quimbyson came. Quimbyson went.'),
+        segment('c0-1', 'de Waal writes, “Universally, humans share.” He said: “Darcyton was right.”'),
+      ],
+    ]);
+    const found = lemmas(project, list, 3);
+    expect(found).toEqual(expect.arrayContaining(['similarly', 'universally']));
+    // Rarer capitalized words in the same positions are still taken for names.
+    expect(found).not.toContain('quimbyson');
+    expect(found).not.toContain('darcyton');
+    // A common word capitalized in mid-sentence is still a name there and at sentence starts.
+    const named = makeProject([[segment('c0-0', 'Similarly, he left. Later Similarly arrived.')]]);
+    expect(lemmas(named, list, 3)).not.toContain('similarly');
+  });
+
+  it('never hints link text, form controls and labels, fallback content or ruby, but keeps plain anchors', () => {
     const project = makeProject([
       [
         segment(
           'c0-0',
-          '<p><a href="#i1">perspicacious</a> <option>truculent</option> <button>obfuscation</button> <noscript>pusillanimous</noscript> <ruby>sesquipedalian<rt>x</rt></ruby> <a id="here">lugubrious</a></p>',
+          '<p><a href="#i1">perspicacious</a> <option>truculent</option> <button>obfuscation</button> <label>recalcitrant</label> <noscript>pusillanimous</noscript> <ruby>sesquipedalian<rt>x</rt></ruby> <a id="here">lugubrious</a></p>',
         ),
       ],
     ]);
