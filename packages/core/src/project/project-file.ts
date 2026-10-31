@@ -1,7 +1,9 @@
 import { strFromU8, strToU8 } from 'fflate';
+import { ExportStyleError, validateExportStyle } from '../export-style/export-style-validation';
 import { isGlossaryTermType } from '../glossary/glossary-entry';
 import type {
   Chapter,
+  ExportStyle,
   GlossaryEntry,
   Project,
   ProjectSettings,
@@ -124,6 +126,8 @@ function validateSettings(s: Json): ProjectSettings {
   const priceInPerM = optNum(s, 'priceInPerM', path);
   const priceOutPerM = optNum(s, 'priceOutPerM', path);
   const wordHints = s.wordHints === undefined || s.wordHints === null ? undefined : validateWordHintSettings(obj(s.wordHints, `${path}.wordHints`));
+  const exportStyle = s.exportStyle === undefined || s.exportStyle === null ? undefined : validateStyleSetting(s.exportStyle);
+  if (s.attribution !== undefined && typeof s.attribution !== 'boolean') fail(`${path}.attribution`, 'a boolean');
   return {
     sourceLang: str(s, 'sourceLang', path),
     targetLang: str(s, 'targetLang', path),
@@ -137,7 +141,20 @@ function validateSettings(s: Json): ProjectSettings {
     ...(priceInPerM !== undefined ? { priceInPerM } : {}),
     ...(priceOutPerM !== undefined ? { priceOutPerM } : {}),
     ...(wordHints !== undefined ? { wordHints } : {}),
+    ...(exportStyle !== undefined ? { exportStyle } : {}),
+    // Only `true` is kept: the option is off unless the user opted in.
+    ...(s.attribution === true ? { attribution: true } : {}),
   };
+}
+
+/** Export styles are validated strictly (they end up in the book's CSS); the message names the bad field. */
+function validateStyleSetting(value: unknown): ExportStyle {
+  try {
+    return validateExportStyle(value, 'settings.exportStyle');
+  } catch (err) {
+    if (err instanceof ExportStyleError) throw new Error(`Invalid project file: ${err.message.replace(/^Invalid export style: /, '')}`);
+    throw err;
+  }
 }
 
 const countLimit = (v: number | undefined, fallback: number, max: number) => (v === undefined ? fallback : Math.min(max, Math.max(0, Math.round(v))));

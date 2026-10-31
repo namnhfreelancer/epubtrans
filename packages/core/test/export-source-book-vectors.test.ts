@@ -308,7 +308,7 @@ describe('multi-rendition books', () => {
       expect(secondOpf).toContain('id="epubtrans-css"');
       expect(secondOpf).toContain('href="../A/epubtrans.css"');
       expect(unzipText(out, 'A/a.opf')).toContain('epubtrans-css');
-      expect(unzipText(await exportEpub(project, 'translation-only', domEnv), 'B/b.opf')).not.toContain('epubtrans');
+      expect(unzipText(await exportEpub(project, 'translation-only', domEnv), 'B/b.opf')).not.toContain('epubtrans-css');
     }
   });
 

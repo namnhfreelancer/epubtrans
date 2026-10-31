@@ -3,8 +3,41 @@
  * DOM access goes through an injected DomEnv; HTTP goes through an injectable fetch.
  */
 
+export { attributionText } from './export/attribution-page';
 export { EXPORT_MODES, type ExportOptions, exportEpub, HINT_EXPORT_MODES } from './export/export-epub';
+export { exportIdentifier } from './export/export-identifier';
 export { PREVIEW_ERROR_CLASS, PREVIEW_PENDING_CLASS, PREVIEW_SEGMENT_ATTR } from './export/preview-markers';
+export {
+  EMBEDDED_FONT_FILES,
+  EMBEDDED_FONTS,
+  type EmbeddedFont,
+  type EmbeddedFontFace,
+  EXPORT_FONT_IDS,
+  embeddedFont,
+  embeddedFontsSize,
+  type FontFileLoader,
+  GENERIC_FONTS,
+} from './export-style/embedded-fonts';
+export { embeddedFontsFor, exportStyleCss } from './export-style/export-style-css';
+export { exportStylePreset, matchingPreset, sameExportStyle } from './export-style/export-style-presets';
+export {
+  EXPORT_FONT_WEIGHTS,
+  EXPORT_STYLE_PRESET_IDS,
+  ExportStyleError,
+  normalizeColor,
+  STYLE_LIMITS,
+  validateExportStyle,
+} from './export-style/export-style-validation';
+export {
+  MAX_STYLE_FILE_BYTES,
+  MAX_TEMPLATE_NAME_LENGTH,
+  MAX_TEMPLATES_PER_FILE,
+  parseStyleFile,
+  parseStyleTemplatesJson,
+  serializeStyleTemplates,
+  validateStyleTemplate,
+  validateTemplateName,
+} from './export-style/style-templates';
 export { detectFormat } from './formats/detect-format';
 export { type ExtractCandidatesOptions, extractGlossaryCandidates, type GlossaryCandidate } from './glossary/extract-candidates';
 export { foldGlossaryKey, GLOSSARY_TERM_TYPES } from './glossary/glossary-entry';

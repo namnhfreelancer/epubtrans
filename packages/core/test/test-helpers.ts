@@ -71,6 +71,11 @@ export function makeProject(segments: Segment[][]): Project {
   };
 }
 
+/** Reads a bundled font or license file (`data/fonts/<file>`), like the CLI's font loader. */
+export async function loadFontFile(file: string): Promise<Uint8Array> {
+  return new Uint8Array(readFileSync(fileURLToPath(new URL(`../data/fonts/${file}`, import.meta.url))));
+}
+
 /** The committed word frequency list of a language (`data/wordfreq/<lang>.txt`). */
 export function readFrequencyList(lang: WordHintLanguage): FrequencyList {
   return parseFrequencyList(lang, readFileSync(fileURLToPath(new URL(`../data/wordfreq/${lang}.txt`, import.meta.url)), 'utf8'));
