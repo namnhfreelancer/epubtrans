@@ -4,9 +4,9 @@ import { exportEpub, importBook } from '../src';
 import { parsePackage } from '../src/epub/package-document';
 import { markupKindOf } from '../src/export/markup-file-kind';
 import { sanitizeMarkupFile, stripActiveContent } from '../src/export/strip-active-content';
-import { readZip } from '../src/util/zip-archive';
+import { readZip, writeEpubZip } from '../src/util/zip-archive';
 import { ACTIVE, addManifestItems, browserLikeEnv, dec, editText, enc, expectNoActiveMarkup, poisonedProject } from './package-markup-test-helpers';
-import { env, readFixture, unzipText } from './test-helpers';
+import { env, fakeTranslate, readFixture, unzipText } from './test-helpers';
 
 const EMPTY_SVG_TEXT = '<svg xmlns="http://www.w3.org/2000/svg"/>';
 const MALFORMED_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><script>console.log("PWN")</script><g></svg>';
@@ -300,5 +300,53 @@ describe('export keeps every file of a valid book', () => {
     const out = readZip(await exportEpub(project, 'translation-only', env));
     for (const item of pkg.manifest) expect(out.has(item.path), item.path).toBe(source.has(item.path));
     expect([...source.keys()].filter((path) => !out.has(path))).toEqual([]);
+  });
+});
+
+describe('content document doctype', () => {
+  it('writes no HTML5 doctype into an EPUB 2 book, whose XHTML 1.1 documents forbid it', async () => {
+    const files = readZip(readFixture('a-modest-proposal.epub'));
+    const opf = new TextDecoder().decode(files.get('OEBPS/content.opf'));
+    files.set('OEBPS/content.opf', enc(opf.replace(/(<package\b[^>]*\bversion=")3\.0"/, '$12.0"')));
+    const project = await importBook(writeEpubZip(files), 'epub2.epub', env);
+    for (const s of project.chapters.flatMap((c) => c.segments)) {
+      s.translationHtml = fakeTranslate(s.sourceHtml);
+      s.status = 'translated';
+    }
+    const out = readZip(await exportEpub(project, 'bilingual', env));
+    const xhtml = [...out.keys()].filter((path) => path.endsWith('.xhtml'));
+    expect(xhtml.length).toBeGreaterThan(2);
+    for (const path of xhtml) expect(new TextDecoder().decode(out.get(path)), path).not.toMatch(/<!DOCTYPE html>/i);
+  });
+
+  it('writes no HTML5 doctype into EPUB 2 documents rewritten by the package sanitizer (manifest, sniffed, stylesheet PI)', async () => {
+    const page = (body: string) => `<html xmlns="http://www.w3.org/1999/xhtml"><head><title>t</title></head><body>${body}</body></html>`;
+    const project = await poisonedProject((files) => {
+      editText(files, 'OEBPS/content.opf', (opf) => opf.replace(/(<package\b[^>]*\bversion=")3\.0"/, '$12.0"'));
+      files.set('OEBPS/extra.xhtml', enc(`<?xml-stylesheet type="text/css" href="a.css"?>${page('<p onclick="x()">extra</p><script>s()</script>')}`));
+      files.set('OEBPS/legacy.xhtml', enc(`<!DOCTYPE html>${page('<p>legacy</p>')}`));
+      files.set('OEBPS/sniffed.page', enc(page('<p>sniffed</p><script>s()</script>')));
+      addManifestItems(
+        files,
+        '<item id="extra" href="extra.xhtml" media-type="application/xhtml+xml"/><item id="legacy" href="legacy.xhtml" media-type="application/xhtml+xml"/><item id="sniffed" href="sniffed.page" media-type="application/octet-stream"/>',
+      );
+    });
+    const out = readZip(await exportEpub(project, 'bilingual', env));
+    for (const path of ['OEBPS/extra.xhtml', 'OEBPS/legacy.xhtml']) {
+      const text = dec(out.get(path) ?? new Uint8Array());
+      expect(text, path).toContain('<html');
+      expect(text, path).not.toMatch(/<!DOCTYPE/i);
+    }
+    expect(dec(out.get('OEBPS/extra.xhtml') ?? new Uint8Array())).toContain('<?xml-stylesheet type="text/css" href="a.css"?>');
+    expect(dec(out.get('OEBPS/sniffed.page') ?? new Uint8Array())).not.toMatch(/<!DOCTYPE html>|<script/i);
+    expectNoActiveMarkup(writeEpubZip(out));
+  });
+
+  it('keeps an explicit doctype, and HTML5 for EPUB 3', () => {
+    const xhtml11 = '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">';
+    const body = '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>t</title></head><body><p>x</p></body></html>';
+    expect(sanitizeMarkupFile(env, 'xhtml', `${xhtml11}${body}`, { epub2: true })?.text).toContain(xhtml11);
+    expect(sanitizeMarkupFile(env, 'xhtml', body, { epub2: true })?.text).not.toContain('<!DOCTYPE');
+    expect(sanitizeMarkupFile(env, 'xhtml', body)?.text).toContain('<!DOCTYPE html>');
   });
 });

@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
 import { configureMockProvider, FIXTURES, importBook, openFirstBook, readDownload, translateAll } from './support/app-helpers';
+import { installMockPricing, LITELLM_PRICES_URL, OPENROUTER_MODELS_URL } from './support/mock-pricing';
 import { installMockProvider, MOCK_BASE } from './support/mock-provider';
 
 const KEY = 'sk-test-LEAKCHECK-123';
-const APP_ORIGIN = 'http://localhost:4317/';
+const APP_ORIGIN = `http://localhost:${process.env.E2E_PORT ?? 4317}/`;
+const PRICE_URLS = [OPENROUTER_MODELS_URL, LITELLM_PRICES_URL];
 
 interface RecordedRequest {
   url: string;
@@ -12,7 +14,7 @@ interface RecordedRequest {
   body: string;
 }
 
-test('the API key is only ever sent to the configured provider base URL', async ({ page, context }) => {
+test('the API key is only ever sent to the configured provider base URL, never to the price catalogs', async ({ page, context }) => {
   const pending: Promise<RecordedRequest>[] = [];
   context.on('request', (req) => {
     pending.push(
@@ -25,9 +27,14 @@ test('the API key is only ever sent to the configured provider base URL', async 
   });
 
   const mock = await installMockProvider(page);
+  // Registered after the provider mock so it takes over the price hosts and records what they receive.
+  const pricing = await installMockPricing(page);
   await configureMockProvider(page, KEY, { remember: true });
+  // Not in the OpenRouter fixture, so the lookup also reaches the LiteLLM host.
+  await page.locator('#model-id').fill('mock-lite-only');
   await importBook(page, FIXTURES.fb2);
   await openFirstBook(page);
+  await expect(page.getByTestId('price-source')).toContainText('Price from LiteLLM (matched: mock-lite-only)');
   await page.getByRole('button', { name: 'Generate guideline & glossary' }).click();
   await expect(page.getByText('Guideline and glossary generated.')).toBeVisible();
   await translateAll(page);
@@ -50,10 +57,21 @@ test('the API key is only ever sent to the configured provider base URL', async 
     expect(r.url.startsWith(`${MOCK_BASE}/`), `key sent to ${r.url}`).toBe(true);
     expect(r.headers.authorization).toBe(`Bearer ${KEY}`);
   }
+  // The public price catalogs were queried (both hosts) and are the only other hosts allowed.
+  const priceRequests = requests.filter((r) => PRICE_URLS.includes(r.url));
+  expect(new Set(priceRequests.map((r) => r.url))).toEqual(new Set(PRICE_URLS));
+  expect(pricing.requests.length).toBeGreaterThanOrEqual(2);
+  for (const r of priceRequests) {
+    expect(carriesKey(r), `key sent to price host ${r.url}`).toBe(false);
+    expect(Object.keys(r.headers).map((h) => h.toLowerCase())).not.toContain('authorization');
+    expect(Object.keys(r.headers).map((h) => h.toLowerCase())).not.toContain('cookie');
+    expect(r.body).toBe('');
+  }
   for (const r of requests) {
     expect(decodeURIComponent(r.url), 'key must never appear in a URL').not.toContain(KEY);
-    // No analytics, fonts or CDNs: only the app itself and the provider.
-    const allowed = r.url.startsWith(APP_ORIGIN) || r.url.startsWith(`${MOCK_BASE}/`) || r.url.startsWith('blob:') || r.url.startsWith('data:');
+    // No analytics, fonts or CDNs: only the app itself, the provider and the two public price catalogs.
+    const allowed =
+      r.url.startsWith(APP_ORIGIN) || r.url.startsWith(`${MOCK_BASE}/`) || r.url.startsWith('blob:') || r.url.startsWith('data:') || PRICE_URLS.includes(r.url);
     expect(allowed, `unexpected request to ${r.url}`).toBe(true);
   }
 

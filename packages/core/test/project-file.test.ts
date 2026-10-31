@@ -21,6 +21,52 @@ describe('project file', () => {
     expect(out.byteLength).toBeGreaterThan(1000);
   });
 
+  it('keeps typed glossary entries and still loads v3.0 entries without type or count', () => {
+    const state = (glossary: unknown[]) => ({
+      schemaVersion: 1,
+      id: 'p',
+      title: 'T',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      settings: { sourceLang: 'en', targetLang: 'vi', providerId: 'openai', baseURL: '', model: '', concurrency: 1, twoPass: false, guideline: '', glossary },
+      chapters: [],
+    });
+    const typed = { term: 'Harry', translation: 'Harry', type: 'person', count: 12, note: 'boy' };
+    expect(validateProjectState(state([typed, { term: 'fox', translation: 'cáo' }])).settings.glossary).toEqual([typed, { term: 'fox', translation: 'cáo' }]);
+    // An unknown (future) type is dropped instead of rejecting the file; a bad count is rejected.
+    expect(validateProjectState(state([{ term: 'x', translation: 'y', type: 'species' }])).settings.glossary).toEqual([{ term: 'x', translation: 'y' }]);
+    expect(() => validateProjectState(state([{ term: 'x', translation: 'y', count: -1 }]))).toThrow(/count must be a non-negative integer/);
+  });
+
+  it('keeps the optional userEdited flag, drops false, and rejects a non-boolean', () => {
+    const state = (seg: Record<string, unknown>) => ({
+      schemaVersion: 1,
+      id: 'p',
+      title: 'T',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      settings: {
+        sourceLang: 'en',
+        targetLang: 'vi',
+        providerId: 'openai',
+        baseURL: '',
+        model: '',
+        concurrency: 1,
+        twoPass: false,
+        guideline: '',
+        glossary: [],
+      },
+      chapters: [
+        { href: 'c.xhtml', title: 'C', segments: [{ id: 's', sourceHtml: 'x', sourceText: 'x', status: 'translated', translationHtml: 'y', ...seg }] },
+      ],
+    });
+    const segmentOf = (seg: Record<string, unknown>) => validateProjectState(state(seg)).chapters[0]?.segments[0];
+    expect(segmentOf({ userEdited: true })?.userEdited).toBe(true);
+    expect(segmentOf({ userEdited: false })).not.toHaveProperty('userEdited');
+    expect(segmentOf({})).not.toHaveProperty('userEdited');
+    expect(() => segmentOf({ userEdited: 'yes' })).toThrow(/userEdited must be a boolean/);
+  });
+
   it('rejects files that are not projects or have an invalid schema', async () => {
     await expect(loadProjectFile(strToU8('nope'))).rejects.toThrow(/zip/);
     await expect(loadProjectFile(zipSync({ 'other.txt': strToU8('x') }))).rejects.toThrow(/project file/);

@@ -35,6 +35,8 @@ You bring your own API key (BYOK). Presets:
 
 Models are listed from the provider's `/models` endpoint; you can always type a model id by hand. Cost is estimated before translating from token counts and the prices you enter (USD per 1M tokens; OpenRouter prices are filled in automatically). No price table is bundled.
 
+Prices are looked up automatically for the selected model from public catalogs: OpenRouter's `GET https://openrouter.ai/api/v1/models`, then LiteLLM's `model_prices_and_context_window.json` on `raw.githubusercontent.com`. Both are plain unauthenticated GETs of public files: your API key, book and model name are never sent to them (the match happens on your device). The web app shows where the price came from ("Price from OpenRouter (matched: anthropic/claude-opus-5.5)"), caches the parsed prices in `localStorage` for 24 hours, and falls back to manual entry when the model is unknown or the catalogs are unreachable; prices you type always win. The CLI prints the source and matched id before the estimate, gives up after 5 seconds when a catalog does not answer, and skips the lookup with `--no-price-lookup`.
+
 ## Web app
 
 1. Open the app and add your provider, API key and model (the key stays in the browser; see the "remember key" caveat under [Privacy](#privacy)).
@@ -45,6 +47,16 @@ Models are listed from the provider's `/models` endpoint; you can always type a 
 6. Export the EPUB as **bilingual** (original, then translation, original faded), **bilingual-translation-first**, or **translation-only**.
 
 The library keeps several books. Each book can be exported to, and imported from, a `.epubtrans` project file. The interface is available in English and Vietnamese and the app is an installable PWA.
+
+### Glossary and style guideline
+
+"Generate guideline & glossary" (web) and `--generate-guide` (CLI) work in three steps:
+
+1. **Scan (local, no model call).** The whole book is scanned for glossary candidates: multi-word names ("Ministry of Magic", "Mr. Darcy"), capitalized words that recur mid-sentence, and frequent phrases such as "natural selection" (Chinese, Japanese and Korean: frequent character sequences). Each candidate keeps its frequency and up to two short context snippets.
+2. **Guideline.** One request with about 18 passages spread across the book returns a guideline with fixed sections: genre & audience, tone & register, forms of address & pronouns (for Vietnamese the *xưng hô* pair per relationship), names policy, dialogue & quotation marks, honorifics & titles, units/numbers/dates, chapter titles & headings, footnotes, and terms to keep untranslated. Your current guideline (a preset or your own text) is kept as is; the generated part is added below it under `## Book-specific guideline`, between `<!-- epubtrans:generated:start -->` and `<!-- epubtrans:generated:end -->` lines, and generating again replaces only that part (keep the marker lines; text you add outside them is kept).
+3. **Glossary.** The model classifies the candidates in batches of 80 (person, place, organization, term, other), translates the real terms and drops the rest. Entries you already have are kept and win over duplicates. The glossary grows with the book: about one entry per 500 words, at least 30, at most 400 by default (web: "Max glossary entries").
+
+Each translation request only carries the glossary entries whose term occurs in that batch (whole-word, case-insensitive; the review pass also checks the draft), so a large glossary does not inflate every request. Words of 4 or more Latin, Cyrillic or Greek letters also match with a short ending of up to 3 letters, and a final vowel may change, so "Horcrux" matches "Horcruxes", "Darcy" matches "Darcys" and "Анна" matches "Анну"; shorter words and words with digits must match exactly ("art" never matches "artist", "Name1" never matches "Name10"). Generation costs one request plus one per 80 candidates: for a 1000-page book about 11 requests, roughly 100k input and 20k output tokens (about $0.60 at $3/$15 per 1M tokens); a short book needs 2 requests. The web glossary table has search, a type filter and pages of 50 rows.
 
 ## Command line
 
@@ -88,8 +100,13 @@ Progress is saved continuously to `book.epub.epubtrans`. After Ctrl-C or a crash
 | `epubtrans export <file.epubtrans> --mode <mode> --out <file>` | Write the EPUB from a project (no key needed) |
 | `epubtrans models [--provider <id>] [--base-url <url>]` | List models from `/models` |
 | `epubtrans presets` | List providers, guideline presets and export modes |
+| `epubtrans sample <input or file.epubtrans> [--passages N] [--words N] [--seed S] [--new]` | Translate a few passages from different chapters and print them as source/translation pairs, before the full run |
+
+**Sample translation.** To check quality before paying for a whole book, translate a sample first: in the web app use the "Sample translation" card on the setup page, on the command line run `epubtrans sample book.epub --to vi --model <id>`. It picks 5 passages of about 350 words from different chapters spread across the book (seeded, so the same seed picks the same passages), translates them with your guideline and glossary, and shows source and translation side by side. Change the guideline or glossary and run it again to compare ("Translate samples again" in the app, the same command in the CLI); "New random samples" or `--new` picks other passages. The sampled segments count as translated, so the full run skips them. The selection is stored in the project file. A sample never loses work: segments you edited by hand are skipped, and when a sample request fails, a segment that already had a translation keeps it. Both are reported: the app shows a warning instead of the success message when some segments failed (an error when all of them did), says how many hand-edited segments were kept, and labels those segments in the sample view; the CLI labels them in its report and exits with an "incomplete" status. Back matter (index, notes, bibliography, acknowledgments) is not sampled.
 
 Common options: `--from <lang>` (default auto), `--provider <preset id>`, `--base-url <url>`, `--model <id>`, `--concurrency <1-16>`, `--two-pass`, `--guideline-preset general|fiction|technical|psychology`, `--guideline-file <path>`, `--generate-guide`, `--mode bilingual|bilingual-translation-first|translation-only`, `--out <file.epub>`, `--project <file>`, `--price-in/--price-out <USD per 1M tokens>`, `--yes`. Run `epubtrans <command> --help` for details.
+
+`--no-price-lookup` turns off the automatic price lookup used when `--price-in/--price-out` are absent.
 
 Exit codes: `0` success, `1` error, `2` usage error, `3` finished with untranslated segments (EPUB still written), `130` interrupted (progress saved).
 
@@ -129,5 +146,6 @@ epubtrans dịch sách **không DRM** (EPUB, MOBI, AZW3, FB2) thành **EPUB song
 - **Tự mang API key (BYOK):** ứng dụng ước tính token và chi phí trước khi dịch, tự tạo hướng dẫn văn phong và bảng thuật ngữ (chỉnh sửa được), có chế độ rà soát 2 lượt, lưu tiến độ liên tục nên tải lại trang vẫn dịch tiếp.
 - **Xuất EPUB** ở 3 chế độ: song ngữ, song ngữ (bản dịch trước), chỉ bản dịch. Giao diện có tiếng Việt và tiếng Anh, cài được như ứng dụng (PWA).
 - **Dòng lệnh:** cài bằng lệnh ở mục [Command line](#command-line), đặt khóa trong biến môi trường `EPUBTRANS_API_KEY`, rồi chạy `epubtrans translate sach.epub --to vi --model <id>` (nhà cung cấp mặc định là `openai`; dùng nhà cung cấp khác thì thêm `--provider <id>` ở mỗi lần chạy). Gặp sự cố hoặc nhấn Ctrl-C, chạy lại cùng lệnh để dịch tiếp; có thể mở tệp `.epubtrans` xuất từ web bằng `epubtrans resume`.
+- **Bảng thuật ngữ và hướng dẫn văn phong:** ứng dụng quét toàn bộ sách (không tốn lượt gọi mô hình) để tìm tên riêng và thuật ngữ lặp lại, rồi nhờ mô hình phân loại (nhân vật, địa danh, tổ chức, thuật ngữ, khác) và dịch chúng; số mục tăng theo độ dài sách (khoảng 1 mục cho mỗi 500 từ, tối đa 400 theo mặc định). Hướng dẫn văn phong được viết từ khoảng 18 đoạn trích khắp cuốn sách, theo các mục cố định, trong đó có cách xưng hô giữa các nhân vật; hướng dẫn bạn đang dùng được giữ nguyên, phần tạo ra được thêm bên dưới. Mỗi yêu cầu dịch chỉ gửi kèm những thuật ngữ xuất hiện trong đoạn đó.
 
 Cảm ơn tác giả gốc [nguyenvanduocit](https://github.com/nguyenvanduocit/epubtrans). Điều khoản sử dụng xem tệp [LICENSE](LICENSE).

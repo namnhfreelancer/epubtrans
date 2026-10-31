@@ -1,7 +1,7 @@
 import { type ChatProvider, type Project, type ProjectSettings, type TokenUsage, type TranslationPhase, translateProject } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
 import { repository } from './app-services';
-import { runWithJobLock } from './cross-tab-job-lock';
+import { launchWithJobLock } from './cross-tab-job-lock';
 import { ProjectNotFoundError } from './project-repository';
 import { createJobBaseline, persistJobSegment, touchProject } from './project-store';
 
@@ -73,29 +73,26 @@ export function startJob(project: Project, settings: ProjectSettings, provider: 
   if (controllers.has(project.id)) return Promise.resolve('already-running');
   const controller = new AbortController();
   controllers.set(project.id, controller);
-  let report: (result: StartJobResult) => void = () => {};
-  const outcome = new Promise<StartJobResult>((resolve) => {
-    report = resolve;
-  });
-  const run = runWithJobLock(project.id, () => {
-    report('started');
-    return runJob(project, settings, provider, controller);
-  })
-    .then((acquired) => {
-      if (!acquired) report('busy-elsewhere');
-    })
+  const { started, settled } = launchWithJobLock(project.id, () => runJob(project, settings, provider, controller));
+  const run = settled
     .catch((err: unknown) => {
       // runJob records its own failures; this only catches the lock manager failing after the job ran.
       setJob(project.id, { status: 'failed', error: err instanceof Error ? err.message : String(err) });
-      report('started');
     })
     .finally(() => {
-      controllers.delete(project.id);
-      runs.delete(project.id);
+      // A start refused by the lock is forgotten right away (below), so a newer job may own these entries by now.
+      if (controllers.get(project.id) === controller) controllers.delete(project.id);
+      if (runs.get(project.id) === run) runs.delete(project.id);
       touchProject(project.id);
     });
   runs.set(project.id, run);
-  return outcome;
+  return started.then((ran) => {
+    if (ran) return 'started';
+    // Nothing runs here: forget the start now, so trying again right away is not reported as already running.
+    if (controllers.get(project.id) === controller) controllers.delete(project.id);
+    if (runs.get(project.id) === run) runs.delete(project.id);
+    return 'busy-elsewhere';
+  });
 }
 
 /** One run of core's translator; never rejects (the outcome is recorded in the job state). */

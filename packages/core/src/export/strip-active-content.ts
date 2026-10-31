@@ -1,6 +1,6 @@
-import { extractDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
+import { exportDoctype, parseXhtmlDocument, serializeXhtmlDocument, serializeXmlDocument } from '../dom/xhtml-document';
 import { byLocalName, CDATA_SECTION_NODE, COMMENT_NODE, ELEMENT_NODE, isParserError, nameOf, PROCESSING_INSTRUCTION_NODE } from '../dom/xml-dom-helpers';
-import { type PackageInfo, readEncryptedPaths, readText } from '../epub/package-document';
+import { isEpub2Package, type PackageInfo, readEncryptedPaths, readText } from '../epub/package-document';
 import type { DomEnv } from '../types';
 import { encodeUtf8 } from '../util/text-encoding';
 import type { FileMap } from '../util/zip-archive';
@@ -109,6 +109,14 @@ export function unmarkScripted(pkg: PackageInfo, path: string, doc: Document): v
 const EMPTY_SVG = '<svg xmlns="http://www.w3.org/2000/svg"/>';
 const EMPTY_XML = '<removed/>';
 
+/** How `sanitizeMarkupFile` treats one file. */
+export interface SanitizeMarkupOptions {
+  /** Recognized as markup by content only (always rewritten). */
+  byContent?: boolean;
+  /** Belongs to an EPUB 2 package: XHTML is written without the HTML5 doctype (`exportDoctype`). */
+  epub2?: boolean;
+}
+
 /**
  * Sanitizes one markup file and returns its new text, or undefined when it can stay as is.
  * XHTML is always rebuilt (markup that is not well-formed is re-parsed as HTML and written as
@@ -119,12 +127,18 @@ const EMPTY_XML = '<removed/>';
  * sniffed as HTML, and only a re-serialized document is sure to carry no comment, processing
  * instruction, CDATA section or doctype an HTML parser would misread.
  */
-export function sanitizeMarkupFile(env: DomEnv, kind: MarkupKind, markup: string, byContent = false): { text: string; doc: Document } | undefined {
+export function sanitizeMarkupFile(
+  env: DomEnv,
+  kind: MarkupKind,
+  markup: string,
+  options: SanitizeMarkupOptions = {},
+): { text: string; doc: Document } | undefined {
+  const { byContent = false, epub2 = false } = options;
   const stylesheets = cssStylesheetInstructions(markup);
   if (kind === 'xhtml') {
     const doc = parseXhtmlDocument(env, markup);
     stripActiveContent(doc);
-    return { text: serializeXhtmlDocument(env, doc, extractDoctype(markup), stylesheets), doc };
+    return { text: serializeXhtmlDocument(env, doc, exportDoctype(markup, epub2), stylesheets), doc };
   }
   const mime = kind === 'svg' ? 'image/svg+xml' : 'application/xml';
   const parse = (text: string) => new env.DOMParser().parseFromString(text, mime);
@@ -153,14 +167,26 @@ export function sanitizeMarkupFile(env: DomEnv, kind: MarkupKind, markup: string
 export function stripActiveContentFromPackage(files: FileMap, renditions: PackageInfo[], done: Set<string>, env: DomEnv): void {
   const packageDocs = new Set(renditions.map((r) => r.opfPath));
   const mediaTypes = new Map<string, string>();
-  for (const item of renditions.flatMap((r) => r.manifest)) if (!mediaTypes.has(item.path)) mediaTypes.set(item.path, item.mediaType);
+  const epub2Paths = new Map<string, boolean>();
+  for (const rendition of renditions) {
+    const epub2 = isEpub2Package(rendition);
+    for (const item of rendition.manifest) {
+      if (mediaTypes.has(item.path)) continue;
+      mediaTypes.set(item.path, item.mediaType);
+      epub2Paths.set(item.path, epub2);
+    }
+  }
+  const primaryEpub2 = renditions[0] ? isEpub2Package(renditions[0]) : false;
   const encrypted = readEncryptedPaths(files, env);
   for (const [path, data] of Array.from(files)) {
     if (done.has(path) || path === 'mimetype' || packageDocs.has(path)) continue;
     const declared = markupKindOf(path, mediaTypes.get(path));
     if (!declared && (encrypted.has(path) || isNonMarkupPath(path) || !startsWithMarkup(data))) continue;
     const markup = readText(files, path);
-    const result = declared ? sanitizeMarkupFile(env, declared, markup) : sanitizeMarkupFile(env, sniffMarkupKind(markup), markup, true);
+    const epub2 = epub2Paths.get(path) ?? primaryEpub2;
+    const result = declared
+      ? sanitizeMarkupFile(env, declared, markup, { epub2 })
+      : sanitizeMarkupFile(env, sniffMarkupKind(markup), markup, { byContent: true, epub2 });
     if (!result) continue;
     for (const pkg of renditions) unmarkScripted(pkg, path, result.doc);
     files.set(path, encodeUtf8(result.text));

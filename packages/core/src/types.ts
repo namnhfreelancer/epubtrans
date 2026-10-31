@@ -17,6 +17,11 @@ export interface Segment {
   translationHtml?: string;
   status: SegmentStatus;
   error?: string;
+  /**
+   * True when the user wrote or edited `translationHtml` by hand. Automatic runs (`translateProject`, samples)
+   * never overwrite such a segment unless asked to; a successful `retranslateSegment` clears the flag.
+   */
+  userEdited?: boolean;
 }
 
 export interface Chapter {
@@ -26,10 +31,17 @@ export interface Chapter {
   segments: Segment[];
 }
 
+/** Kind of a glossary term, assigned by glossary generation (or by the user). */
+export type GlossaryTermType = 'person' | 'place' | 'organization' | 'term' | 'other';
+
 export interface GlossaryEntry {
   term: string;
   translation: string;
   note?: string;
+  /** Absent on hand-written entries and on projects from before typed glossaries. */
+  type?: GlossaryTermType;
+  /** Occurrences of the term in the source book, when known (set by glossary generation). */
+  count?: number;
 }
 
 export interface ProjectSettings {
@@ -60,6 +72,21 @@ export interface Project {
   chapters: Chapter[];
   /** Normalized EPUB package; its documents carry `data-et-id` segment markers. */
   sourceEpub: Uint8Array;
+  /** The passages picked by the last sample translation; absent in projects that never ran one. */
+  lastSample?: SampleSelection;
+}
+
+/** A contiguous run of segments of one chapter, translated as a quality check before the full run. */
+export interface SamplePassage {
+  chapterHref: string;
+  chapterTitle: string;
+  segmentIds: string[];
+}
+
+export interface SampleSelection {
+  /** Seed of the pseudo-random generator that picked the passages; the same seed picks the same passages. */
+  seed: number;
+  passages: SamplePassage[];
 }
 
 export type BookFormat = 'epub' | 'mobi' | 'azw3' | 'fb2';
@@ -125,6 +152,8 @@ export interface TranslateOptions {
   onProgress?: (progress: TranslationProgress) => void;
   onSegment?: (segment: Segment, chapter: Chapter) => void;
   signal?: AbortSignal;
+  /** Also translate and review segments the user edited by hand (`userEdited`); by default they are left alone. */
+  overwriteUserEdited?: boolean;
 }
 
 export interface CostEstimate {

@@ -22,7 +22,7 @@ import { buildProvider } from './provider-setup';
 
 const USAGE = 'epubtrans translate <input.(epub|mobi|azw3|fb2)> --to <lang> --model <id> [options]';
 
-async function readBytes(path: string, what: string): Promise<Uint8Array | undefined> {
+export async function readBytes(path: string, what: string): Promise<Uint8Array | undefined> {
   try {
     return new Uint8Array(await readFile(path));
   } catch (err) {
@@ -104,6 +104,7 @@ export async function translateCommand(argv: string[], io: Io): Promise<number> 
     outPath,
     mode,
     generateGuide: flags['generate-guide'] === true && (!existingBytes || countStatuses(project).done === 0),
+    priceLookup: flags['no-price-lookup'] !== true,
     yes: flags.yes === true,
     io,
   });

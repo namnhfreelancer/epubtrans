@@ -1,13 +1,18 @@
 import { estimateCost, type Project } from '@epubtrans/core';
-import { useEffect, useMemo, useRef } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { formatNumber, formatUsd, parseOptionalPrice } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
 import { updateSettings } from '../../lib/project-store';
 import { type ActiveProvider, settingsForRun } from '../../lib/provider-config-store';
+import { useSampleRunning } from '../../lib/sample-jobs';
+import { useJobActive } from '../../lib/translation-jobs';
+import { useCostEstimate } from '../../lib/use-cost-estimate';
+import { useModelPricing } from '../../lib/use-model-pricing';
 import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
 import { Card, Field } from '../ui/layout-primitives';
+
+const SOURCE_LABELS = { openrouter: 'OpenRouter', litellm: 'LiteLLM' } as const;
 
 /** Prices per 1M tokens and the token/cost estimate for the remaining work. */
 export function CostEstimateCard({ project, version, active }: { project: Project; version: number; active: ActiveProvider }) {
@@ -17,23 +22,40 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
   const save = (patch: Parameters<typeof updateSettings>[1]) =>
     updateSettings(project, patch).catch((err: unknown) => pushNotice('error', t('common.saveFailed', { message: errorText(err) })));
 
-  // Prefill once per model when the provider publishes prices (OpenRouter) and the book has none yet.
-  const prefilledFor = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    const key = `${project.id}|${active.providerId}|${active.model}`;
-    if (!published || prefilledFor.current === key) return;
-    prefilledFor.current = key;
-    if (project.settings.priceInPerM === undefined && project.settings.priceOutPerM === undefined) {
-      void updateSettings(project, { priceInPerM: active.priceInPerM, priceOutPerM: active.priceOutPerM }).catch(() => undefined);
-    }
-  }, [project, published, active.providerId, active.model, active.priceInPerM, active.priceOutPerM]);
+  // Automatic price: the provider's own model list (OpenRouter "Test connection") wins, else the public catalogs.
+  const lookup = useModelPricing(active.model, active.providerId);
+  const auto = published
+    ? { priceInPerM: active.priceInPerM, priceOutPerM: active.priceOutPerM }
+    : lookup.status === 'found'
+      ? { priceInPerM: lookup.pricing.priceInPerM, priceOutPerM: lookup.pricing.priceOutPerM }
+      : undefined;
+  // Manual prices saved with the book override the automatic one per field; nothing automatic is persisted,
+  // so changing the model looks up a fresh price instead of keeping the previous model's.
+  const priceInPerM = settings.priceInPerM ?? auto?.priceInPerM;
+  const priceOutPerM = settings.priceOutPerM ?? auto?.priceOutPerM;
+  const manual = settings.priceInPerM !== undefined || settings.priceOutPerM !== undefined;
 
   const { providerId, baseURL, model } = active;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
-  const estimate = useMemo(
-    () => estimateCost(project, settingsForRun(settings, { providerId, baseURL, model })),
-    [project, settings, providerId, baseURL, model, version],
+  // The estimate walks every batch of the book, while `version` changes on every finished segment and every keystroke
+  // in the guideline or glossary: recompute debounced and off the critical path, and not at all during a run.
+  const runActive = useJobActive(project.id);
+  const sampleRunning = useSampleRunning(project.id);
+  const { estimate, deferred } = useCostEstimate(
+    () => estimateCost(project, { ...settingsForRun(settings, { providerId, baseURL, model }), priceInPerM, priceOutPerM }),
+    runActive || sampleRunning,
+    // `version` tracks in-place project mutations.
+    [project, settings, providerId, baseURL, model, priceInPerM, priceOutPerM, version],
   );
+
+  const sourceNote = published
+    ? t('setup.priceFromProvider')
+    : lookup.status === 'found'
+      ? t('setup.priceFound', { source: SOURCE_LABELS[lookup.pricing.source], id: lookup.pricing.matchedId })
+      : lookup.status === 'loading'
+        ? t('setup.priceLooking')
+        : lookup.status === 'none'
+          ? t('setup.priceNone')
+          : undefined;
 
   return (
     <Card title={t('setup.cost')}>
@@ -48,6 +70,7 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
             inputMode="decimal"
             className={INPUT_CLASS}
             defaultValue={settings.priceInPerM ?? ''}
+            placeholder={auto?.priceInPerM?.toString() ?? ''}
             onBlur={(e) => void save({ priceInPerM: parseOptionalPrice(e.target.value) })}
           />
         </Field>
@@ -61,20 +84,27 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
             inputMode="decimal"
             className={INPUT_CLASS}
             defaultValue={settings.priceOutPerM ?? ''}
+            placeholder={auto?.priceOutPerM?.toString() ?? ''}
             onBlur={(e) => void save({ priceOutPerM: parseOptionalPrice(e.target.value) })}
           />
         </Field>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
-        <span>{t('setup.priceHint')}</span>
-        {published && (
-          <Button size="sm" variant="ghost" onClick={() => void save({ priceInPerM: active.priceInPerM, priceOutPerM: active.priceOutPerM })}>
+        <span data-testid="price-source">
+          {[sourceNote, manual && auto ? t('setup.priceManualWins') : undefined].filter(Boolean).join(' ') || t('setup.priceHint')}
+        </span>
+        {manual && auto && (
+          <Button size="sm" variant="ghost" onClick={() => void save({ priceInPerM: undefined, priceOutPerM: undefined })}>
             {t('setup.usePublished')}
           </Button>
         )}
       </div>
       <div data-testid="cost-estimate" className="mt-4 rounded-xl bg-stone-100 px-4 py-3 dark:bg-stone-800">
-        {estimate.inputTokens === 0 ? (
+        {estimate === undefined ? (
+          <p data-testid="estimate-calculating" className="text-sm text-stone-500 dark:text-stone-400">
+            {t('setup.estimateCalculating')}
+          </p>
+        ) : estimate.inputTokens === 0 ? (
           <p className="text-sm">{t('setup.estimateNothing')}</p>
         ) : (
           <>
@@ -89,6 +119,11 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
               )}
             </p>
           </>
+        )}
+        {deferred && (
+          <p data-testid="estimate-deferred" className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+            {t('setup.estimateUpdatesAfterRun')}
+          </p>
         )}
       </div>
     </Card>

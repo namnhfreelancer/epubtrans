@@ -1,7 +1,15 @@
 import { isAbortError, ProviderError } from '../providers/provider-http';
 import type { ChatProvider, ProjectSettings, Segment, TokenUsage } from '../types';
+import { type DetachedElement, detachEmptyElements, restoreDetachedElements } from './empty-element-markers';
 import { validateTranslationMarkup } from './markup-validation';
-import { buildReviewSystemPrompt, buildReviewUserMessage, buildTranslateSystemPrompt, buildTranslateUserMessage, parseSegmentsAnswer } from './prompt-protocol';
+import {
+  batchGlossary,
+  buildReviewSystemPrompt,
+  buildReviewUserMessage,
+  buildTranslateSystemPrompt,
+  buildTranslateUserMessage,
+  parseSegmentsAnswer,
+} from './prompt-protocol';
 import { withRetry } from './retry-with-backoff';
 import { estimateTokens } from './token-estimate';
 
@@ -29,6 +37,36 @@ const MAX_OUTPUT_TOKENS = 8192;
 /** Repeated 4xx answers mean a configuration problem (model, parameters), not bad content: stop the run. */
 const MAX_CONSECUTIVE_CLIENT_ERRORS = 5;
 
+/** What the model sees of a segment: empty marker elements detached from the source (and from the review draft). */
+interface WireSegment {
+  wire: Segment;
+  detached: DetachedElement[];
+}
+
+function toWire(segment: Segment, kind: BatchKind): WireSegment {
+  const source = detachEmptyElements(segment.sourceHtml);
+  if (kind === 'translate') return { wire: { ...segment, sourceHtml: source.html }, detached: source.detached };
+  const draft = detachEmptyElements(segment.translationHtml ?? '');
+  // A draft carrying exactly the source markers has them at translated positions, which fit the reviewed text better.
+  const sameMarkers = draft.detached.length === source.detached.length && draft.detached.every((d, i) => d.markup === source.detached[i]?.markup);
+  return {
+    wire: { ...segment, sourceHtml: source.html, translationHtml: draft.html },
+    detached: sameMarkers ? draft.detached : source.detached,
+  };
+}
+
+/**
+ * Validates an answer against the reduced source, then restores the detached markers. The restored HTML is checked
+ * against the full source as well, so a stored translation always carries exactly the source tags.
+ */
+function acceptAnswer(segment: Segment, prepared: WireSegment, html: string): { html: string } | { problem: string } {
+  const problem = validateTranslationMarkup(prepared.wire.sourceHtml, html);
+  if (problem) return { problem };
+  const restored = restoreDetachedElements(html, prepared.detached);
+  const restoredProblem = validateTranslationMarkup(segment.sourceHtml, restored);
+  return restoredProblem ? { problem: `restoring empty elements failed: ${restoredProblem}` } : { html: restored };
+}
+
 function outputBudget(segments: Segment[]): number {
   const source = segments.reduce((n, s) => n + estimateTokens(s.sourceHtml), 0);
   return Math.min(MAX_OUTPUT_TOKENS, Math.max(1024, source * 3 + 512));
@@ -44,13 +82,16 @@ export async function runBatch(batch: Segment[], kind: BatchKind, ctx: BatchCont
   const segments = current(batch, ctx);
   if (segments.length === 0) return;
   let answer: Map<string, string>;
+  const glossary = batchGlossary(ctx.settings.glossary, segments, kind);
+  const prepared = new Map(segments.map((s) => [s, toWire(s, kind)]));
+  const wire = segments.map((s) => (prepared.get(s) as WireSegment).wire);
   try {
     const res = await withRetry(
       () =>
         ctx.provider.chat({
           system: kind === 'translate' ? buildTranslateSystemPrompt(ctx.settings) : buildReviewSystemPrompt(ctx.settings),
-          user: kind === 'translate' ? buildTranslateUserMessage(segments) : buildReviewUserMessage(segments),
-          maxTokens: outputBudget(segments),
+          user: kind === 'translate' ? buildTranslateUserMessage(wire, glossary) : buildReviewUserMessage(wire, glossary),
+          maxTokens: outputBudget(wire),
           signal: ctx.signal,
         }),
       ctx.signal,
@@ -80,15 +121,17 @@ export async function runBatch(batch: Segment[], kind: BatchKind, ctx: BatchCont
   let reason = '';
   for (const segment of current(segments, ctx)) {
     const html = answer.get(segment.id);
-    const problem = html === undefined ? 'segment missing from answer' : validateTranslationMarkup(segment.sourceHtml, html);
-    if (problem || html === undefined) {
+    const result = html === undefined ? { problem: 'segment missing from answer' } : acceptAnswer(segment, prepared.get(segment) as WireSegment, html);
+    if ('problem' in result) {
       rejected.push(segment);
-      reason = problem ?? reason;
+      reason = result.problem;
       continue;
     }
-    segment.translationHtml = html;
+    segment.translationHtml = result.html;
     segment.status = kind === 'translate' ? 'translated' : 'reviewed';
     delete segment.error;
+    // The stored translation is the model's now, no longer a hand edit.
+    delete segment.userEdited;
     ctx.commit(segment, false);
   }
   // A segment isolated from a larger batch starts its own count of single-segment attempts.

@@ -14,6 +14,7 @@ export const RUN_FLAGS = {
   'two-pass': { type: 'boolean' },
   'price-in': { type: 'number' },
   'price-out': { type: 'number' },
+  'no-price-lookup': { type: 'boolean' },
   mode: { type: 'string' },
   out: { type: 'string' },
   yes: { type: 'boolean', short: 'y' },
@@ -30,6 +31,23 @@ export const TRANSLATE_FLAGS = {
 } as const satisfies FlagSpecs;
 
 export const RESUME_FLAGS = RUN_FLAGS;
+
+export const SAMPLE_FLAGS = {
+  ...PROVIDER_FLAGS,
+  concurrency: { type: 'number' },
+  'two-pass': { type: 'boolean' },
+  'price-in': { type: 'number' },
+  'price-out': { type: 'number' },
+  'no-price-lookup': { type: 'boolean' },
+  yes: { type: 'boolean', short: 'y' },
+  project: { type: 'string' },
+  to: { type: 'string' },
+  from: { type: 'string' },
+  passages: { type: 'number' },
+  words: { type: 'number' },
+  seed: { type: 'number' },
+  new: { type: 'boolean' },
+} as const satisfies FlagSpecs;
 
 export const EXPORT_FLAGS = {
   mode: { type: 'string' },

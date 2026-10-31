@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { strFromU8 } from 'fflate';
 import { configureMockProvider, expectEpubZip, FIXTURES, importBook, openFirstBook, readDownload, totalSegments, translateAll } from './support/app-helpers';
-import { installMockProvider, MOCK_GUIDE, translatedIds } from './support/mock-provider';
+import { installMockProvider, translatedIds } from './support/mock-provider';
 
 test('configures the provider, estimates cost, generates a guide, translates, edits, retranslates and exports', async ({ page }) => {
   const cspViolations: string[] = [];
@@ -34,10 +34,11 @@ test('configures the provider, estimates cost, generates a guide, translates, ed
   // Guideline + glossary generation, then manual glossary edits.
   await page.getByRole('button', { name: 'Generate guideline & glossary' }).click();
   await expect(page.getByText('Guideline and glossary generated.')).toBeVisible();
-  await expect(page.locator('#guideline')).toHaveValue(MOCK_GUIDE.guideline);
+  await expect(page.locator('#guideline')).toHaveValue(/## Book-specific guideline\n\n### Genre & audience\n- Mock: satirical essay/);
   await expect(page.getByTestId('glossary-row')).toHaveCount(2);
   await expect(page.getByTestId('glossary-row').first().getByLabel('Translation', { exact: true })).toHaveValue('Ai-len');
   expect(mock.guideRequests).toBe(1);
+  expect(mock.glossaryRequests).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Add term' }).click();
   await page.getByTestId('glossary-row').nth(2).getByLabel('Term', { exact: true }).fill('Yahoo');
   await page.getByTestId('glossary-row').nth(2).getByLabel('Translation', { exact: true }).fill('Yahoo');

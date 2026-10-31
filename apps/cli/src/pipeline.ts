@@ -11,7 +11,9 @@ import {
 } from '@epubtrans/core';
 import { UsageError } from './args';
 import { domEnv } from './dom-env';
+import { createGuideProgressPrinter } from './guide-progress';
 import type { Io } from './io';
+import { lookupEstimatePrices } from './price-lookup';
 import { countStatuses, createProgress, formatTokens, formatUsd, usageCost } from './progress';
 import { createProjectSaver, writeFileAtomic, writeProjectFile } from './project-store';
 
@@ -26,28 +28,13 @@ export interface PipelineOptions {
   mode: ExportMode;
   /** Ask the model for a book-specific guideline and glossary, after the user confirmed the run. */
   generateGuide?: boolean;
+  /** Look up missing prices in public catalogs (`--no-price-lookup` turns it off). Default: true. */
+  priceLookup?: boolean;
   yes: boolean;
   io: Io;
 }
 
-/**
- * OpenRouter publishes per-model prices; use them when the user did not pass `--price-in/--price-out`.
- * Runs only after the user confirmed, because it sends the API key to the provider.
- */
-async function prefillPrices(settings: ProjectSettings, provider: ChatProvider, io: Io): Promise<ProjectSettings> {
-  if (settings.providerId !== 'openrouter' || !provider.listModelInfo) return settings;
-  if (settings.priceInPerM !== undefined || settings.priceOutPerM !== undefined) return settings;
-  try {
-    const info = (await provider.listModelInfo(io.signal)).find((m) => m.id === settings.model);
-    if (info?.priceInPerM === undefined || info.priceOutPerM === undefined) return settings;
-    io.err(`Prices from OpenRouter: $${info.priceInPerM}/M input, $${info.priceOutPerM}/M output\n`);
-    return { ...settings, priceInPerM: info.priceInPerM, priceOutPerM: info.priceOutPerM };
-  } catch {
-    return settings; // prices are optional; a failing /models call must not block translating
-  }
-}
-
-async function confirmRun(io: Io, yes: boolean): Promise<boolean> {
+export async function confirmRun(io: Io, yes: boolean): Promise<boolean> {
   if (yes) return true;
   if (!io.interactive) throw new UsageError('Not running in a terminal: pass --yes to start without confirmation.');
   return /^y(es)?$/i.test((await io.prompt('Proceed? [y/N] ')).trim());
@@ -56,14 +43,10 @@ async function confirmRun(io: Io, yes: boolean): Promise<boolean> {
 function describeEstimate(project: Project, settings: ProjectSettings, todo: number, withGuide: boolean): string {
   const estimate = estimateCost(project, settings);
   const cost =
-    estimate.usd !== undefined
-      ? `about ${formatUsd(estimate.usd)}`
-      : `cost unknown (pass --price-in and --price-out, USD per 1M tokens, for a cost estimate${
-          settings.providerId === 'openrouter' ? '; OpenRouter prices are looked up after you confirm' : ''
-        })`;
+    estimate.usd !== undefined ? `about ${formatUsd(estimate.usd)}` : 'cost unknown (pass --price-in and --price-out, USD per 1M tokens, for a cost estimate)';
   return [
     `Segments to translate: ${todo}${settings.twoPass ? ' (+ review pass)' : ''}`,
-    ...(withGuide ? ['Plus one extra request to generate the style guideline and glossary (not included in the estimate)'] : []),
+    ...(withGuide ? ['Plus a few extra requests to generate the style guideline and glossary (not included in the estimate)'] : []),
     `Model: ${settings.model} via ${settings.baseURL}`,
     `Estimated usage: ~${formatTokens(estimate.inputTokens)} input / ~${formatTokens(estimate.outputTokens)} output tokens, ${cost}`,
   ].join('\n');
@@ -81,22 +64,27 @@ export async function translateAndExport(opts: PipelineOptions): Promise<number>
   const before = countStatuses(project);
   const todo = before.pending + before.error;
   if (todo > 0) {
-    io.err(`${describeEstimate(project, opts.settings, todo, opts.generateGuide === true)}\n`);
+    // Looked-up prices only feed the estimate and the cost shown while running; they are not saved, so a later
+    // run with another model never inherits them.
+    const looked = await lookupEstimatePrices(opts.settings, io, opts.priceLookup !== false);
+    const priced = (settings: ProjectSettings): ProjectSettings => ({ ...settings, ...looked });
+    io.err(`${describeEstimate(project, priced(opts.settings), todo, opts.generateGuide === true)}\n`);
     if (!(await confirmRun(io, opts.yes))) {
       io.err(`Cancelled. Project saved to ${projectPath}; no translation request was made.\n`);
       return EXIT.failure;
     }
     // Everything that contacts the provider happens after the confirmation above.
-    let settings = await prefillPrices(opts.settings, provider, io);
+    let settings = opts.settings;
     if (opts.generateGuide) {
       io.err('Generating style guideline and glossary ...\n');
-      const guide = await generateGuide(project, provider, settings, io.signal);
+      const guide = await generateGuide(project, provider, settings, { signal: io.signal, onProgress: createGuideProgressPrinter(io) });
       settings = { ...settings, guideline: guide.guideline, glossary: guide.glossary };
-      io.err(`Guide ready: ${guide.glossary.length} glossary entries\n`);
+      const skipped = guide.skippedBatches ? `; ${guide.skippedBatches} candidate batches skipped (unusable answer or failed request)` : '';
+      io.err(`Guide ready: ${guide.glossary.length} glossary entries from ${guide.candidates} candidates${skipped}\n`);
     }
     project.settings = settings;
     await writeProjectFile(project, projectPath);
-    const interrupted = await runTranslation(opts, settings);
+    const interrupted = await runTranslation(opts, priced(settings));
     if (interrupted) return EXIT.interrupted;
   } else {
     io.err('Every segment is already translated; exporting.\n');

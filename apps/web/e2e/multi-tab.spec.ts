@@ -129,3 +129,91 @@ test('a book cannot be deleted from another tab while a translation job runs', a
   await expect(tabA.getByText('Paused. Finished segments are saved; resume any time.')).toBeVisible();
   await expect(deleteB).toBeEnabled();
 });
+
+test('a sample run holds the job lock: the other tab cannot start a run or a sample until it ends', async ({ page: tabA }) => {
+  await installMockProvider(tabA, { delayMs: 2500 });
+  await configureMockProvider(tabA);
+  await importBook(tabA, FIXTURES.epub);
+  await openFirstBook(tabA);
+  const tabB = await openSecondTab(tabA);
+  const startB = tabB.getByTestId('start-translation');
+  const sampleB = tabB.getByTestId('sample-translate');
+  await expect(startB).toBeEnabled();
+  await expect(sampleB).toBeEnabled();
+
+  await tabA.getByTestId('sample-translate').click();
+  await expect(tabA.getByTestId('sample-progress')).toBeVisible();
+  await expect(startB).toBeDisabled();
+  await expect(sampleB).toBeDisabled();
+  await expect(tabB.getByTestId('run-busy-elsewhere')).toBeVisible();
+  await expect(tabB.getByTestId('sample-busy-elsewhere')).toHaveText(
+    'This book is being translated in another tab. Pause it there or wait until it finishes to start here.',
+  );
+
+  await expect(tabA.getByTestId('sample-complete')).toBeVisible({ timeout: 90_000 });
+  await expect(startB).toBeEnabled();
+  await expect(tabB.getByTestId('sample-busy-elsewhere')).toHaveCount(0);
+  await expect(sampleB).toBeEnabled();
+});
+
+test("the reader's Retry all failed is disabled while another tab translates the book", async ({ page: tabA }) => {
+  const mock = await installMockProvider(tabA);
+  await configureMockProvider(tabA);
+  await importBook(tabA, FIXTURES.epub);
+  await openFirstBook(tabA);
+  await tabA.getByRole('link', { name: 'Read & edit' }).click();
+  const failedId = await tabA.getByTestId('segment-row').first().getAttribute('data-segment-id');
+  if (!failedId) throw new Error('segment row without id');
+  mock.invalidIds.add(failedId);
+  await tabA.getByRole('link', { name: 'Translate', exact: true }).click();
+  await tabA.getByTestId('start-translation').click();
+  await expect(tabA.getByTestId('run-errors')).toHaveText('1 segments failed', { timeout: 90_000 });
+
+  const tabB = await openSecondTab(tabA);
+  await tabB.getByRole('link', { name: 'Read & edit' }).click();
+  const retryB = tabB.getByTestId('retry-all-failed');
+  await expect(retryB).toBeEnabled();
+  await expect(tabB.getByTestId('retry-busy-elsewhere')).toHaveCount(0);
+
+  // Tab A retries the failed segment slowly; tab B must not start a second, paid run of the same book.
+  mock.invalidIds.clear();
+  mock.delayMs = 4000;
+  await tabA.getByTestId('start-translation').click();
+  await expect(tabA.getByRole('button', { name: 'Pause' })).toBeVisible();
+  await expect(retryB).toBeDisabled();
+  await expect(retryB).toHaveAttribute('title', 'This book is being translated in another tab. Pause it there or wait until it finishes to start here.');
+  await expect(tabB.getByTestId('retry-busy-elsewhere')).toBeVisible();
+
+  await expect(tabA.getByTestId('run-complete')).toBeVisible({ timeout: 90_000 });
+  // The retried segment reaches tab B through the broadcast refresh: no errors left, so the controls go away.
+  await expect(retryB).toHaveCount(0);
+  await expect(tabB.getByTestId('retry-busy-elsewhere')).toHaveCount(0);
+});
+
+test('an edit written to storage while a sample batch is in flight still wins the sample compare-and-set save', async ({ page: tabA }) => {
+  const mock = await installMockProvider(tabA, { delayMs: 2500 });
+  await configureMockProvider(tabA);
+  await importBook(tabA, FIXTURES.epub);
+  await openFirstBook(tabA);
+  const tabB = await openSecondTab(tabA);
+
+  await tabA.locator('#sample-passages').fill('2');
+  await tabA.getByTestId('sample-translate').click();
+  await expect.poll(() => mock.segmentRequests.length).toBeGreaterThan(0);
+  const segmentId = mock.segmentRequests[0]?.ids[0];
+  if (!segmentId) throw new Error('no sampled segment');
+  // No broadcast: tab A cannot refresh or skip the segment, so its sample save reaches the compare-and-set write and must lose.
+  await writeSegmentRowSilently(tabB, { id: segmentId, status: 'translated', translationHtml: 'Bản sửa trong lúc dịch mẫu' });
+
+  await expect(tabA.getByTestId('sample-complete')).toBeVisible({ timeout: 90_000 });
+  const rows = await persistedSegments(tabA);
+  expect(rows.find((s) => s.id === segmentId)).toMatchObject({ status: 'translated', translationHtml: 'Bản sửa trong lúc dịch mẫu' });
+  expect(rows.filter((s) => s.status === 'translated').length).toBeGreaterThan(1);
+
+  // The lost write copied the stored edit into tab A's live segment: open it through its deep link (no reload).
+  await tabA.evaluate((id) => {
+    window.location.hash = window.location.hash.replace(/\/setup$/, `/read/${encodeURIComponent(id)}`);
+  }, segmentId);
+  const rowA = tabA.locator(`[data-testid="segment-row"][data-segment-id="${segmentId}"]`);
+  await expect(rowA.getByTestId('segment-translation')).toHaveText('Bản sửa trong lúc dịch mẫu');
+});

@@ -1,13 +1,12 @@
 import type { Project } from '@epubtrans/core';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
-import { refreshJobLocks, useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { formatDuration, formatNumber } from '../../lib/format';
-import { errorText, pushNotice } from '../../lib/notices';
-import { updateSettings } from '../../lib/project-store';
+import { useSampleRunning } from '../../lib/sample-jobs';
 import { countSegments, remainingWork } from '../../lib/segment-counts';
-import { estimateRemainingMs, pauseJob, startJob, useJob } from '../../lib/translation-jobs';
+import { estimateRemainingMs, pauseJob, useJob } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
+import { useStartTranslation } from '../../lib/use-start-translation';
 import { Button } from '../ui/button';
 import { Alert, Card, ProgressBar } from '../ui/layout-primitives';
 
@@ -15,11 +14,11 @@ import { Alert, Card, ProgressBar } from '../ui/layout-primitives';
 export function TranslationControls({ project, version, provider }: { project: Project; version: number; provider: ActiveProviderState }) {
   const { t, locale } = useI18n();
   const job = useJob(project.id);
-  const [startError, setStartError] = useState<string>();
   const [now, setNow] = useState(Date.now());
   const running = job.status === 'running' || job.status === 'pausing';
+  const sampleRunning = useSampleRunning(project.id);
   // Only one tab may translate a book at a time (cross-tab job lock).
-  const busyElsewhere = useJobRunningElsewhere(project.id) && !running;
+  const { start, error: startError, busyElsewhere } = useStartTranslation(project, provider);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
   const counts = useMemo(() => countSegments(project), [project, version]);
   const work = remainingWork(counts, project.settings.twoPass);
@@ -29,26 +28,6 @@ export function TranslationControls({ project, version, provider }: { project: P
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [running]);
-
-  const start = async () => {
-    setStartError(undefined);
-    if (provider.problem) return setStartError(t(provider.problem));
-    try {
-      const { provider: chat, settings } = provider.prepare(project);
-      if ((await startJob(project, settings, chat)) === 'busy-elsewhere') {
-        // Another tab won the lock before this one noticed: show it as busy right away.
-        await refreshJobLocks();
-        return;
-      }
-      // Remember which provider/model translated the book (carried in the project file, e.g. for CLI resume).
-      const { providerId, baseURL, model } = settings;
-      void updateSettings(project, { providerId, baseURL, model }).catch((err: unknown) =>
-        pushNotice('error', t('common.saveFailed', { message: errorText(err) })),
-      );
-    } catch (err) {
-      setStartError(errorText(err));
-    }
-  };
 
   const eta = running ? estimateRemainingMs(job, now) : undefined;
   const label = counts.done > 0 || counts.error > 0 ? (counts.pending === 0 && counts.error > 0 ? t('run.retryFailed') : t('run.resume')) : t('run.start');
@@ -63,7 +42,13 @@ export function TranslationControls({ project, version, provider }: { project: P
           </Button>
         ) : (
           work > 0 && (
-            <Button variant="primary" data-testid="start-translation" onClick={() => void start()} disabled={busyElsewhere}>
+            <Button
+              variant="primary"
+              data-testid="start-translation"
+              onClick={() => void start()}
+              disabled={sampleRunning || busyElsewhere}
+              title={sampleRunning ? t('sample.blocksRun') : busyElsewhere ? t('run.busyElsewhere') : undefined}
+            >
               {label}
             </Button>
           )

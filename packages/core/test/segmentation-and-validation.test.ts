@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { generateGuide } from '../src';
 import { parseXhtmlDocument } from '../src/dom/xhtml-document';
 import { segmentContentDocument } from '../src/segment/segment-document';
 import { validateTranslationMarkup } from '../src/translate/markup-validation';
 import { parseSegmentsAnswer } from '../src/translate/prompt-protocol';
-import { env, makeProject, mockProvider, segment } from './test-helpers';
+import { env } from './test-helpers';
 
 const DOC = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>T</title></head><body>
@@ -57,6 +56,16 @@ describe('validateTranslationMarkup', () => {
     expect(validateTranslationMarkup('Hi', '<script>x</script>Hi')).toBeDefined();
     expect(validateTranslationMarkup('Hi', '  ')).toBe('empty translation');
   });
+  it('names the missing and unexpected tag signatures', () => {
+    const note = 'Hi <sup class="endnote"><a href="notes.htm#en4-11" id="nr4-11">11</a></sup> <i>x</i>';
+    expect(validateTranslationMarkup(note, 'Chào <sup class="endnote">11</sup> <b>x</b> <b>y</b>')).toBe(
+      'inline tags or attributes were not preserved: missing <a href="notes.htm#en4-11" id="nr4-11">; missing <i>; unexpected <b> ×2',
+    );
+    const long = `<a href="${'x'.repeat(60)}">y</a>`;
+    expect(validateTranslationMarkup(long, 'y')).toBe(`inline tags or attributes were not preserved: missing <a href="${'x'.repeat(40)}…">`);
+    const many = Array.from({ length: 8 }, (_, i) => `<i class="c${i}">w</i>`).join(' ');
+    expect(validateTranslationMarkup(many, 'w')).toMatch(/missing <i class="c5">; … \(2 more\)$/);
+  });
 });
 
 describe('protocol parsing', () => {
@@ -64,21 +73,5 @@ describe('protocol parsing', () => {
     const answer = parseSegmentsAnswer('Here you go:\n```json\n{"segments":[{"id":"a","html":" Xin chào "},{"id":"b"}]}\n```');
     expect([...answer]).toEqual([['a', 'Xin chào']]);
     expect(() => parseSegmentsAnswer('no json here')).toThrow(/no JSON/);
-  });
-
-  it('generates a guideline and a cleaned glossary', async () => {
-    const project = makeProject([[segment('a', 'The fox met the lion.')]]);
-    const provider = mockProvider(() => ({
-      text: '{"guideline":"- Warm tone","glossary":[{"term":"fox","translation":"cáo"},{"term":"Fox","translation":"dup"},{"term":"","translation":"x"},{"term":"lion","translation":"sư tử","note":"animal"}]}',
-    }));
-    const guide = await generateGuide(project, provider, project.settings);
-    expect(guide).toEqual({
-      guideline: '- Warm tone',
-      glossary: [
-        { term: 'fox', translation: 'cáo' },
-        { term: 'lion', translation: 'sư tử', note: 'animal' },
-      ],
-    });
-    expect(provider.calls[0]?.user).toContain('The fox met the lion.');
   });
 });

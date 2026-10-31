@@ -65,6 +65,19 @@ describe('segment revisions', () => {
     expect(segment).toEqual({ id: 's', sourceHtml: 'x', sourceText: 'x', status: 'pending' });
   });
 
+  it('copies the hand-edit flag from another tab, also when the translation itself is unchanged', () => {
+    const segment: Segment = { id: 's', sourceHtml: 'x', sourceText: 'x', status: 'translated', translationHtml: 'job' };
+    const row = { projectId: 'p', id: 's', status: 'translated' as const, translationHtml: 'mine', userEdited: true };
+    expect(applyStoredState(segment, revisionOf(segment), row)).toBe(true);
+    expect(segment).toMatchObject({ translationHtml: 'mine', userEdited: true });
+
+    // Same text, flag cleared elsewhere (e.g. retranslated to the same words): the flag still follows storage.
+    expect(applyStoredState(segment, revisionOf(segment), { ...row, userEdited: undefined })).toBe(true);
+    expect(segment).not.toHaveProperty('userEdited');
+    expect(applyStoredState(segment, revisionOf(segment), row)).toBe(true);
+    expect(segment.userEdited).toBe(true);
+  });
+
   it('validates rows read from storage', () => {
     expect(isSegmentStateRow({ projectId: 'p', id: 's', status: 'reviewed', translationHtml: 'x' })).toBe(true);
     expect(isSegmentStateRow({ projectId: 'p', id: 's', status: 'bogus' })).toBe(false);

@@ -8,7 +8,7 @@ import { useProject } from '../lib/project-store';
 
 const TABS: BookTab[] = ['setup', 'read', 'export'];
 
-export function BookPage({ id, tab }: { id: string; tab: BookTab }) {
+export function BookPage({ id, tab, segment }: { id: string; tab: BookTab; segment?: string }) {
   const { t } = useI18n();
   const { project, error, loading, version } = useProject(id);
 
@@ -50,7 +50,7 @@ export function BookPage({ id, tab }: { id: string; tab: BookTab }) {
         ))}
       </nav>
       {tab === 'setup' && <TranslationSetupPanel project={project} version={version} />}
-      {tab === 'read' && <ReaderPanel project={project} version={version} />}
+      {tab === 'read' && <ReaderPanel project={project} version={version} segment={segment} />}
       {tab === 'export' && <ExportPanel project={project} version={version} />}
     </div>
   );

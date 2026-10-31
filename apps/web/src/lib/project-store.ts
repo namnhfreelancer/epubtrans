@@ -1,4 +1,4 @@
-import type { Project, ProjectSettings, Segment } from '@epubtrans/core';
+import type { Project, ProjectSettings, SampleSelection, Segment } from '@epubtrans/core';
 import { useEffect, useSyncExternalStore } from 'react';
 import { repository } from './app-services';
 import { broadcast, closeProjectChannel, onCrossTabMessage, watchProjectChannel } from './cross-tab-channel';
@@ -183,12 +183,20 @@ export function saveTranslationEdit(project: Project, segment: Segment, html: st
   if (value) {
     segment.translationHtml = value;
     segment.status = segment.status === 'reviewed' ? 'reviewed' : 'translated';
+    segment.userEdited = true;
   } else {
     delete segment.translationHtml;
+    delete segment.userEdited;
     segment.status = 'pending';
   }
   delete segment.error;
   project.updatedAt = new Date().toISOString();
   touchProject(project.id);
   return persistSegment(project.id, segment);
+}
+
+/** Persists the passages picked by a sample translation (the in-memory project already carries them). */
+export function persistLastSample(projectId: string, selection: SampleSelection): Promise<void> {
+  const snapshot: SampleSelection = { seed: selection.seed, passages: selection.passages.map((p) => ({ ...p, segmentIds: [...p.segmentIds] })) };
+  return enqueueWrite(projectId, () => repository.saveLastSample(projectId, snapshot));
 }
