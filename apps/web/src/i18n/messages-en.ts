@@ -289,6 +289,8 @@ export const en = {
   'hints.done': 'Hints generated. Export the book to see them.',
   'hints.doneFailed': '{n} words could not be glossed; generate again to retry them.',
   'hints.failed': 'Hint generation stopped: {message}',
+  'hints.settingsChanged':
+    'Hint generation stopped: the target, source or gloss language of this book changed (possibly in another tab). Glosses for the old language were not saved; generate again to use the new settings.',
   'hints.cancelled': 'Hint generation cancelled. Finished words are kept; generate again to continue.',
   'hints.loadingList': 'Loading the word frequency list…',
   'hints.listFailed': 'Could not load the word frequency list: {message}',

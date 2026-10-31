@@ -6,16 +6,19 @@ import { runWithJobLock } from './cross-tab-job-lock';
 import type { SettingsGuard } from './project-repository';
 import { cachedProject, enqueueWrite, touchProject } from './project-store';
 import { applyStoredState, revisionOf } from './segment-revision';
+import { applySettingsUpdate, type SettingsUpdate, toSettingsUpdate } from './settings-field-changes';
 
 /**
  * Settings of the opened books, kept consistent across tabs. Storage is the source of truth: a change is saved as a
- * patch merged into the stored settings (never as a whole copy that could carry stale values from this tab), then the
- * other tabs are told to re-read the settings. Runs re-read them right before sending anything, and guard their writes
- * with the settings revision and target language they read (see `SettingsGuard`).
+ * patch merged into the stored settings (never as a whole copy that could carry stale values from this tab; nested
+ * settings such as the Word Wise options, export style and glossary are merged field by field, see
+ * `settings-field-changes.ts`), then the other tabs are told to re-read the settings. Runs and hints jobs re-read them
+ * right before sending anything, and guard their writes with the settings revision and target language they read (see
+ * `SettingsGuard`).
  */
 
-/** Patches applied in memory whose write has not finished yet, per book, in order. */
-const pendingPatches = new Map<string, Partial<ProjectSettings>[]>();
+/** Updates applied in memory whose write has not finished yet, per book, in order. */
+const pendingPatches = new Map<string, SettingsUpdate[]>();
 /** Bumped when settings changed in another tab, so forms that keep their own input state can start over from them. */
 const syncVersions = new Map<string, number>();
 const syncListeners = new Set<() => void>();
@@ -38,23 +41,27 @@ function bumpSync(projectId: string): void {
 /** Stored settings with this tab's not-yet-written patches on top. */
 function withPendingPatches(projectId: string, stored: ProjectSettings): ProjectSettings {
   let settings = stored;
-  for (const patch of pendingPatches.get(projectId) ?? []) settings = { ...settings, ...patch };
+  for (const update of pendingPatches.get(projectId) ?? []) settings = applySettingsUpdate(settings, update);
   return settings;
 }
 
-/** Applies a settings patch in memory immediately and persists it (merged into the stored settings). */
+/**
+ * Applies a settings patch in memory immediately and persists it, merged into the stored settings: top-level values as
+ * given, nested settings only in the fields that differ from what this tab had.
+ */
 export function updateSettings(project: Project, patch: Partial<ProjectSettings>): Promise<void> {
+  const update = toSettingsUpdate(project.settings, patch);
   project.settings = { ...project.settings, ...patch };
   project.updatedAt = new Date().toISOString();
   touchProject(project.id);
   const pending = pendingPatches.get(project.id) ?? [];
-  pending.push(patch);
+  pending.push(update);
   pendingPatches.set(project.id, pending);
   return enqueueWrite(project.id, async () => {
     try {
-      await repository.saveSettings(project.id, patch);
+      await repository.saveSettings(project.id, update.patch, undefined, update.changes);
     } finally {
-      pending.splice(pending.indexOf(patch), 1);
+      pending.splice(pending.indexOf(update), 1);
     }
     broadcast(project.id, { type: 'settings', reset: false });
   });

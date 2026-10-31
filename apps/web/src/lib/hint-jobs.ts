@@ -1,7 +1,17 @@
-import { type ChatProvider, generateProjectWordHints, type Project, type ProjectSettings, type TokenUsage, type WordHintsPlan } from '@epubtrans/core';
+import {
+  type ChatProvider,
+  generateProjectWordHints,
+  glossLanguageOf,
+  type Project,
+  type ProjectSettings,
+  type TokenUsage,
+  type WordHintsPlan,
+} from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
 import { launchWithJobLock } from './cross-tab-job-lock';
-import { announceHints, persistHintEntry, persistHintsStart, touchProject } from './project-store';
+import { SettingsChangedError, type SettingsGuard } from './project-repository';
+import { refreshSettingsFromStorage } from './project-settings-store';
+import { announceHints, persistHintEntry, persistHintsStart, reloadHints, touchProject } from './project-store';
 import { getSampleJobState } from './sample-jobs';
 import { isJobActive, type StartJobResult } from './translation-jobs';
 
@@ -16,6 +26,8 @@ export interface HintJobState {
   /** Lemmas whose glosses stayed unusable; generating again retries them. */
   failed: number;
   error?: string;
+  /** The run stopped because the book's target, source or gloss language changed (here or in another tab). */
+  settingsChanged?: boolean;
 }
 
 const CANCEL = 'cancelled-by-user';
@@ -44,11 +56,25 @@ export const useHintJob = (projectId: string): HintJobState => useSyncExternalSt
 export const useHintsRunning = (projectId: string): boolean => useSyncExternalStore(subscribe, () => jobs.get(projectId)?.status === 'running');
 export const isHintJobActive = (projectId: string): boolean => controllers.has(projectId);
 
+const sameLanguage = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+/**
+ * Whether `now` (the book's settings as they are) still matches what a hints run was planned with: `planned` (the
+ * settings it was started with) and the plan's gloss language. Glosses are written for one target, source and gloss
+ * language; once any of them changed, the run's remaining work is for a language the user no longer wants.
+ */
+export const hintLanguagesHold = (planned: ProjectSettings, plan: WordHintsPlan, now: ProjectSettings): boolean =>
+  sameLanguage(planned.targetLang, now.targetLang) && sameLanguage(planned.sourceLang, now.sourceLang) && sameLanguage(plan.glossLang, glossLanguageOf(now));
+
 /**
  * Generates Word Wise glosses in the background for the lemmas the plan still lacks. Like translation and samples it
  * is a paid job, so it holds the project's cross-tab job lock and refuses to start while a translation or sample run
- * is active in this tab. Every finished lemma is persisted right away (so a reload resumes), and a persistence
- * failure stops the run. Resolves once it is known whether the run started here.
+ * is active in this tab. Once the lock is held, the settings are re-read from storage; when the target, source or
+ * gloss language differs from what the plan was made for, the run stops before any request. During the run, no request
+ * is sent once the book's languages changed (in this tab, or in another one, which tells this tab), and every finished
+ * lemma is persisted right away (so a reload resumes) with a compare-and-set against the settings the run read, so a
+ * gloss in a language changed meanwhile is discarded. A persistence failure stops the run. Resolves once it is known
+ * whether the run started here.
  */
 export function startHintJob(project: Project, plan: WordHintsPlan, settings: ProjectSettings, provider: ChatProvider): Promise<StartJobResult> {
   if (controllers.has(project.id) || isJobActive(project.id) || getSampleJobState(project.id).status === 'running') return Promise.resolve('already-running');
@@ -74,9 +100,31 @@ export function startHintJob(project: Project, plan: WordHintsPlan, settings: Pr
   });
 }
 
+/** The provider, refusing to send anything once the book's languages no longer match the run (which stops it). */
+function guardedProvider(provider: ChatProvider, holds: () => boolean, controller: AbortController): ChatProvider {
+  return {
+    listModels: (signal) => provider.listModels(signal),
+    chat: (req) => {
+      if (holds()) return provider.chat(req);
+      const err = new SettingsChangedError();
+      controller.abort(err);
+      return Promise.reject(err);
+    },
+  };
+}
+
 /** One hints run; never rejects (the outcome is recorded in the job state). */
 async function runHints(project: Project, plan: WordHintsPlan, settings: ProjectSettings, provider: ChatProvider, controller: AbortController): Promise<void> {
   setJob(project.id, { ...IDLE, status: 'running', total: plan.candidates.length });
+  const holds = () => hintLanguagesHold(settings, plan, project.settings);
+  let guard: SettingsGuard;
+  try {
+    // Gloss with the settings in storage, not this tab's copy; a book deleted in another tab fails here, before any request.
+    guard = await refreshSettingsFromStorage(project);
+    if (!holds()) throw new SettingsChangedError();
+  } catch (err) {
+    return setJob(project.id, failedState(jobs.get(project.id) ?? IDLE, err));
+  }
   let writeError: Error | undefined;
   const writes: Promise<void>[] = [];
   const track = (write: Promise<void>) =>
@@ -88,11 +136,11 @@ async function runHints(project: Project, plan: WordHintsPlan, settings: Project
     );
   let failed = 0;
   try {
-    const result = await generateProjectWordHints(project, plan, provider, settings, {
+    const result = await generateProjectWordHints(project, plan, guardedProvider(provider, holds, controller), settings, {
       signal: controller.signal,
-      onReset: (hints) => track(persistHintsStart(project.id, hints, plan.reset)),
+      onReset: (hints) => track(persistHintsStart(project.id, hints, plan.reset, guard)),
       onEntry: (entry) => {
-        track(persistHintEntry(project.id, plan, entry));
+        track(persistHintEntry(project.id, plan, entry, guard));
         touchProject(project.id);
       },
       onProgress: (p) => setJob(project.id, { ...(jobs.get(project.id) ?? IDLE), status: 'running', done: p.done, total: p.total, usage: p.usage }),
@@ -103,16 +151,22 @@ async function runHints(project: Project, plan: WordHintsPlan, settings: Project
     setJob(project.id, { ...(jobs.get(project.id) ?? IDLE), status: 'done', failed });
   } catch (err) {
     await Promise.all(writes);
-    const failure = writeError ?? err;
-    const cancelled = !writeError && controller.signal.aborted && controller.signal.reason === CANCEL;
+    const reason: unknown = controller.signal.aborted ? controller.signal.reason : undefined;
+    const failure = writeError ?? (reason instanceof SettingsChangedError ? reason : err);
     const current = jobs.get(project.id) ?? IDLE;
-    setJob(
-      project.id,
-      cancelled ? { ...current, status: 'cancelled' } : { ...current, status: 'failed', error: failure instanceof Error ? failure.message : String(failure) },
-    );
+    if (!writeError && reason === CANCEL) setJob(project.id, { ...current, status: 'cancelled' });
+    else setJob(project.id, failedState(current, failure));
+    // Glosses the run added in memory but storage refused (another language now) are dropped from the live project too.
+    if (failure instanceof SettingsChangedError) await reloadHints(project).catch(() => undefined);
   } finally {
     await announceHints(project.id).catch(() => undefined);
   }
+}
+
+/** The job state of a run that stopped on `err`. */
+function failedState(current: HintJobState, err: unknown): HintJobState {
+  const error = err instanceof Error ? err.message : String(err);
+  return { ...current, status: 'failed', error, ...(err instanceof SettingsChangedError ? { settingsChanged: true } : {}) };
 }
 
 /** Stops a running hints job; lemmas that already finished stay saved, so generating again resumes. */

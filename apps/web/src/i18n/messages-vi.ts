@@ -291,6 +291,8 @@ export const vi: Record<MessageKey, string> = {
   'hints.done': 'Đã tạo gợi ý. Hãy xuất sách để xem.',
   'hints.doneFailed': 'Không chú giải được {n} từ; hãy tạo lại để thử lại các từ đó.',
   'hints.failed': 'Tạo gợi ý đã dừng: {message}',
+  'hints.settingsChanged':
+    'Đã dừng tạo gợi ý: ngôn ngữ đích, ngôn ngữ nguồn hoặc ngôn ngữ chú giải của sách đã thay đổi (có thể ở một thẻ khác). Các chú giải cho ngôn ngữ cũ không được lưu; hãy tạo lại để dùng cài đặt mới.',
   'hints.cancelled': 'Đã hủy tạo gợi ý. Các từ đã xong được giữ lại; tạo lại để tiếp tục.',
   'hints.loadingList': 'Đang tải danh sách tần suất từ…',
   'hints.listFailed': 'Không tải được danh sách tần suất từ: {message}',

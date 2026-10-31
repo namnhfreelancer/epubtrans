@@ -27,6 +27,8 @@ export interface MockProviderState {
   glossaryRequests: number;
   /** Lemmas sent in each Word Wise gloss request, in arrival order. */
   hintRequests: string[][];
+  /** Gloss language tag of each Word Wise gloss request ("Gloss language: Vietnamese (vi)" → `vi`), in arrival order. */
+  hintLanguages: string[];
   /** Prefix prepended to every translated segment. */
   prefix: string;
   /** Prefix each translation with the target language tag of its request instead (`[de] `), to see which language a tab used. */
@@ -41,6 +43,8 @@ export interface MockProviderState {
 
 /** The target language tag in a translation prompt ("Target language: German (de)"). */
 const TARGET_TAG = /Target language: [^(\n]*\(([\w-]+)\)/;
+/** The gloss language tag in a Word Wise prompt ("Gloss language: Vietnamese (vi)"). */
+const GLOSS_TAG = /Gloss language: [^(\n]*\(([\w-]+)\)/;
 
 /** Forbidden markup: the translation validator rejects it whatever the source looks like. */
 const INVALID_MARKUP = '<script>broken()</script>';
@@ -69,6 +73,7 @@ function answer(body: ChatBody, state: MockProviderState): string {
   if (system.includes('Word Wise hints')) {
     const { items } = JSON.parse(user) as { items: { id: string; lemma: string }[] };
     state.hintRequests.push(items.map((i) => i.lemma));
+    state.hintLanguages.push(GLOSS_TAG.exec(system)?.[1] ?? '?');
     return JSON.stringify({ items: items.map((i) => ({ id: i.id, sense: 'main', gloss: `≈${i.lemma}` })) });
   }
   const { segments } = JSON.parse(user) as { segments: { id: string; html?: string; draft?: string }[] };
@@ -101,6 +106,7 @@ export async function installMockProvider(
     guideRequests: 0,
     glossaryRequests: 0,
     hintRequests: [],
+    hintLanguages: [],
     prefix: opts.prefix ?? '[vi] ',
     prefixByTarget: opts.prefixByTarget ?? false,
     delayMs: opts.delayMs ?? 0,

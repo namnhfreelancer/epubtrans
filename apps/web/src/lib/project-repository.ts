@@ -1,4 +1,5 @@
 import {
+  glossLanguageOf,
   type Project,
   type ProjectSettings,
   redactSecrets,
@@ -10,6 +11,7 @@ import {
 } from '@epubtrans/core';
 import type { HintRow, ProjectDatabase, ProjectMetaRow, SegmentStateRow } from './project-database';
 import { canOverwrite, isSegmentStateRow, type SegmentRevision } from './segment-revision';
+import { applySettingsUpdate, type FieldChange } from './settings-field-changes';
 
 export interface ProjectSummary {
   id: string;
@@ -43,7 +45,7 @@ export class SettingsChangedError extends Error {
 
 /** The settings a run read from storage before sending anything; its writes are checked against them. */
 export interface SettingsGuard {
-  /** The book's settings revision, bumped whenever its translations are reset or the project is replaced. */
+  /** The book's settings revision, bumped whenever its target language changes, its translations are reset or the project is replaced. */
   revision: number;
   targetLang: string;
 }
@@ -58,6 +60,9 @@ const sameLanguage = (a: string, b: string) => a.toLowerCase() === b.toLowerCase
 /** Whether settings stored with `revision` still match what a guarded writer read. */
 const guardHolds = (row: ProjectMetaRow, guard: Pick<SettingsGuard, 'targetLang'> & Partial<SettingsGuard>) =>
   sameLanguage(row.settings.targetLang, guard.targetLang) && (guard.revision === undefined || (row.settingsRevision ?? 0) === guard.revision);
+/** Whether a hints run for `pair` that read `guard` may still write: same settings, and the pair's gloss language still in use. */
+const hintsGuardHolds = (row: ProjectMetaRow, guard: SettingsGuard, pair: HintPair) =>
+  guardHolds(row, guard) && sameLanguage(glossLanguageOf(row.settings), pair.glossLang);
 /** A hints run tried to save an entry after the stored hints switched to another language pair (e.g. a re-import). */
 export class HintsReplacedError extends Error {
   override readonly name = 'HintsReplacedError';
@@ -196,17 +201,26 @@ export function createProjectRepository(db: ProjectDatabase) {
     },
 
     /**
-     * Merges a settings patch into the stored settings (read and write in one transaction, so a change saved meanwhile
-     * by another tab is kept rather than overwritten by a stale copy). With `guard`, refuses with
-     * {@link SettingsChangedError} when the stored target language differs from the guard's. Resolves the merged settings.
+     * Merges a settings patch, then field-wise `changes` of nested settings, into the stored settings (read and write in
+     * one transaction, so a change saved meanwhile by another tab is kept rather than overwritten by a stale copy). A new
+     * target language bumps the settings revision, so every run, retranslation or hints job that read the old one can no
+     * longer store its results. With `guard`, refuses with {@link SettingsChangedError} when the stored target language
+     * differs from the guard's. Resolves the merged settings.
      */
-    async saveSettings(id: string, patch: Partial<ProjectSettings>, guard?: Pick<SettingsGuard, 'targetLang'>): Promise<ProjectSettings> {
+    async saveSettings(
+      id: string,
+      patch: Partial<ProjectSettings>,
+      guard?: Pick<SettingsGuard, 'targetLang'>,
+      changes: FieldChange[] = [],
+    ): Promise<ProjectSettings> {
       return db.transaction('rw', [db.projects], async () => {
         const row = await db.projects.get(id);
         if (!row) throw new ProjectNotFoundError(`Project ${id} not found`);
         if (guard && !guardHolds(row, guard)) throw new SettingsChangedError();
-        const settings = { ...row.settings, ...patch };
-        await db.projects.put({ ...row, settings, updatedAt: new Date().toISOString() });
+        const settings = applySettingsUpdate(row.settings, { patch, changes });
+        const targetChanged = !sameLanguage(settings.targetLang, row.settings.targetLang);
+        const settingsRevision = (row.settingsRevision ?? 0) + (targetChanged ? 1 : 0);
+        await db.projects.put({ ...row, settings, settingsRevision, updatedAt: new Date().toISOString() });
         return settings;
       });
     },
@@ -271,29 +285,35 @@ export function createProjectRepository(db: ProjectDatabase) {
 
     /**
      * Starts a hints run for a language pair: records the pair on the project and, when it replaces hints of another
-     * pair, deletes their entries. Rejects with {@link ProjectNotFoundError} when the project was deleted.
+     * pair, deletes their entries. Rejects with {@link ProjectNotFoundError} when the project was deleted, and with
+     * {@link SettingsChangedError} when `guard` no longer holds (see `saveHintEntry`).
      */
-    async startHints(projectId: string, hints: HintPair, clear: boolean): Promise<void> {
+    async startHints(projectId: string, hints: HintPair, clear: boolean, guard?: SettingsGuard): Promise<void> {
       await db.transaction('rw', [db.projects, db.hints], async () => {
-        const updated = await db.projects.update(projectId, {
+        const meta = await db.projects.get(projectId);
+        if (!meta) throw new ProjectNotFoundError(`Project ${projectId} not found`);
+        if (guard && !hintsGuardHolds(meta, guard, hints)) throw new SettingsChangedError();
+        await db.projects.update(projectId, {
           hintLanguages: { sourceLang: hints.sourceLang, glossLang: hints.glossLang },
           updatedAt: new Date().toISOString(),
         });
-        if (!updated) throw new ProjectNotFoundError(`Project ${projectId} not found`);
         if (clear) await db.hints.where('projectId').equals(projectId).delete();
       });
     },
 
     /**
      * Compare-and-set: persists one glossed lemma (called as soon as a hints run finishes it, which makes runs
-     * resumable) only while the stored hints still belong to the run's language pair. Rejects with
-     * {@link ProjectNotFoundError} when the project was deleted and {@link HintsReplacedError} when its hints were
-     * replaced by another pair, so a stale run never mixes glosses of two pairs.
+     * resumable) only while the stored hints still belong to the run's language pair and, with `guard`, while the
+     * book's settings still are the ones the run read: same revision and target language, and the gloss language still
+     * the pair's. Rejects with {@link ProjectNotFoundError} when the project was deleted, {@link SettingsChangedError}
+     * when the settings changed (a gloss in the old language is discarded) and {@link HintsReplacedError} when its hints
+     * were replaced by another pair, so a stale run never mixes glosses of two pairs.
      */
-    async saveHintEntry(projectId: string, pair: HintPair, entry: WordHintEntry): Promise<void> {
+    async saveHintEntry(projectId: string, pair: HintPair, entry: WordHintEntry, guard?: SettingsGuard): Promise<void> {
       await db.transaction('rw', [db.projects, db.hints], async () => {
         const meta = await db.projects.get(projectId);
         if (!meta) throw new ProjectNotFoundError(`Project ${projectId} not found`);
+        if (guard && !hintsGuardHolds(meta, guard, pair)) throw new SettingsChangedError();
         const stored = meta.hintLanguages;
         if (stored?.sourceLang !== pair.sourceLang || stored.glossLang !== pair.glossLang) {
           throw new HintsReplacedError(`The hints of project ${projectId} were replaced by another language pair`);

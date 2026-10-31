@@ -204,24 +204,43 @@ export function persistLastSample(projectId: string, selection: SampleSelection)
   return enqueueWrite(projectId, () => repository.saveLastSample(projectId, snapshot));
 }
 
-/** Records the language pair of a hints run (deleting the entries of another pair when `clear`). */
-export function persistHintsStart(projectId: string, hints: WordHints, clear: boolean): Promise<void> {
+/**
+ * Records the language pair of a hints run (deleting the entries of another pair when `clear`); with `guard`, only while
+ * the book's settings are still the ones the run read (rejects with `SettingsChangedError` otherwise).
+ */
+export function persistHintsStart(projectId: string, hints: WordHints, clear: boolean, guard?: SettingsGuard): Promise<void> {
   const pair = { sourceLang: hints.sourceLang, glossLang: hints.glossLang };
   return enqueueWrite(projectId, async () => {
-    await repository.startHints(projectId, pair, clear);
+    await repository.startHints(projectId, pair, clear, guard);
     broadcast(projectId, { type: 'hints' });
   });
 }
 
 /**
  * Persists one lemma finished by a hints run for `pair` (a copy: the run keeps mutating the live project), only while
- * the stored hints still belong to that pair (compare-and-set; rejects otherwise, which stops the run). Other tabs are
- * told once the run ends (`announceHints`), not per lemma: each message makes them re-read every entry.
+ * the stored hints still belong to that pair and, with `guard`, the settings are still the ones the run read
+ * (compare-and-set; rejects otherwise, which stops the run). Other tabs are told once the run ends (`announceHints`),
+ * not per lemma: each message makes them re-read every entry.
  */
-export function persistHintEntry(projectId: string, pair: Pick<WordHints, 'sourceLang' | 'glossLang'>, entry: WordHintEntry): Promise<void> {
+export function persistHintEntry(
+  projectId: string,
+  pair: Pick<WordHints, 'sourceLang' | 'glossLang'>,
+  entry: WordHintEntry,
+  guard?: SettingsGuard,
+): Promise<void> {
   const snapshot = structuredClone(entry);
   const expected = { sourceLang: pair.sourceLang, glossLang: pair.glossLang };
-  return enqueueWrite(projectId, () => repository.saveHintEntry(projectId, expected, snapshot));
+  return enqueueWrite(projectId, () => repository.saveHintEntry(projectId, expected, snapshot, guard));
+}
+
+/** Replaces the live project's hints by the stored ones (queued behind this tab's writes). */
+export function reloadHints(project: Project): Promise<void> {
+  return enqueueWrite(project.id, async () => {
+    const hints = await repository.loadHints(project.id);
+    if (hints) project.wordHints = hints;
+    else delete project.wordHints;
+    touchProject(project.id);
+  });
 }
 
 /** Tells other tabs that the stored hints changed, after this tab's pending writes. */
@@ -234,10 +253,5 @@ onCrossTabMessage((projectId, message) => {
   if (message.type !== 'hints') return;
   const project = entries.get(projectId)?.project;
   if (!project) return;
-  enqueueWrite(projectId, async () => {
-    const hints = await repository.loadHints(projectId);
-    if (hints) project.wordHints = hints;
-    else delete project.wordHints;
-    touchProject(projectId);
-  }).catch((err: unknown) => console.warn('epubtrans: could not refresh hints changed in another tab', err));
+  reloadHints(project).catch((err: unknown) => console.warn('epubtrans: could not refresh hints changed in another tab', err));
 });
