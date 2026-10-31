@@ -14,6 +14,12 @@ export function normalizeModelName(id: string): string {
   return base.replace(/[._:\s]+/g, '-').replace(/-+/g, '-');
 }
 
+/**
+ * Ids the fuzzy rules may pick: `/`-separated segments of letters, digits and `._~:@+-`. Anything else (control
+ * characters, spaces, odd prefixes in a tampered catalog) only matches when the user typed that exact id.
+ */
+const PLAIN_ID = /^[\w.~:@+-]+(?:\/[\w.~:@+-]+)*$/;
+
 /** `-20250514` and `-2025-05-14` release stamps. Expects a normalized name. */
 const stripDateSuffix = (name: string): string => name.replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '');
 
@@ -41,7 +47,7 @@ export function matchModelPricing(entries: readonly PricingEntry[], model: strin
     if (prefixed) return prefixed;
   }
 
-  const normalized = entries.map((entry) => ({ entry, key: normalizeModelName(entry.id) }));
+  const normalized = entries.filter((entry) => PLAIN_ID.test(entry.id)).map((entry) => ({ entry, key: normalizeModelName(entry.id) }));
   const target = normalizeModelName(name);
   const withoutDate = stripDateSuffix(target);
   for (const wanted of withoutDate === target ? [target] : [target, withoutDate]) {

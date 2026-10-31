@@ -5,7 +5,7 @@ import { installMockPricing, LITELLM_PRICES_URL, OPENROUTER_MODELS_URL } from '.
 import { installMockProvider, MOCK_BASE } from './support/mock-provider';
 
 const KEY = 'sk-test-LEAKCHECK-123';
-const APP_ORIGIN = 'http://localhost:4317/';
+const APP_ORIGIN = `http://localhost:${process.env.E2E_PORT ?? 4317}/`;
 const PRICE_URLS = [OPENROUTER_MODELS_URL, LITELLM_PRICES_URL];
 
 interface RecordedRequest {

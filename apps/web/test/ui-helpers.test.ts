@@ -58,9 +58,22 @@ describe('progress helpers', () => {
 
   it('counts statuses and remaining work per pass mode', () => {
     const counts = countChapterSegments(chapters);
-    expect(counts).toEqual({ total: 4, done: 2, pending: 1, translated: 1, reviewed: 1, error: 1 });
+    expect(counts).toEqual({ total: 4, done: 2, pending: 1, translated: 1, reviewed: 1, error: 1, reviewable: 1 });
     expect(remainingWork(counts, false)).toBe(2);
     expect(remainingWork(counts, true)).toBe(3);
+  });
+
+  it('does not count hand-edited drafts as two-pass work, since core never reviews them', () => {
+    const segments = [
+      { id: '1', sourceHtml: '', sourceText: '', status: 'translated' as const, translationHtml: 'mine', userEdited: true },
+      { id: '2', sourceHtml: '', sourceText: '', status: 'translated' as const, translationHtml: 'draft' },
+      // A flag without a translation protects nothing (core translates it), so it still counts.
+      { id: '3', sourceHtml: '', sourceText: '', status: 'translated' as const, userEdited: true },
+    ];
+    const counts = countChapterSegments([{ href: 'a', title: 'A', segments }]);
+    expect(counts).toMatchObject({ translated: 3, reviewable: 2 });
+    expect(remainingWork(counts, true)).toBe(2);
+    expect(remainingWork(countChapterSegments([{ href: 'a', title: 'A', segments: segments.slice(0, 1) }]), true)).toBe(0);
   });
 
   it('estimates remaining time from the observed rate', () => {

@@ -76,6 +76,19 @@ describe('lookupEstimatePrices', () => {
     expect(offline.stderr).toContain('No public price found');
   });
 
+  test('gives up after the timeout instead of stalling the command before the confirmation', async () => {
+    // A blackholed host: the request only ends when its signal aborts.
+    const hanging = ((_: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+      })) as unknown as typeof fetch;
+    const io = createTestIo({ fetch: hanging });
+    const started = Date.now();
+    expect(await lookupEstimatePrices(settings('mock-model'), io, true, 50)).toEqual({});
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(io.stderr).toContain('Price lookup timed out');
+  });
+
   test('requests are plain GETs: no Authorization header, no body', async () => {
     const { fetchImpl, calls } = catalogFetch();
     await lookupEstimatePrices(settings('nope'), createTestIo({ fetch: fetchImpl }), true);

@@ -70,6 +70,26 @@ describe('project repository', () => {
     expect(loaded.chapters[0]?.segments.filter((s) => s.status === 'pending' || s.status === 'error').map((s) => s.id)).toEqual(['c1-2']);
   });
 
+  it('reads the hand-edit flag back on reload, so later runs keep the edit', async () => {
+    const project = makeProject();
+    const translated = project.chapters[0]?.segments[1];
+    if (!translated) throw new Error('fixture');
+    translated.userEdited = true;
+    await repo.saveProject(project);
+    expect((await repo.loadProject('p1')).chapters[0]?.segments[1]).toEqual({ ...translated, userEdited: true });
+
+    const seg = project.chapters[0]?.segments[0];
+    if (!seg) throw new Error('fixture');
+    Object.assign(seg, { status: 'translated', translationHtml: 'Bản của tôi', userEdited: true });
+    await repo.saveSegment('p1', seg);
+    expect((await repo.loadProject('p1')).chapters[0]?.segments[0]).toMatchObject({ translationHtml: 'Bản của tôi', userEdited: true });
+
+    // Clearing the flag (a retranslation) is read back too.
+    delete seg.userEdited;
+    await repo.saveSegment('p1', seg);
+    expect((await repo.loadProject('p1')).chapters[0]?.segments[0]).not.toHaveProperty('userEdited');
+  });
+
   it('resets a segment to pending without resurrecting an older translation', async () => {
     const project = makeProject();
     await repo.saveProject(project);

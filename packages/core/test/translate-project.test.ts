@@ -232,6 +232,56 @@ describe('translateProject', () => {
   });
 });
 
+describe('segments edited by hand', () => {
+  const edited = (id: string, status: 'translated' | 'error' = 'translated') => ({
+    ...segment(id, `Source ${id}.`, status),
+    translationHtml: `Mine ${id}.`,
+    userEdited: true,
+  });
+
+  it('are never re-sent or overwritten by a run or its review pass', async () => {
+    const project = makeProject([[edited('a'), edited('b', 'error'), segment('c', 'Plain.')]]);
+    project.settings.twoPass = true;
+    const provider = mockProvider(answerAll);
+    await translateProject(project, provider, project.settings);
+    expect(provider.calls.flatMap((c) => idsOf(c.user))).toEqual(['c', 'c']);
+    const [a, b] = project.chapters[0]?.segments ?? [];
+    expect(a).toMatchObject({ status: 'translated', translationHtml: 'Mine a.', userEdited: true });
+    expect(b).toMatchObject({ status: 'error', translationHtml: 'Mine b.', userEdited: true });
+  });
+
+  it('are left out of the estimate unless the caller asks to overwrite them', () => {
+    const project = makeProject([[edited('a', 'error'), segment('c', 'Plain.')]]);
+    const skipping = estimateCost(project, project.settings);
+    const overwriting = estimateCost(project, project.settings, { overwriteUserEdited: true });
+    expect(overwriting.inputTokens).toBeGreaterThan(skipping.inputTokens);
+  });
+
+  it('are translated again when the caller asks, which clears the flag', async () => {
+    const project = makeProject([[edited('a', 'error')]]);
+    await translateProject(project, mockProvider(answerAll), project.settings, { overwriteUserEdited: true });
+    const [a] = project.chapters[0]?.segments ?? [];
+    expect(a?.status).toBe('translated');
+    expect(a?.userEdited).toBeUndefined();
+  });
+
+  it('a flagged segment without a translation is not protected, so it cannot stay pending forever', async () => {
+    const project = makeProject([[{ ...segment('a', 'Source.'), userEdited: true }]]);
+    await translateProject(project, mockProvider(answerAll), project.settings);
+    expect(project.chapters[0]?.segments[0]?.status).toBe('translated');
+  });
+
+  it('retranslateSegment replaces a hand edit on success (clearing the flag) and keeps it on failure', async () => {
+    const project = makeProject([[{ ...edited('a'), sourceHtml: 'Hi <b>you</b>' }]]);
+    const broken = mockProvider(() => ({ text: '{"segments":[{"id":"a","html":"no tags"}]}' }));
+    await expect(retranslateSegment(project, 'a', broken, project.settings)).rejects.toThrow();
+    expect(project.chapters[0]?.segments[0]).toMatchObject({ translationHtml: 'Mine a.', userEdited: true });
+    await retranslateSegment(project, 'a', mockProvider(answerAll), project.settings);
+    expect(project.chapters[0]?.segments[0]?.userEdited).toBeUndefined();
+    expect(project.chapters[0]?.segments[0]?.translationHtml).toBe(fakeTranslate('Hi <b>you</b>'));
+  });
+});
+
 describe('retranslateSegment', () => {
   it('replaces the translation on success and keeps it on failure', async () => {
     const project = makeProject([[{ ...segment('a', 'Hi <b>you</b>', 'translated'), translationHtml: 'Old <b>x</b>' }]]);

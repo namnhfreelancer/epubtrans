@@ -189,3 +189,31 @@ test("the reader's Retry all failed is disabled while another tab translates the
   await expect(retryB).toHaveCount(0);
   await expect(tabB.getByTestId('retry-busy-elsewhere')).toHaveCount(0);
 });
+
+test('an edit written to storage while a sample batch is in flight still wins the sample compare-and-set save', async ({ page: tabA }) => {
+  const mock = await installMockProvider(tabA, { delayMs: 2500 });
+  await configureMockProvider(tabA);
+  await importBook(tabA, FIXTURES.epub);
+  await openFirstBook(tabA);
+  const tabB = await openSecondTab(tabA);
+
+  await tabA.locator('#sample-passages').fill('2');
+  await tabA.getByTestId('sample-translate').click();
+  await expect.poll(() => mock.segmentRequests.length).toBeGreaterThan(0);
+  const segmentId = mock.segmentRequests[0]?.ids[0];
+  if (!segmentId) throw new Error('no sampled segment');
+  // No broadcast: tab A cannot refresh or skip the segment, so its sample save reaches the compare-and-set write and must lose.
+  await writeSegmentRowSilently(tabB, { id: segmentId, status: 'translated', translationHtml: 'Bản sửa trong lúc dịch mẫu' });
+
+  await expect(tabA.getByTestId('sample-complete')).toBeVisible({ timeout: 90_000 });
+  const rows = await persistedSegments(tabA);
+  expect(rows.find((s) => s.id === segmentId)).toMatchObject({ status: 'translated', translationHtml: 'Bản sửa trong lúc dịch mẫu' });
+  expect(rows.filter((s) => s.status === 'translated').length).toBeGreaterThan(1);
+
+  // The lost write copied the stored edit into tab A's live segment: open it through its deep link (no reload).
+  await tabA.evaluate((id) => {
+    window.location.hash = window.location.hash.replace(/\/setup$/, `/read/${encodeURIComponent(id)}`);
+  }, segmentId);
+  const rowA = tabA.locator(`[data-testid="segment-row"][data-segment-id="${segmentId}"]`);
+  await expect(rowA.getByTestId('segment-translation')).toHaveText('Bản sửa trong lúc dịch mẫu');
+});

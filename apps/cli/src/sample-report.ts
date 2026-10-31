@@ -1,4 +1,4 @@
-import type { Project, SampleSelection } from '@epubtrans/core';
+import type { Project, SampleSelection, Segment } from '@epubtrans/core';
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
@@ -18,8 +18,26 @@ export function htmlToPlainText(html: string): string {
     .trim();
 }
 
-/** Plain-text report of a sample: per passage the chapter title and every segment as a source/translation pair. */
-export function formatSampleReport(project: Project, selection: SampleSelection): string {
+/** Outcome of the sample run, to label segments whose shown translation is not the sample's. */
+export interface SampleOutcome {
+  /** Sample translation failed; an earlier translation, if any, is still in place. */
+  failed?: readonly string[];
+  /** Skipped because the user edited the translation by hand. */
+  keptEdited?: readonly string[];
+}
+
+function translationLabel(segment: Segment, outcome: SampleOutcome): string {
+  if (outcome.keptEdited?.includes(segment.id)) return 'translation (edited by hand, kept):';
+  // A failed segment without an earlier translation is an 'error' and printed as not translated below.
+  if (outcome.failed?.includes(segment.id) && segment.status !== 'error') return 'translation (sample failed, earlier translation kept):';
+  return 'translation:';
+}
+
+/**
+ * Plain-text report of a sample: per passage the chapter title and every segment as a source/translation pair.
+ * The text comes from the book and the model; the CLI strips terminal controls from all output (see `run`).
+ */
+export function formatSampleReport(project: Project, selection: SampleSelection, outcome: SampleOutcome = {}): string {
   const segments = new Map(project.chapters.flatMap((c) => c.segments.map((s) => [s.id, s] as const)));
   const lines: string[] = [];
   selection.passages.forEach((passage, index) => {
@@ -29,7 +47,7 @@ export function formatSampleReport(project: Project, selection: SampleSelection)
       if (!segment) continue;
       lines.push('', `[${id}] source:`, htmlToPlainText(segment.sourceHtml));
       lines.push(
-        'translation:',
+        translationLabel(segment, outcome),
         segment.translationHtml !== undefined && segment.status !== 'error'
           ? htmlToPlainText(segment.translationHtml)
           : `(not translated${segment.error ? `: ${segment.error}` : ''})`,

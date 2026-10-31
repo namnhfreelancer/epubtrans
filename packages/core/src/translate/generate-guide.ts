@@ -28,7 +28,7 @@ export interface GeneratedGuide {
   glossary: GlossaryEntry[];
   /** Candidates found locally and sent for classification. */
   candidates: number;
-  /** Classification batches skipped because the model answer was unusable. */
+  /** Classification batches skipped because the model answer was unusable or the request kept failing. */
   skippedBatches: number;
 }
 

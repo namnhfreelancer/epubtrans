@@ -27,6 +27,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      # Vitest runs on Node; the web tests use Node's Web Locks API (navigator.locks), added in Node 24.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run lint

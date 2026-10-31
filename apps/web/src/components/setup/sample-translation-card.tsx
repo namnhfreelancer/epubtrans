@@ -1,13 +1,13 @@
-import { DEFAULT_SAMPLE_PASSAGES, estimateSampleCost, MAX_SAMPLE_PASSAGES, type Project, randomSampleSeed, selectSamplePassages } from '@epubtrans/core';
+import { DEFAULT_SAMPLE_PASSAGES, MAX_SAMPLE_PASSAGES, type Project, randomSampleSeed } from '@epubtrans/core';
 import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { refreshJobLocks, useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { formatNumber, formatUsd } from '../../lib/format';
 import { errorText } from '../../lib/notices';
-import { settingsForRun } from '../../lib/provider-config-store';
 import { cancelSampleJob, startSampleJob, useSampleJob } from '../../lib/sample-jobs';
 import { useJobActive } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
+import { useSampleEstimate } from '../../lib/use-sample-estimate';
 import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
 import { Alert, Card, Field, ProgressBar } from '../ui/layout-primitives';
@@ -25,17 +25,11 @@ export function SampleTranslationCard({ project, version, provider }: { project:
   const [count, setCount] = useState(stored?.passages.length ?? DEFAULT_SAMPLE_PASSAGES);
   const [startError, setStartError] = useState<string>();
 
-  const { providerId, baseURL, model } = provider.active;
   // The estimate covers the stored sample, or a preview selection before the first run.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
-  const estimate = useMemo(() => {
-    try {
-      const selection = stored ?? selectSamplePassages(project, { passages: count, seed: 0 });
-      return estimateSampleCost(project, settingsForRun(project.settings, { providerId, baseURL, model }), selection);
-    } catch {
-      return undefined; // a book without text has nothing to sample
-    }
-  }, [project, stored, count, providerId, baseURL, model, version]);
+  const estimate = useSampleEstimate({ project, version, provider: provider.active, stored, passages: count, paused: running || fullRunActive });
+  // Labels for the viewer, from the last finished run (cleared when the next one starts).
+  const failedIds = useMemo(() => new Set(sample.failed), [sample.failed]);
+  const finished = sample.status === 'done' || sample.status === 'failed';
 
   const start = async (request: Parameters<typeof startSampleJob>[3]) => {
     setStartError(undefined);
@@ -111,15 +105,29 @@ export function SampleTranslationCard({ project, version, provider }: { project:
           </Alert>
         )}
         {startError && <Alert kind="error">{startError}</Alert>}
-        {!running && sample.status === 'failed' && <Alert kind="error">{t('sample.failed', { message: sample.error ?? '' })}</Alert>}
-        {!running && sample.status === 'cancelled' && <Alert>{t('sample.cancelled')}</Alert>}
-        {!running && sample.status === 'done' && (
-          <Alert kind="success">
-            <span data-testid="sample-complete">{t('sample.done')}</span>
+        {sample.status === 'failed' &&
+          (sample.error !== undefined ? (
+            <Alert kind="error">{t('sample.failed', { message: sample.error })}</Alert>
+          ) : (
+            <Alert kind="error">
+              <span data-testid="sample-all-failed">{t('sample.allFailed', { n: formatNumber(sample.failed.length, locale) })}</span>
+            </Alert>
+          ))}
+        {sample.status === 'cancelled' && <Alert>{t('sample.cancelled')}</Alert>}
+        {sample.status === 'done' && (
+          <Alert kind={sample.failed.length > 0 ? 'warning' : 'success'}>
+            {sample.failed.length > 0 ? (
+              <span data-testid="sample-partly-failed">{t('sample.someFailed', { n: formatNumber(sample.failed.length, locale) })}</span>
+            ) : (
+              <span data-testid="sample-complete">{t('sample.done')}</span>
+            )}
+            {sample.keptEdited.length > 0 && (
+              <span data-testid="sample-kept-edited"> {t('sample.keptEdited', { n: formatNumber(sample.keptEdited.length, locale) })}</span>
+            )}
           </Alert>
         )}
       </div>
-      {stored && <SamplePassageViewer project={project} selection={stored} />}
+      {stored && <SamplePassageViewer project={project} selection={stored} failed={finished ? failedIds : undefined} />}
     </Card>
   );
 }

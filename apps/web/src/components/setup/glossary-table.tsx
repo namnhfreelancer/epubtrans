@@ -8,8 +8,17 @@ import { INPUT_CLASS } from '../ui/input-class';
 /**
  * Editable glossary for hundreds of entries: search over term/translation/note, type filter, entry counts and
  * paging (50 rows per page). Edits go to the entry's position in the full list, whatever the filter.
+ * `locked` disables every edit (search, filter and paging keep working), e.g. while generation rewrites the glossary.
  */
-export function GlossaryTable({ entries, onChange }: { entries: GlossaryEntry[]; onChange: (entries: GlossaryEntry[]) => void }) {
+export function GlossaryTable({
+  entries,
+  onChange,
+  locked = false,
+}: {
+  entries: GlossaryEntry[];
+  onChange: (entries: GlossaryEntry[]) => void;
+  locked?: boolean;
+}) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [type, setType] = useState<GlossaryTypeFilter>('all');
@@ -37,7 +46,7 @@ export function GlossaryTable({ entries, onChange }: { entries: GlossaryEntry[];
             {filtered ? t('glossary.count', { visible: view.matches, total: entries.length }) : t('glossary.countAll', { total: entries.length })}
           </span>
         </h3>
-        <Button size="sm" onClick={add}>
+        <Button size="sm" onClick={add} disabled={locked}>
           {t('setup.addTerm')}
         </Button>
       </div>
@@ -98,6 +107,7 @@ export function GlossaryTable({ entries, onChange }: { entries: GlossaryEntry[];
                         <input
                           aria-label={t('setup.term')}
                           className={INPUT_CLASS}
+                          disabled={locked}
                           value={entry.term}
                           onChange={(e) => update(index, { term: e.target.value })}
                         />
@@ -106,6 +116,7 @@ export function GlossaryTable({ entries, onChange }: { entries: GlossaryEntry[];
                         <input
                           aria-label={t('setup.translation')}
                           className={INPUT_CLASS}
+                          disabled={locked}
                           value={entry.translation}
                           onChange={(e) => update(index, { translation: e.target.value })}
                         />
@@ -114,6 +125,7 @@ export function GlossaryTable({ entries, onChange }: { entries: GlossaryEntry[];
                         <select
                           aria-label={t('glossary.type')}
                           className={INPUT_CLASS}
+                          disabled={locked}
                           value={entry.type ?? ''}
                           onChange={(e) => update(index, e.target.value ? { type: e.target.value as GlossaryTermType } : { type: undefined })}
                         >
@@ -129,13 +141,20 @@ export function GlossaryTable({ entries, onChange }: { entries: GlossaryEntry[];
                         <input
                           aria-label={t('setup.note')}
                           className={INPUT_CLASS}
+                          disabled={locked}
                           value={entry.note ?? ''}
                           onChange={(e) => update(index, { note: e.target.value })}
                         />
                       </td>
                       <td className="py-1 pr-2 text-right tabular-nums text-stone-500 dark:text-stone-400">{entry.count ?? ''}</td>
                       <td className="py-1">
-                        <Button size="sm" variant="danger" aria-label={t('setup.removeTerm')} onClick={() => onChange(entries.filter((_, j) => j !== index))}>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          aria-label={t('setup.removeTerm')}
+                          disabled={locked}
+                          onClick={() => onChange(entries.filter((_, j) => j !== index))}
+                        >
                           ✕
                         </Button>
                       </td>

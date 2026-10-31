@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n/i18n-context';
 import { useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { errorText, pushNotice } from '../../lib/notices';
 import { persistSegment, saveTranslationEdit, touchProject } from '../../lib/project-store';
+import { useSampleRunning } from '../../lib/sample-jobs';
 import { sanitizeSegmentHtml } from '../../lib/sanitize-segment-html';
 import { segmentErrorText } from '../../lib/segment-error-text';
 import { useJobActive } from '../../lib/translation-jobs';
@@ -43,7 +44,10 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
   const abortRef = useRef<AbortController | null>(null);
   const { sourceLang, targetLang } = project.settings;
   // A running job (in this tab or another one) would race a manual edit or retranslation of the same segment.
-  const jobHere = useJobActive(project.id);
+  // A sample run in this tab is a paid job as well: retranslating a sampled segment meanwhile would pay twice.
+  const fullRunHere = useJobActive(project.id);
+  const sampleHere = useSampleRunning(project.id);
+  const jobHere = fullRunHere || sampleHere;
   const jobElsewhere = useJobRunningElsewhere(project.id);
   const jobActive = jobHere || jobElsewhere;
   const lockedHint = jobHere ? t('reader.lockedDuringJob') : jobElsewhere ? t('reader.lockedInOtherTab') : undefined;
@@ -67,6 +71,8 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
     try {
       const { provider: chat, settings } = provider.prepare(project);
       const updated = await retranslateSegment(project, segment.id, chat, settings, controller.signal);
+      // The fresh machine translation replaces the user's text, so it no longer counts as hand-edited.
+      delete updated.userEdited;
       touchProject(project.id);
       await persistSegment(project.id, updated);
     } catch (err) {
