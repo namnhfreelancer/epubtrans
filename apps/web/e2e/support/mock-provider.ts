@@ -29,7 +29,12 @@ export interface MockProviderState {
   prefix: string;
   /** Artificial latency per chat request. */
   delayMs: number;
+  /** Segment ids answered with markup that fails validation, so they end in `error`; clear it to answer validly again. */
+  invalidIds: Set<string>;
 }
+
+/** Forbidden markup: the translation validator rejects it whatever the source looks like. */
+const INVALID_MARKUP = '<script>broken()</script>';
 
 const CORS = {
   'access-control-allow-origin': '*',
@@ -56,7 +61,10 @@ function answer(body: ChatBody, state: MockProviderState): string {
   const review = segments.some((s) => s.draft !== undefined);
   state.segmentRequests.push({ kind: review ? 'review' : 'translate', ids: segments.map((s) => s.id) });
   return JSON.stringify({
-    segments: segments.map((s) => ({ id: s.id, html: review ? (s.draft ?? '') : `${state.prefix}${s.html ?? ''}` })),
+    segments: segments.map((s) => ({
+      id: s.id,
+      html: review ? (s.draft ?? '') : state.invalidIds.has(s.id) ? INVALID_MARKUP : `${state.prefix}${s.html ?? ''}`,
+    })),
   });
 }
 
@@ -70,7 +78,14 @@ async function fulfill(route: Route, status: number, json?: unknown): Promise<vo
 
 /** Installs the fake provider on `page`: GET /models, POST /chat/completions (translate, review, guideline, glossary). */
 export async function installMockProvider(page: Page, opts: Partial<Pick<MockProviderState, 'delayMs' | 'prefix'>> = {}): Promise<MockProviderState> {
-  const state: MockProviderState = { segmentRequests: [], guideRequests: 0, glossaryRequests: 0, prefix: opts.prefix ?? '[vi] ', delayMs: opts.delayMs ?? 0 };
+  const state: MockProviderState = {
+    segmentRequests: [],
+    guideRequests: 0,
+    glossaryRequests: 0,
+    prefix: opts.prefix ?? '[vi] ',
+    delayMs: opts.delayMs ?? 0,
+    invalidIds: new Set(),
+  };
   await page.route(`${MOCK_BASE}/**`, async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return fulfill(route, 204);

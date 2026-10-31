@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n/i18n-context';
 import { errorText, pushNotice } from '../../lib/notices';
 import { persistSegment, saveTranslationEdit, touchProject } from '../../lib/project-store';
 import { sanitizeSegmentHtml } from '../../lib/sanitize-segment-html';
+import { segmentErrorText } from '../../lib/segment-error-text';
 import { useJobActive } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
 import { Button } from '../ui/button';
@@ -17,6 +18,8 @@ interface SegmentRowProps {
   segment: Segment;
   mode: ReaderMode;
   provider: ActiveProviderState;
+  /** Briefly emphasise the row (after jumping to it from the error navigation). */
+  flash?: boolean;
 }
 
 export function SegmentText({ html, lang, faded = false }: { html: string; lang?: string; faded?: boolean }) {
@@ -31,7 +34,7 @@ export function SegmentText({ html, lang, faded = false }: { html: string; lang?
 }
 
 /** One source/translation pair with inline editing (saved on blur) and per-segment retranslation. */
-export function SegmentRow({ project, segment, mode, provider }: SegmentRowProps) {
+export function SegmentRow({ project, segment, mode, provider, flash = false }: SegmentRowProps) {
   const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -43,6 +46,9 @@ export function SegmentRow({ project, segment, mode, provider }: SegmentRowProps
   const lockedHint = jobActive ? t('reader.lockedDuringJob') : undefined;
 
   useEffect(() => () => abortRef.current?.abort(), []);
+  // A failed retranslation message is stale once the segment got a new translation or status (e.g. from "Retry all failed").
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the segment is mutated in place; its status and text are the triggers.
+  useEffect(() => setRowError(undefined), [segment.status, segment.translationHtml]);
 
   const saveEdit = (value: string) => {
     setEditing(false);
@@ -61,7 +67,7 @@ export function SegmentRow({ project, segment, mode, provider }: SegmentRowProps
       touchProject(project.id);
       await persistSegment(project.id, updated);
     } catch (err) {
-      if (!controller.signal.aborted) setRowError(t('reader.retranslateFailed', { message: errorText(err) }));
+      if (!controller.signal.aborted) setRowError(t('reader.retranslateFailed', { message: segmentErrorText(errorText(err)) ?? errorText(err) }));
     } finally {
       if (!controller.signal.aborted) setBusy(false);
     }
@@ -90,20 +96,27 @@ export function SegmentRow({ project, segment, mode, provider }: SegmentRowProps
     <p className="text-sm italic text-stone-400 dark:text-stone-500">{t('reader.notTranslated')}</p>
   );
 
+  // The freshest failure wins; the stored one (from a batch run) is shown only when no retranslation just failed.
+  const failure = rowError ?? segmentErrorText(segment.error);
+  const failed = segment.status === 'error';
+
   return (
-    <article data-testid="segment-row" data-segment-id={segment.id} className="group border-b border-stone-200 py-4 last:border-b-0 dark:border-stone-800">
+    <article
+      data-testid="segment-row"
+      data-segment-id={segment.id}
+      data-status={segment.status}
+      data-flash={flash || undefined}
+      tabIndex={-1}
+      className={`group border-b border-stone-200 py-4 outline-offset-2 last:border-b-0 focus-visible:outline-2 focus-visible:outline-teal-600 dark:border-stone-800 ${
+        failed ? 'border-l-4 border-l-red-500 pl-3' : ''
+      } ${flash ? 'segment-flash' : ''}`}
+    >
       <div className={mode === 'side' ? 'grid gap-3 md:grid-cols-2 md:gap-6' : 'space-y-2'}>
         <SegmentText html={segment.sourceHtml} lang={sourceLang === 'auto' ? undefined : sourceLang} faded={mode === 'interleaved'} />
         <div data-testid="segment-translation">{translation}</div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <StatusBadge status={segment.status} />
-        {segment.error && <span className="text-xs text-red-700 dark:text-red-400">{segment.error}</span>}
-        {rowError && (
-          <span role="alert" className="text-xs text-red-700 dark:text-red-400">
-            {rowError}
-          </span>
-        )}
         <span className="ml-auto flex gap-1" title={lockedHint}>
           <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={editing || jobActive} title={lockedHint}>
             {t('reader.edit')}
@@ -113,6 +126,15 @@ export function SegmentRow({ project, segment, mode, provider }: SegmentRowProps
           </Button>
         </span>
       </div>
+      {failure && (
+        <p
+          data-testid="segment-error"
+          role={rowError ? 'alert' : undefined}
+          className="mt-1.5 whitespace-pre-wrap break-words text-xs text-red-700 dark:text-red-400"
+        >
+          {failure}
+        </p>
+      )}
     </article>
   );
 }

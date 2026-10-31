@@ -16,3 +16,34 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9em;
 }
+
+/* Brief emphasis of a segment the error navigation jumped to. */
+:root {
+  --segment-flash: rgb(254 202 202 / 0.9);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --segment-flash: rgb(153 27 27 / 0.55);
+  }
+}
+
+@keyframes segment-flash {
+  from {
+    background-color: var(--segment-flash);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.segment-flash {
+  animation: segment-flash 2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segment-flash {
+    animation: none;
+    background-color: var(--segment-flash);
+  }
+}
