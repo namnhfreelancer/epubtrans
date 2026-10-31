@@ -33,6 +33,7 @@ import { BOOK_ID, CANCELLED, objectSchema, type ToolSpec } from './tool-definiti
 import { clip, fail, ok, untrustedText } from './tool-result';
 
 const PREVIEW_SEGMENTS = 3;
+const MAX_LISTED_IDS = 10;
 
 function segmentsById(project: Project, ids: readonly string[]): Segment[] {
   const wanted = new Set(ids);
@@ -86,7 +87,7 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
     {
       name: 'translate_sample',
       title: 'Translate a sample',
-      description: `Translates a few passages from different chapters (a small paid run) to judge quality before the full run, and waits for it. Without passages it repeats the last sample, or picks ${DEFAULT_SAMPLE_PASSAGES} new ones; with passages it picks that many new ones. Returns token usage, its cost and a short preview.`,
+      description: `Translates a few passages from different chapters (a small paid run) to judge quality before the full run, and waits for it. Without passages it repeats the last sample, or picks ${DEFAULT_SAMPLE_PASSAGES} new ones; with passages it picks that many new ones. Segments the user edited by hand are kept as they are. Returns token usage, its cost, how many segments failed or were kept, and a short preview.`,
       inputSchema: objectSchema(
         { bookId: BOOK_ID, passages: { type: 'integer', minimum: 1, maximum: MAX_SAMPLE_PASSAGES, description: 'Number of new passages to pick.' } },
         ['bookId'],
@@ -122,7 +123,11 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
         signal?.addEventListener('abort', onAbort, { once: true });
         const final = await waitForSampleJob(project.id).finally(() => signal?.removeEventListener('abort', onAbort));
         if (final.status === 'cancelled') return CANCELLED();
-        if (final.status === 'failed') return fail(`The sample failed: ${untrustedText(final.error, 300)}`);
+        if (final.status === 'failed')
+          return fail(
+            final.error ? `The sample failed: ${untrustedText(final.error, 300)}` : `Every sampled segment failed (${final.failed.length}).`,
+            final.error ? undefined : 'Check the provider and model in Settings, then try again.',
+          );
         const selection = project.lastSample;
         const { priceInPerM, priceOutPerM } = await resolveAgentPrices(project, provider, signal);
         const runSettings = { ...settingsForRun(project.settings, provider.active), priceInPerM, priceOutPerM };
@@ -135,6 +140,9 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
           total: final.total,
           usage: final.usage,
           estimatedUsd: roundUsd(cost),
+          failed: final.failed.length,
+          keptEdited: final.keptEdited.length,
+          ...(final.failed.length > 0 ? { failedIds: final.failed.slice(0, MAX_LISTED_IDS) } : {}),
           preview,
         });
       },

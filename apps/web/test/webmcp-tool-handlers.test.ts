@@ -161,6 +161,19 @@ describe('paid tools', () => {
     expect(preview[0]?.translation).toMatch(/^Dịch Text number/);
   });
 
+  it('translate_sample keeps hand-edited segments and reports failed and kept counts', async () => {
+    const project = await addBook('sample-2', 4);
+    const edited = project.chapters[0]?.segments[0];
+    if (!edited) throw new Error('fixture has no segments');
+    edited.translationHtml = 'Bản tự sửa';
+    edited.status = 'translated';
+    edited.userEdited = true;
+    state.invalidIds.add('s2');
+    const out = await tools.call('translate_sample', { bookId: project.id, passages: 4 });
+    expect(out).toMatchObject({ ok: true, keptEdited: 1, failed: 1, failedIds: ['s2'] });
+    expect(edited.translationHtml).toBe('Bản tự sửa');
+  });
+
   it('start_translation shows provider, model and cost, then starts; list_errors and retranslate_segment fix failures', async () => {
     const project = await addBook('run-1', 3);
     state.invalidIds.add('s2');
