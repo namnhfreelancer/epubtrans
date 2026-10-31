@@ -1,4 +1,4 @@
-import { type Project, type ProjectSettings, type SampleSelection, type Segment, validateProjectState } from '@epubtrans/core';
+import { type Project, type ProjectSettings, redactSecrets, type SampleSelection, type Segment, validateProjectState } from '@epubtrans/core';
 import type { ProjectDatabase, ProjectMetaRow, SegmentStateRow } from './project-database';
 import { canOverwrite, isSegmentStateRow, type SegmentRevision } from './segment-revision';
 
@@ -35,7 +35,8 @@ function applyState(s: Segment, row: SegmentStateRow | undefined): Segment {
     ...rest,
     status: row.status,
     ...(row.translationHtml !== undefined ? { translationHtml: row.translationHtml } : {}),
-    ...(row.error !== undefined ? { error: row.error } : {}),
+    // Rows saved by older versions may hold a provider error that echoed the API key.
+    ...(row.error !== undefined ? { error: redactSecrets(row.error) } : {}),
     ...(row.userEdited ? { userEdited: true } : {}),
   };
 }

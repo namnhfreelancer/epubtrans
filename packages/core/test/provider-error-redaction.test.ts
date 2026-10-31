@@ -65,6 +65,19 @@ describe('provider errors never carry the API key', () => {
     expect(listErr.message).not.toContain(KEY);
   });
 
+  it('redacts a bare echo of the key that matches no secret shape (exact-key wiring)', async () => {
+    // No "sk-", "Bearer", "key=" or similar cue: only passing the key in use to the redactor catches this.
+    const bareKey = 'zz-fake-gateway-QWERTY7531abcd';
+    const bare = echoing(401, (k) => `Unauthorized for ${k}`);
+    for (const preset of ['custom', 'anthropic']) {
+      const provider = createProvider(getProviderPreset(preset), bareKey, 'https://gateway.example/v1', 'm', bare);
+      for (const err of [await caught(provider.chat({ system: 's', user: 'u' })), await caught(provider.listModels())]) {
+        expect(err.message).not.toContain(bareKey);
+        expect(err.message).toContain(REDACTED);
+      }
+    }
+  });
+
   it('redacts credential shapes in messages built directly', () => {
     expect(new ProviderError('rejected sk-ant-api03-fake0123456789abcdef', 401).message).toBe(`rejected ${REDACTED}`);
   });
