@@ -104,6 +104,34 @@ describe('epubtrans hints', () => {
     expect((await readProject(t.project)).settings.wordHints?.level).toBe(5);
   });
 
+  test('a lemma glossed at a low level covers all its forms: raising or lowering the level later sends nothing for it', async () => {
+    const t = setup();
+    expect(await run(['hints', t.input, '--gloss-lang', 'vi', '--level', '1', ...providerArgs(t.server)], createTestIo({ env }))).toBe(0);
+    // "profess" (rank ~31k) qualifies at level 1; its form "professed" (rank ~24.6k) does not, but is glossed with it.
+    const entry = (await readProject(t.project)).wordHints?.entries.find((e) => e.lemma === 'profess');
+    const forms = new Map(entry?.occurrences.map((o) => [o.word, o.rank]));
+    expect(forms.get('profess')).toBeGreaterThan(25_000);
+    expect(forms.get('professed')).toBeLessThanOrEqual(25_000);
+
+    const higher = t.server.calls.length;
+    expect(await run(['hints', t.project, '--level', '5', ...providerArgs(t.server)], createTestIo({ env }))).toBe(0);
+    expect(lemmasSent(t.server, higher)).not.toContain('profess');
+
+    const exportAt = async (level: number) => {
+      const out = `${t.dir}/book.level${level}.epub`;
+      const args = ['export', t.project, '--mode', 'original', '--hint-level', String(level), '--hints-per-chapter', '0', '--hints-per-paragraph', '0'];
+      expect(await run([...args, '--out', out], createTestIo())).toBe(0);
+      return exportedSource(out);
+    };
+    const low = await exportAt(1);
+    expect(low).toContain('<ruby class="et-ww">profess<rp>');
+    expect(low).not.toContain('<ruby class="et-ww">professed<rp>');
+    expect(await exportAt(5)).toContain('<ruby class="et-ww">professed<rp>');
+    const calls = t.server.calls.length;
+    expect(await run(['hints', t.project, '--level', '1', ...providerArgs(t.server)], createTestIo({ env }))).toBe(0);
+    expect(t.server.calls.length).toBe(calls);
+  });
+
   test('translate --word-wise only applies existing hints (no gloss request) and keeps the option in the project', async () => {
     const t = setup();
     const out = `${t.dir}/book.vi.epub`;
