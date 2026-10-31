@@ -1,5 +1,8 @@
+import { redactSecrets } from '../util/redact-secrets';
+
 /**
  * HTTP plumbing shared by provider adapters: JSON requests, error mapping and Retry-After parsing.
+ * Error messages are redacted of credential shapes in the constructor, so no adapter can leak a key through one.
  */
 export class ProviderError extends Error {
   override readonly name = 'ProviderError';
@@ -10,7 +13,7 @@ export class ProviderError extends Error {
     /** Server-requested delay before retrying, in milliseconds. */
     readonly retryAfterMs?: number,
   ) {
-    super(message);
+    super(redactSecrets(message));
   }
 
   /** Rate limits, overload, server and network errors are worth retrying. */
@@ -47,7 +50,7 @@ export function joinUrl(base: string, path: string): string {
 export async function requestJson(
   fetchImpl: typeof fetch,
   url: string,
-  init: { method: 'GET' | 'POST'; headers: Record<string, string>; body?: unknown; signal?: AbortSignal },
+  init: { method: 'GET' | 'POST'; headers: Record<string, string>; body?: unknown; signal?: AbortSignal; secrets?: readonly string[] },
 ): Promise<unknown> {
   let res: Response;
   try {
@@ -59,11 +62,12 @@ export async function requestJson(
     });
   } catch (err) {
     if (isAbortError(err)) throw err;
-    throw new ProviderError(`Network error calling ${new URL(url).host}: ${(err as Error).message}`, 0);
+    throw new ProviderError(redactSecrets(`Network error calling ${new URL(url).host}: ${(err as Error).message}`, init.secrets), 0);
   }
   const text = await res.text();
   if (!res.ok) {
-    throw new ProviderError(`HTTP ${res.status} from ${new URL(url).host}: ${errorMessage(text) || res.statusText}`, res.status, parseRetryAfter(res.headers));
+    const message = `HTTP ${res.status} from ${new URL(url).host}: ${errorMessage(text) || res.statusText}`;
+    throw new ProviderError(redactSecrets(message, init.secrets), res.status, parseRetryAfter(res.headers));
   }
   try {
     return JSON.parse(text) as unknown;

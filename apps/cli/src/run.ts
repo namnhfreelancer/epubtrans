@@ -1,3 +1,4 @@
+import { redactSecrets } from '@epubtrans/core';
 import rootPackage from '../../../package.json';
 import { UsageError } from './args';
 import { exportCommand } from './commands/export';
@@ -51,14 +52,14 @@ export async function run(argv: string[], rawIo: Io): Promise<number> {
     return await command(rest, io);
   } catch (err) {
     if (err instanceof UsageError) {
-      io.err(`Error: ${err.message}\nRun "epubtrans ${name} --help" for usage.\n`);
+      io.err(`Error: ${redactSecrets(err.message)}\nRun "epubtrans ${name} --help" for usage.\n`);
       return EXIT.usage;
     }
     if (io.signal.aborted) {
       io.err('Interrupted.\n');
       return EXIT.interrupted;
     }
-    io.err(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
+    io.err(`Error: ${redactSecrets(err instanceof Error ? err.message : String(err))}\n`);
     return EXIT.failure;
   }
 }

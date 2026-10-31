@@ -1,6 +1,7 @@
 import { strFromU8, strToU8 } from 'fflate';
 import { isGlossaryTermType } from '../glossary/glossary-entry';
 import type { Chapter, GlossaryEntry, Project, ProjectSettings, SampleSelection, Segment, SegmentStatus } from '../types';
+import { redactSecrets } from '../util/redact-secrets';
 import { readZip, writeZip } from '../util/zip-archive';
 
 /**
@@ -13,9 +14,14 @@ const STATUSES: SegmentStatus[] = ['pending', 'translated', 'reviewed', 'error']
 
 export async function saveProjectFile(project: Project): Promise<Uint8Array> {
   const { sourceEpub, ...state } = project;
+  // Project files get shared: segment errors may carry text a provider echoed, so they are redacted on the way out.
+  const chapters = state.chapters.map((c) => ({
+    ...c,
+    segments: c.segments.map((s) => (s.error === undefined ? s : { ...s, error: redactSecrets(s.error) })),
+  }));
   return writeZip(
     new Map([
-      [PROJECT_JSON, strToU8(JSON.stringify(state))],
+      [PROJECT_JSON, strToU8(JSON.stringify({ ...state, chapters }))],
       [SOURCE_EPUB, sourceEpub],
     ]),
   );
@@ -152,7 +158,7 @@ function validateChapter(c: Json, path: string): Chapter {
         sourceText: str(seg, 'sourceText', sp),
         status,
         ...(translationHtml !== undefined ? { translationHtml } : {}),
-        ...(error !== undefined ? { error } : {}),
+        ...(error !== undefined ? { error: redactSecrets(error) } : {}),
         ...(seg.userEdited === true ? { userEdited: true } : {}),
       };
     }),

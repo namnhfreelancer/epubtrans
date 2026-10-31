@@ -1,5 +1,6 @@
 import { isAbortError, ProviderError } from '../providers/provider-http';
 import type { ChatProvider, ProjectSettings, Segment, TokenUsage } from '../types';
+import { redactSecrets } from '../util/redact-secrets';
 import { type DetachedElement, detachEmptyElements, restoreDetachedElements } from './empty-element-markers';
 import { validateTranslationMarkup } from './markup-validation';
 import {
@@ -166,11 +167,13 @@ function fail(segment: Segment, kind: BatchKind, reason: string, ctx: BatchConte
     ctx.commit(segment, true);
     return;
   }
+  // The reason is persisted and shown to the user: never let a credential an error echoed reach it.
+  const safe = redactSecrets(reason);
   if (kind === 'translate') {
     segment.status = 'error';
-    segment.error = reason;
+    segment.error = safe;
   } else {
-    segment.error = `review failed: ${reason}`;
+    segment.error = `review failed: ${safe}`;
   }
   ctx.commit(segment, false);
 }
