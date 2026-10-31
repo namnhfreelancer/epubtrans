@@ -22,6 +22,8 @@ import { type GenerateState, GuideGenerationStatus } from './guide-generation-st
 /**
  * Style guideline (preset + free text) and glossary, with model-assisted generation. Generation keeps the
  * current guideline as its base and appends a book-specific block; applying a preset replaces only the base.
+ * The guideline, glossary and preset picker are locked while generating: the result is merged into a snapshot taken
+ * at the start, so an edit made meanwhile would be overwritten.
  */
 export function GuidelineCard({ project, provider }: { project: Project; provider: ActiveProviderState }) {
   const { t } = useI18n();
@@ -102,12 +104,23 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
     >
       <div className="space-y-4">
         <GuideGenerationStatus state={state} />
+        {busy && (
+          <p data-testid="guide-locked-hint" className="text-xs text-amber-800 dark:text-amber-300">
+            {t('guide.lockedWhileGenerating')}
+          </p>
+        )}
         <div className="flex flex-wrap items-end gap-2">
           <div className="w-56 space-y-1.5">
             <label htmlFor="guideline-preset" className="block text-sm font-medium text-stone-700 dark:text-stone-300">
               {t('setup.guidelinePreset')}
             </label>
-            <select id="guideline-preset" className={INPUT_CLASS} value={presetId} onChange={(e) => setPresetId(e.target.value as GuidelinePresetId)}>
+            <select
+              id="guideline-preset"
+              className={INPUT_CLASS}
+              value={presetId}
+              disabled={busy}
+              onChange={(e) => setPresetId(e.target.value as GuidelinePresetId)}
+            >
               {GUIDELINE_PRESETS.map((p) => (
                 <option key={p.id} value={p.id}>
                   {t(`setup.preset.${p.id}`)}
@@ -115,7 +128,9 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
               ))}
             </select>
           </div>
-          <Button onClick={applyPreset}>{t('setup.applyPreset')}</Button>
+          <Button onClick={applyPreset} disabled={busy}>
+            {t('setup.applyPreset')}
+          </Button>
           <div className="w-44 space-y-1.5">
             <label htmlFor="glossary-max" className="block text-sm font-medium text-stone-700 dark:text-stone-300">
               {t('guide.maxEntries')}
@@ -138,7 +153,7 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
         {sections.length > 1 && (
           <nav aria-label={t('guide.sections')} className="flex flex-wrap gap-1.5">
             {sections.map((s) => (
-              <Button key={s.offset} size="sm" variant="ghost" onClick={() => jumpTo(s.offset)}>
+              <Button key={s.offset} size="sm" variant="ghost" onClick={() => jumpTo(s.offset)} disabled={busy}>
                 {s.title}
               </Button>
             ))}
@@ -153,9 +168,10 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
           rows={generated ? 18 : 8}
           className={`${INPUT_CLASS} font-mono text-xs leading-relaxed`}
           value={project.settings.guideline}
+          disabled={busy}
           onChange={(e) => void save({ guideline: e.target.value })}
         />
-        <GlossaryTable entries={project.settings.glossary} onChange={(glossary) => void save({ glossary })} />
+        <GlossaryTable entries={project.settings.glossary} onChange={(glossary) => void save({ glossary })} locked={busy} />
       </div>
     </Card>
   );

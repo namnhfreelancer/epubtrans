@@ -1,10 +1,12 @@
 import { estimateCost, type Project } from '@epubtrans/core';
-import { useMemo } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { formatNumber, formatUsd, parseOptionalPrice } from '../../lib/format';
 import { errorText, pushNotice } from '../../lib/notices';
 import { updateSettings } from '../../lib/project-store';
 import { type ActiveProvider, settingsForRun } from '../../lib/provider-config-store';
+import { useSampleRunning } from '../../lib/sample-jobs';
+import { useJobActive } from '../../lib/translation-jobs';
+import { useCostEstimate } from '../../lib/use-cost-estimate';
 import { useModelPricing } from '../../lib/use-model-pricing';
 import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
@@ -34,9 +36,14 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
   const manual = settings.priceInPerM !== undefined || settings.priceOutPerM !== undefined;
 
   const { providerId, baseURL, model } = active;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
-  const estimate = useMemo(
+  // The estimate walks every batch of the book, while `version` changes on every finished segment and every keystroke
+  // in the guideline or glossary: recompute debounced and off the critical path, and not at all during a run.
+  const runActive = useJobActive(project.id);
+  const sampleRunning = useSampleRunning(project.id);
+  const { estimate, deferred } = useCostEstimate(
     () => estimateCost(project, { ...settingsForRun(settings, { providerId, baseURL, model }), priceInPerM, priceOutPerM }),
+    runActive || sampleRunning,
+    // `version` tracks in-place project mutations.
     [project, settings, providerId, baseURL, model, priceInPerM, priceOutPerM, version],
   );
 
@@ -93,7 +100,11 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
         )}
       </div>
       <div data-testid="cost-estimate" className="mt-4 rounded-xl bg-stone-100 px-4 py-3 dark:bg-stone-800">
-        {estimate.inputTokens === 0 ? (
+        {estimate === undefined ? (
+          <p data-testid="estimate-calculating" className="text-sm text-stone-500 dark:text-stone-400">
+            {t('setup.estimateCalculating')}
+          </p>
+        ) : estimate.inputTokens === 0 ? (
           <p className="text-sm">{t('setup.estimateNothing')}</p>
         ) : (
           <>
@@ -108,6 +119,11 @@ export function CostEstimateCard({ project, version, active }: { project: Projec
               )}
             </p>
           </>
+        )}
+        {deferred && (
+          <p data-testid="estimate-deferred" className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+            {t('setup.estimateUpdatesAfterRun')}
+          </p>
         )}
       </div>
     </Card>
