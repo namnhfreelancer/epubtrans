@@ -2,12 +2,11 @@ import type { Project } from '@epubtrans/core';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { formatDuration, formatNumber } from '../../lib/format';
-import { errorText, pushNotice } from '../../lib/notices';
-import { updateSettings } from '../../lib/project-store';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { countSegments, remainingWork } from '../../lib/segment-counts';
-import { estimateRemainingMs, pauseJob, startJob, useJob } from '../../lib/translation-jobs';
+import { estimateRemainingMs, pauseJob, useJob } from '../../lib/translation-jobs';
 import type { ActiveProviderState } from '../../lib/use-active-provider';
+import { useStartTranslation } from '../../lib/use-start-translation';
 import { Button } from '../ui/button';
 import { Alert, Card, ProgressBar } from '../ui/layout-primitives';
 
@@ -15,10 +14,10 @@ import { Alert, Card, ProgressBar } from '../ui/layout-primitives';
 export function TranslationControls({ project, version, provider }: { project: Project; version: number; provider: ActiveProviderState }) {
   const { t, locale } = useI18n();
   const job = useJob(project.id);
-  const [startError, setStartError] = useState<string>();
   const [now, setNow] = useState(Date.now());
   const running = job.status === 'running' || job.status === 'pausing';
   const sampleRunning = useSampleRunning(project.id);
+  const { start, error: startError } = useStartTranslation(project, provider);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
   const counts = useMemo(() => countSegments(project), [project, version]);
   const work = remainingWork(counts, project.settings.twoPass);
@@ -28,22 +27,6 @@ export function TranslationControls({ project, version, provider }: { project: P
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [running]);
-
-  const start = () => {
-    setStartError(undefined);
-    if (provider.problem) return setStartError(t(provider.problem));
-    try {
-      const { provider: chat, settings } = provider.prepare(project);
-      startJob(project, settings, chat);
-      // Remember which provider/model translated the book (carried in the project file, e.g. for CLI resume).
-      const { providerId, baseURL, model } = settings;
-      void updateSettings(project, { providerId, baseURL, model }).catch((err: unknown) =>
-        pushNotice('error', t('common.saveFailed', { message: errorText(err) })),
-      );
-    } catch (err) {
-      setStartError(errorText(err));
-    }
-  };
 
   const eta = running ? estimateRemainingMs(job, now) : undefined;
   const label = counts.done > 0 || counts.error > 0 ? (counts.pending === 0 && counts.error > 0 ? t('run.retryFailed') : t('run.resume')) : t('run.start');

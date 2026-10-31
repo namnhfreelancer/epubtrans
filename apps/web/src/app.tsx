@@ -15,7 +15,7 @@ function Shell() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
         {route.name === 'library' && <LibraryPage />}
         {route.name === 'settings' && <SettingsPage />}
-        {route.name === 'book' && <BookPage key={route.id} id={route.id} tab={route.tab} />}
+        {route.name === 'book' && <BookPage key={route.id} id={route.id} tab={route.tab} segment={route.segment} />}
       </main>
       <footer className="mx-auto w-full max-w-6xl px-4 pb-6 text-xs text-stone-500 dark:text-stone-400">{t('app.privacy')}</footer>
       <NoticeToasts />

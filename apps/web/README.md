@@ -21,6 +21,13 @@ Static, bring-your-own-key web app for epubtrans: import a DRM-free EPUB, MOBI, 
 - `src/i18n/` — English and Vietnamese dictionaries; `messages-vi.ts` is typed against the English key set.
 - `e2e/` — Playwright specs. Provider calls go to `https://mock-provider.test/v1`, intercepted with `page.route`.
 
+## Reader: finding and fixing failed segments
+
+- The chapter list flags chapters with failed segments (icon, count and an accessible label) and shows "N errors in M chapters" above it.
+- "Previous error" / "Next error" (keys `[` and `]`, ignored while typing in a field) move across chapters, centre the segment, focus and flash it, and show "Error 3 of 17". Navigation stops at the first and last error (the buttons disable) instead of wrapping.
+- Each jump rewrites the URL to `#/book/<id>/read/<segmentId>`, so a reload or a shared link opens the same segment.
+- "Show only errors" limits the chapter list and the segments to failed ones. "Retry all failed" starts the same job as "Retry failed segments" on the Translate tab (`useStartTranslation`), so one job per book and the sample/job locks apply; counts update as segments finish.
+
 ## Security notes
 
 - The production build injects a Content Security Policy meta tag: no inline scripts, provider calls limited to `https:` and `http://localhost`.

@@ -1,15 +1,30 @@
 import type { Project } from '@epubtrans/core';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
+import { buildErrorIndex, errorOrdinal, findAdjacentError, locateSegment, type SegmentLocation, type StepDirection } from '../../lib/error-index';
+import { routeHref } from '../../lib/hash-route';
+import { useSampleRunning } from '../../lib/sample-jobs';
 import { countChapterSegments } from '../../lib/segment-counts';
+import { pauseJob, useJob } from '../../lib/translation-jobs';
 import { useActiveProvider } from '../../lib/use-active-provider';
-import { INPUT_CLASS } from '../ui/input-class';
+import { useStartTranslation } from '../../lib/use-start-translation';
+import { ReaderChapterList } from './reader-chapter-list';
+import { ReaderErrorControls } from './reader-error-controls';
 import { type ReaderMode, SegmentRow } from './segment-row';
 
-/** Chapter navigation plus source/translation pairs of the selected chapter. */
-export function ReaderPanel({ project, version }: { project: Project; version: number }) {
+const FLASH_MS = 2000;
+/** Keys that step through errors; chosen because they type nothing in the reader and are ignored while editing. */
+const SHORTCUTS: Record<string, StepDirection> = { '[': -1, ']': 1 };
+
+const isEditable = (target: EventTarget | null): boolean => target instanceof Element && target.closest('input, textarea, select, [contenteditable]') !== null;
+
+/** Chapter navigation plus source/translation pairs of the selected chapter, with error highlighting and navigation. */
+export function ReaderPanel({ project, version, segment }: { project: Project; version: number; segment?: string }) {
   const { t } = useI18n();
   const provider = useActiveProvider();
+  const job = useJob(project.id);
+  const sampleRunning = useSampleRunning(project.id);
+  const { start: retryAll, error: retryError } = useStartTranslation(project, provider);
   const [index, setIndex] = useState(() =>
     Math.max(
       0,
@@ -17,65 +32,134 @@ export function ReaderPanel({ project, version }: { project: Project; version: n
     ),
   );
   const [mode, setMode] = useState<ReaderMode>('side');
+  const [onlyErrors, setOnlyErrors] = useState(false);
+  /** The segment last jumped to; the next/previous error is searched from here. */
+  const [cursor, setCursor] = useState<SegmentLocation>();
+  /** A pending "scroll to and focus this segment" request; `n` makes repeated jumps to the same segment distinct. */
+  const [reveal, setReveal] = useState<{ id: string; n: number }>();
+  const [flashId, setFlashId] = useState<string>();
+  const revealCount = useRef(0);
+  const contentRef = useRef<HTMLElement>(null);
   const chapter = project.chapters[index] ?? project.chapters[0];
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
   const progress = useMemo(() => project.chapters.map((c) => countChapterSegments([c])), [project, version]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
+  const errors = useMemo(() => buildErrorIndex(project.chapters), [project, version]);
+  const retrying = job.status === 'running' || job.status === 'pausing';
+
+  const jumpTo = (target: SegmentLocation) => {
+    setIndex(target.chapter);
+    setCursor(target);
+    setReveal({ id: target.id, n: ++revealCount.current });
+    // Keep the URL shareable and reload-safe without stacking a history entry per jump.
+    history.replaceState(null, '', routeHref({ name: 'book', id: project.id, tab: 'read', segment: target.id }));
+  };
+
+  const selectChapter = (i: number) => {
+    setIndex(i);
+    setCursor(undefined);
+    history.replaceState(null, '', routeHref({ name: 'book', id: project.id, tab: 'read' }));
+  };
+
+  const searchFrom = cursor ?? { chapter: index, segment: -1 };
+  const adjacent: Record<StepDirection, SegmentLocation | undefined> = {
+    '-1': findAdjacentError(errors, searchFrom, -1),
+    1: findAdjacentError(errors, searchFrom, 1),
+  };
+  const step = (direction: StepDirection) => {
+    const target = adjacent[direction];
+    if (target) jumpTo(target);
+  };
+
+  // Deep link (`#/book/<id>/read/<segment>`): open the chapter holding the segment and reveal it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a changed link should re-run; jumpTo is rebuilt every render.
+  useEffect(() => {
+    const target = segment ? locateSegment(project.chapters, segment) : undefined;
+    if (target) jumpTo(target);
+  }, [segment, project]);
+
+  // After the target chapter has rendered: centre the segment, move focus to it and flash it briefly.
+  useEffect(() => {
+    if (!reveal) return;
+    const row = contentRef.current?.querySelector<HTMLElement>(`[data-segment-id="${CSS.escape(reveal.id)}"]`);
+    if (!row) return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    row.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+    row.focus({ preventScroll: true });
+    setFlashId(reveal.id);
+    const timer = setTimeout(() => setFlashId(undefined), FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [reveal]);
+
+  // `[` / `]` step through errors, except while typing in a field (the segment editor, selects, ...) or with a modifier held.
+  const stepRef = useRef(step);
+  useEffect(() => {
+    stepRef.current = step;
+  });
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const direction = SHORTCUTS[e.key];
+      if (!direction || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || isEditable(e.target)) return;
+      e.preventDefault();
+      stepRef.current(direction);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   if (!chapter) return <p className="text-sm text-stone-500">{t('reader.empty')}</p>;
 
+  const visibleChapters = project.chapters.flatMap((_, i) => (!onlyErrors || (errors.perChapter[i] ?? 0) > 0 ? [i] : []));
+  const rows = onlyErrors ? chapter.segments.filter((s) => s.status === 'error') : chapter.segments;
+  const toggleOnlyErrors = (value: boolean) => {
+    setOnlyErrors(value);
+    // The chapter on screen would be empty: land on the first one that still has errors.
+    const first = errors.locations[0];
+    if (value && first && (errors.perChapter[index] ?? 0) === 0) setIndex(first.chapter);
+  };
+  const showControls = errors.locations.length > 0 || onlyErrors;
+
   return (
     <div className="grid gap-5 md:grid-cols-[15rem_minmax(0,1fr)]">
-      <aside className="md:sticky md:top-20 md:self-start">
-        <label htmlFor="chapter-select" className="mb-1.5 block text-sm font-medium md:hidden">
-          {t('reader.chapters')}
-        </label>
-        <select id="chapter-select" className={`${INPUT_CLASS} md:hidden`} value={index} onChange={(e) => setIndex(Number(e.target.value))}>
-          {project.chapters.map((c, i) => (
-            <option key={c.href + String(i)} value={i}>
-              {c.title || c.href}
-            </option>
-          ))}
-        </select>
-        <nav
-          aria-label={t('reader.chapters')}
-          className="hidden max-h-[75vh] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 md:block dark:border-stone-800 dark:bg-stone-900"
-        >
-          <h2 className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{t('reader.chapters')}</h2>
-          <ol className="space-y-0.5">
-            {project.chapters.map((c, i) => (
-              <li key={c.href + String(i)}>
-                <button
-                  type="button"
-                  onClick={() => setIndex(i)}
-                  aria-current={i === index ? 'true' : undefined}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
-                    i === index
-                      ? 'bg-teal-700/10 font-medium text-teal-900 dark:bg-teal-400/10 dark:text-teal-200'
-                      : 'hover:bg-stone-100 dark:hover:bg-stone-800'
-                  }`}
-                >
-                  <span className="line-clamp-2 flex-1">{c.title || c.href}</span>
-                  <span className="shrink-0 text-[11px] text-stone-500 tabular-nums">
-                    {progress[i]?.done}/{progress[i]?.total}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ol>
-        </nav>
-      </aside>
-      <section className="min-w-0 rounded-2xl border border-stone-200 bg-white px-4 shadow-sm sm:px-6 dark:border-stone-800 dark:bg-stone-900">
-        <div className="sticky top-14 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b border-stone-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 dark:border-stone-800 dark:bg-stone-900/95">
-          <h2 className="min-w-0 flex-1 truncate font-semibold">{chapter.title || chapter.href}</h2>
-          <fieldset className="flex rounded-lg border border-stone-300 p-0.5 text-xs dark:border-stone-700">
-            <legend className="sr-only">{t('reader.view')}</legend>
-            {(['side', 'interleaved'] as const).map((m) => (
-              <label key={m} className={`cursor-pointer rounded-md px-2.5 py-1 ${mode === m ? 'bg-teal-700 text-white' : ''}`}>
-                <input type="radio" name="reader-mode" value={m} checked={mode === m} onChange={() => setMode(m)} className="sr-only" />
-                {m === 'side' ? t('reader.sideBySide') : t('reader.interleaved')}
-              </label>
-            ))}
-          </fieldset>
+      <ReaderChapterList
+        chapters={project.chapters}
+        progress={progress}
+        errors={errors}
+        visible={visibleChapters}
+        current={project.chapters.indexOf(chapter)}
+        onSelect={selectChapter}
+      />
+      <section ref={contentRef} className="min-w-0 rounded-2xl border border-stone-200 bg-white px-4 shadow-sm sm:px-6 dark:border-stone-800 dark:bg-stone-900">
+        <div className="sticky top-14 z-10 -mx-4 border-b border-stone-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 dark:border-stone-800 dark:bg-stone-900/95">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="min-w-0 flex-1 truncate font-semibold">{chapter.title || chapter.href}</h2>
+            <fieldset className="flex rounded-lg border border-stone-300 p-0.5 text-xs dark:border-stone-700">
+              <legend className="sr-only">{t('reader.view')}</legend>
+              {(['side', 'interleaved'] as const).map((m) => (
+                <label key={m} className={`cursor-pointer rounded-md px-2.5 py-1 ${mode === m ? 'bg-teal-700 text-white' : ''}`}>
+                  <input type="radio" name="reader-mode" value={m} checked={mode === m} onChange={() => setMode(m)} className="sr-only" />
+                  {m === 'side' ? t('reader.sideBySide') : t('reader.interleaved')}
+                </label>
+              ))}
+            </fieldset>
+          </div>
+          {showControls && (
+            <ReaderErrorControls
+              total={errors.locations.length}
+              ordinal={cursor ? errorOrdinal(errors, cursor.id) : undefined}
+              canStep={{ '-1': Boolean(adjacent[-1]), 1: Boolean(adjacent[1]) }}
+              onStep={step}
+              onlyErrors={onlyErrors}
+              onOnlyErrorsChange={toggleOnlyErrors}
+              retry={{
+                running: retrying,
+                blockedHint: sampleRunning ? t('sample.blocksRun') : undefined,
+                error: retryError,
+                onRetry: retryAll,
+                onPause: () => pauseJob(project.id),
+              }}
+            />
+          )}
         </div>
         {mode === 'side' && (
           <div className="hidden grid-cols-2 gap-6 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-500 md:grid">
@@ -85,8 +169,10 @@ export function ReaderPanel({ project, version }: { project: Project; version: n
         )}
         {chapter.segments.length === 0 ? (
           <p className="py-6 text-sm text-stone-500">{t('reader.emptyChapter')}</p>
+        ) : rows.length === 0 ? (
+          <p className="py-6 text-sm text-stone-500">{t('reader.noErrorsInChapter')}</p>
         ) : (
-          chapter.segments.map((s) => <SegmentRow key={s.id} project={project} segment={s} mode={mode} provider={provider} />)
+          rows.map((s) => <SegmentRow key={s.id} project={project} segment={s} mode={mode} provider={provider} flash={s.id === flashId} />)
         )}
       </section>
     </div>
