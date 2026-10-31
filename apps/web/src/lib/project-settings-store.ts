@@ -1,4 +1,4 @@
-import type { Project, ProjectSettings } from '@epubtrans/core';
+import { type Project, type ProjectSettings, type WordHintSettings, wordHintSettingsOf } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
 import { repository } from './app-services';
 import { broadcast, onCrossTabMessage } from './cross-tab-channel';
@@ -58,6 +58,11 @@ export function updateSettings(project: Project, patch: Partial<ProjectSettings>
     }
     broadcast(project.id, { type: 'settings', reset: false });
   });
+}
+
+/** Applies a patch to the book's Word Wise options (defaults filled in) and persists them with the settings. */
+export function updateHintSettings(project: Project, patch: Partial<WordHintSettings>): Promise<void> {
+  return updateSettings(project, { wordHints: { ...wordHintSettingsOf(project.settings), ...patch } });
 }
 
 /**

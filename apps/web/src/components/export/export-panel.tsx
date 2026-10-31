@@ -2,21 +2,21 @@ import { EXPORT_MODES, type ExportMode, exportEpub, type Project, saveProjectFil
 import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { browserDomEnv } from '../../lib/dom-env';
-import { downloadBytes, safeFileName } from '../../lib/download-file';
+import { downloadBytes, exportFileName, safeFileName } from '../../lib/download-file';
+import { loadFontFile } from '../../lib/embedded-font-files';
 import { errorText } from '../../lib/notices';
 import { countSegments } from '../../lib/segment-counts';
+import { ExportStyleEditor } from '../export-style/export-style-editor';
+import { useStyleText } from '../export-style/export-style-messages';
+import { StyleTemplateManager } from '../export-style/style-template-manager';
 import { Button } from '../ui/button';
 import { Alert, Card } from '../ui/layout-primitives';
-
-const FILE_SUFFIX: Record<ExportMode, string> = {
-  bilingual: 'bilingual',
-  'bilingual-translation-first': 'bilingual-translation-first',
-  'translation-only': 'translated',
-};
+import { ExportHintOptions } from './export-hint-options';
 
 /** Builds the EPUB in the chosen layout, and offers the `.epubtrans` project file. */
 export function ExportPanel({ project, version }: { project: Project; version: number }) {
   const { t } = useI18n();
+  const s = useStyleText();
   const [mode, setMode] = useState<ExportMode>('bilingual');
   const [busy, setBusy] = useState<'epub' | 'project'>();
   const [error, setError] = useState<string>();
@@ -30,8 +30,8 @@ export function ExportPanel({ project, version }: { project: Project; version: n
     setBusy(kind);
     try {
       if (kind === 'epub') {
-        const bytes = await exportEpub(project, mode, browserDomEnv());
-        downloadBytes(bytes, `${baseName}.${project.settings.targetLang}.${FILE_SUFFIX[mode]}.epub`, 'application/epub+zip');
+        const bytes = await exportEpub(project, mode, browserDomEnv(), { loadFontFile });
+        downloadBytes(bytes, exportFileName(project, mode), 'application/epub+zip');
       } else {
         downloadBytes(await saveProjectFile(project), `${baseName}.epubtrans`, 'application/zip');
       }
@@ -64,19 +64,31 @@ export function ExportPanel({ project, version }: { project: Project; version: n
             </label>
           ))}
         </fieldset>
+        <div className="mt-4 space-y-2 border-t border-stone-200 pt-4 dark:border-stone-800">
+          <h3 className="text-sm font-medium text-stone-700 dark:text-stone-300">{t('export.hints')}</h3>
+          <ExportHintOptions project={project} mode={mode} />
+        </div>
         <div className="mt-4 space-y-3">
-          {untranslated > 0 && <Alert kind="warning">{t('export.incomplete', { n: untranslated })}</Alert>}
+          {untranslated > 0 && mode !== 'original' && <Alert kind="warning">{t('export.incomplete', { n: untranslated })}</Alert>}
           {error && <Alert kind="error">{error}</Alert>}
           <Button variant="primary" data-testid="export-epub" onClick={() => void run('epub')} disabled={busy !== undefined}>
             {busy === 'epub' ? t('export.exporting') : t('export.download')}
           </Button>
         </div>
       </Card>
-      <Card title={t('export.project')}>
-        <p className="text-sm text-stone-600 dark:text-stone-400">{t('export.projectHint')}</p>
-        <Button className="mt-4" data-testid="export-project" onClick={() => void run('project')} disabled={busy !== undefined}>
-          {t('export.downloadProject')}
-        </Button>
+      <div className="space-y-5">
+        <Card title={t('export.project')}>
+          <p className="text-sm text-stone-600 dark:text-stone-400">{t('export.projectHint')}</p>
+          <Button className="mt-4" data-testid="export-project" onClick={() => void run('project')} disabled={busy !== undefined}>
+            {t('export.downloadProject')}
+          </Button>
+        </Card>
+        <Card title={s('templates.title')}>
+          <StyleTemplateManager project={project} />
+        </Card>
+      </div>
+      <Card title={s('style.title')} className="lg:col-span-2">
+        <ExportStyleEditor project={project} mode={mode} />
       </Card>
     </div>
   );

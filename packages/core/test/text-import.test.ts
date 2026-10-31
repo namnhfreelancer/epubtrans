@@ -91,14 +91,17 @@ describe('Markdown import', () => {
 });
 
 describe('exports of converted books', () => {
-  it('exports TXT and Markdown books in every mode with the translations in place', async () => {
+  it('exports TXT and Markdown books in every mode, with the translations in place where the mode has them', async () => {
     for (const name of ['aesop-fables.txt', 'aesop-fables.md']) {
       const project = await importBook(readFixture(name), name, env);
       await translateProject(project, mockProvider(answerAll), { ...project.settings, model: 'm', sourceLang: 'en', targetLang: 'vi' });
       for (const mode of EXPORT_MODES) {
         const files = readZip(await exportEpub(project, mode, env));
         const chapter = new TextDecoder().decode(files.get('OEBPS/text/chapter-002.xhtml'));
-        expect(chapter).toContain('[vi]');
+        // `original` writes the source text only.
+        if (mode === 'original') expect(chapter).not.toContain('[vi]');
+        else expect(chapter).toContain('[vi]');
+        expect(chapter).toContain('clusters of ripe black grapes');
       }
     }
   });

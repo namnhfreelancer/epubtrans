@@ -1,6 +1,7 @@
 import { type ChatProvider, type Project, type ProjectSettings, type TokenUsage, type TranslationPhase, translateProject } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
 import { launchWithJobLock } from './cross-tab-job-lock';
+import { isHintJobActive } from './hint-jobs';
 import { ProjectNotFoundError, type SettingsGuard } from './project-repository';
 import { refreshSettingsFromStorage } from './project-settings-store';
 import { createJobBaseline, persistJobSegment, touchProject } from './project-store';
@@ -71,7 +72,7 @@ export function estimateRemainingMs(job: Pick<JobState, 'done' | 'total' | 'phas
  * an edit saved meanwhile in any tab wins), and a persistence failure stops the run so progress is never lost silently.
  */
 export function startJob(project: Project, settingsFor: (book: ProjectSettings) => ProjectSettings, provider: ChatProvider): Promise<StartJobResult> {
-  if (controllers.has(project.id)) return Promise.resolve('already-running');
+  if (controllers.has(project.id) || isHintJobActive(project.id)) return Promise.resolve('already-running');
   const controller = new AbortController();
   controllers.set(project.id, controller);
   const { started, settled } = launchWithJobLock(project.id, () => runJob(project, settingsFor, provider, controller));

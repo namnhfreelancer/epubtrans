@@ -7,6 +7,7 @@ import { GuidelineCard } from './guideline-card';
 import { LanguageOptionsCard } from './language-options-card';
 import { SampleTranslationCard } from './sample-translation-card';
 import { TranslationControls } from './translation-controls';
+import { WordHintsCard } from './word-hints-card';
 
 export function TranslationSetupPanel({ project, version }: { project: Project; version: number }) {
   const provider = useActiveProvider();
@@ -20,6 +21,7 @@ export function TranslationSetupPanel({ project, version }: { project: Project; 
         <LanguageOptionsCard key={settingsSync} project={project} active={provider.active} />
         <GuidelineCard project={project} provider={provider} />
         <SampleTranslationCard project={project} version={version} provider={provider} />
+        <WordHintsCard project={project} version={version} provider={provider} />
       </div>
       <div className="space-y-5 lg:sticky lg:top-20 lg:self-start">
         <TranslationControls project={project} version={version} provider={provider} lookup={lookup} />

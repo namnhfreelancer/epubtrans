@@ -1,5 +1,14 @@
-import { type Project, type ProjectSettings, redactSecrets, type SampleSelection, type Segment, validateProjectState } from '@epubtrans/core';
-import type { ProjectDatabase, ProjectMetaRow, SegmentStateRow } from './project-database';
+import {
+  type Project,
+  type ProjectSettings,
+  redactSecrets,
+  type SampleSelection,
+  type Segment,
+  validateProjectState,
+  type WordHintEntry,
+  type WordHints,
+} from '@epubtrans/core';
+import type { HintRow, ProjectDatabase, ProjectMetaRow, SegmentStateRow } from './project-database';
 import { canOverwrite, isSegmentStateRow, type SegmentRevision } from './segment-revision';
 
 export interface ProjectSummary {
@@ -49,6 +58,12 @@ const sameLanguage = (a: string, b: string) => a.toLowerCase() === b.toLowerCase
 /** Whether settings stored with `revision` still match what a guarded writer read. */
 const guardHolds = (row: ProjectMetaRow, guard: Pick<SettingsGuard, 'targetLang'> & Partial<SettingsGuard>) =>
   sameLanguage(row.settings.targetLang, guard.targetLang) && (guard.revision === undefined || (row.settingsRevision ?? 0) === guard.revision);
+/** A hints run tried to save an entry after the stored hints switched to another language pair (e.g. a re-import). */
+export class HintsReplacedError extends Error {
+  override readonly name = 'HintsReplacedError';
+}
+
+type HintPair = Pick<WordHints, 'sourceLang' | 'glossLang'>;
 
 const toStateRow = (projectId: string, s: Segment): SegmentStateRow => ({
   projectId,
@@ -59,6 +74,9 @@ const toStateRow = (projectId: string, s: Segment): SegmentStateRow => ({
   ...(s.userEdited ? { userEdited: true } : {}),
   ...(s.warning ? { warning: s.warning } : {}),
 });
+
+const toHintRow = (projectId: string, e: WordHintEntry): HintRow => ({ projectId, ...e });
+const fromHintRow = ({ projectId: _projectId, ...entry }: HintRow): WordHintEntry => entry;
 
 function applyState(s: Segment, row: SegmentStateRow | undefined): Segment {
   if (!row) return s;
@@ -105,34 +123,48 @@ export function createProjectRepository(db: ProjectDatabase) {
   return {
     /** Stores a newly imported project (or replaces one with the same id). */
     async saveProject(project: Project): Promise<void> {
-      const { chapters, sourceEpub, ...meta } = project;
+      const { chapters, sourceEpub, wordHints, ...meta } = project;
       const segments = chapters.flatMap((c) => c.segments);
       // The chapter row only keeps the source; translation state lives in the overlay table.
       const pristine = chapters.map((c) => ({
         ...c,
         segments: c.segments.map((s): Segment => ({ id: s.id, sourceHtml: s.sourceHtml, sourceText: s.sourceText, status: 'pending' })),
       }));
-      await db.transaction('rw', [db.projects, db.chapters, db.sources, db.segments], async () => {
+      await db.transaction('rw', [db.projects, db.chapters, db.sources, db.segments, db.hints], async () => {
         // Replacing a book invalidates whatever a run in another tab read from the old one.
         const previous = await db.projects.get(project.id);
         await db.segments.where('projectId').equals(project.id).delete();
-        await db.projects.put({ ...meta, segmentCount: segments.length, settingsRevision: (previous?.settingsRevision ?? 0) + 1 });
+        await db.hints.where('projectId').equals(project.id).delete();
+        await db.projects.put({
+          ...meta,
+          segmentCount: segments.length,
+          settingsRevision: (previous?.settingsRevision ?? 0) + 1,
+          ...(wordHints ? { hintLanguages: { sourceLang: wordHints.sourceLang, glossLang: wordHints.glossLang } } : {}),
+        });
         await db.chapters.put({ projectId: project.id, chapters: pristine });
         await db.sources.put({ projectId: project.id, bytes: sourceEpub });
         await db.segments.bulkPut(segments.filter((s) => s.status !== 'pending').map((s) => toStateRow(project.id, s)));
+        if (wordHints) await db.hints.bulkPut(wordHints.entries.map((e) => toHintRow(project.id, e)));
       });
     },
 
     async loadProject(id: string): Promise<Project> {
-      const [meta, chaptersRow, source, states] = await db.transaction('r', [db.projects, db.chapters, db.sources, db.segments], () =>
-        Promise.all([db.projects.get(id), db.chapters.get(id), db.sources.get(id), db.segments.where('projectId').equals(id).toArray()]),
+      const [meta, chaptersRow, source, states, hintRows] = await db.transaction('r', [db.projects, db.chapters, db.sources, db.segments, db.hints], () =>
+        Promise.all([
+          db.projects.get(id),
+          db.chapters.get(id),
+          db.sources.get(id),
+          db.segments.where('projectId').equals(id).toArray(),
+          db.hints.where('projectId').equals(id).toArray(),
+        ]),
       );
       if (!meta || !chaptersRow || !source) throw new ProjectNotFoundError(`Project ${id} not found`);
       const byId = new Map(states.map((s) => [s.id, s]));
-      const { segmentCount: _count, ...state } = meta;
+      const { segmentCount: _count, hintLanguages, ...state } = meta;
       const chapters = chaptersRow.chapters.map((c) => ({ ...c, segments: c.segments.map((s) => applyState(s, byId.get(s.id))) }));
       if (!(source.bytes instanceof Uint8Array)) throw new Error(`Project ${id} has no source book`);
-      return { ...validateProjectState({ ...state, chapters }), sourceEpub: source.bytes };
+      const wordHints = hintLanguages ? { ...hintLanguages, entries: hintRows.map(fromHintRow) } : undefined;
+      return { ...validateProjectState({ ...state, chapters, ...(wordHints ? { wordHints } : {}) }), sourceEpub: source.bytes };
     },
 
     async listProjects(): Promise<ProjectSummary[]> {
@@ -237,13 +269,56 @@ export function createProjectRepository(db: ProjectDatabase) {
       return validRow(await db.segments.get([projectId, segmentId]));
     },
 
+    /**
+     * Starts a hints run for a language pair: records the pair on the project and, when it replaces hints of another
+     * pair, deletes their entries. Rejects with {@link ProjectNotFoundError} when the project was deleted.
+     */
+    async startHints(projectId: string, hints: HintPair, clear: boolean): Promise<void> {
+      await db.transaction('rw', [db.projects, db.hints], async () => {
+        const updated = await db.projects.update(projectId, {
+          hintLanguages: { sourceLang: hints.sourceLang, glossLang: hints.glossLang },
+          updatedAt: new Date().toISOString(),
+        });
+        if (!updated) throw new ProjectNotFoundError(`Project ${projectId} not found`);
+        if (clear) await db.hints.where('projectId').equals(projectId).delete();
+      });
+    },
+
+    /**
+     * Compare-and-set: persists one glossed lemma (called as soon as a hints run finishes it, which makes runs
+     * resumable) only while the stored hints still belong to the run's language pair. Rejects with
+     * {@link ProjectNotFoundError} when the project was deleted and {@link HintsReplacedError} when its hints were
+     * replaced by another pair, so a stale run never mixes glosses of two pairs.
+     */
+    async saveHintEntry(projectId: string, pair: HintPair, entry: WordHintEntry): Promise<void> {
+      await db.transaction('rw', [db.projects, db.hints], async () => {
+        const meta = await db.projects.get(projectId);
+        if (!meta) throw new ProjectNotFoundError(`Project ${projectId} not found`);
+        const stored = meta.hintLanguages;
+        if (stored?.sourceLang !== pair.sourceLang || stored.glossLang !== pair.glossLang) {
+          throw new HintsReplacedError(`The hints of project ${projectId} were replaced by another language pair`);
+        }
+        await db.hints.put(toHintRow(projectId, entry));
+      });
+    },
+
+    /** The stored hints of a project (validated), for a tab that hears another tab added some. */
+    async loadHints(projectId: string): Promise<WordHints | undefined> {
+      const [meta, rows] = await db.transaction('r', [db.projects, db.hints], () =>
+        Promise.all([db.projects.get(projectId), db.hints.where('projectId').equals(projectId).toArray()]),
+      );
+      if (!meta?.hintLanguages) return undefined;
+      return validateProjectState({ ...meta, chapters: [], wordHints: { ...meta.hintLanguages, entries: rows.map(fromHintRow) } }).wordHints;
+    },
+
     async exists(id: string): Promise<boolean> {
       return (await db.projects.get(id)) !== undefined;
     },
 
     async deleteProject(id: string): Promise<void> {
-      await db.transaction('rw', [db.projects, db.chapters, db.sources, db.segments], async () => {
+      await db.transaction('rw', [db.projects, db.chapters, db.sources, db.segments, db.hints], async () => {
         await db.segments.where('projectId').equals(id).delete();
+        await db.hints.where('projectId').equals(id).delete();
         await db.projects.delete(id);
         await db.chapters.delete(id);
         await db.sources.delete(id);

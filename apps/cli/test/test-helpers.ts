@@ -58,6 +58,8 @@ export interface MockCall {
   path: string;
   authorization: string | null;
   segmentIds: string[];
+  /** Lemmas of a Word Wise gloss request. */
+  lemmas?: string[];
 }
 
 export interface MockProvider {
@@ -88,6 +90,15 @@ export function startMockProvider(onChat?: (call: number) => Response | undefine
         calls.push({ path, authorization: req.headers.get('authorization'), segmentIds: [] });
         const guide = JSON.stringify({ guideline: '- keep it plain', glossary: [{ term: 'Ireland', translation: 'Ai-len' }] });
         return Response.json({ choices: [{ message: { content: guide } }], usage: { prompt_tokens: 10, completion_tokens: 10 } });
+      }
+      const gloss = user as unknown as { items?: { id: string; lemma: string }[] };
+      if (Array.isArray(gloss.items)) {
+        // A Word Wise gloss batch: every lemma gets the sense "main" and the gloss "≈lemma".
+        calls.push({ path, authorization: req.headers.get('authorization'), segmentIds: [], lemmas: gloss.items.map((i) => i.lemma) });
+        const intercepted = onChat?.(calls.length);
+        if (intercepted) return intercepted;
+        const items = gloss.items.map((i) => ({ id: i.id, sense: 'main', gloss: `≈${i.lemma}` }));
+        return Response.json({ choices: [{ message: { content: JSON.stringify({ items }) } }], usage: { prompt_tokens: 100, completion_tokens: 20 } });
       }
       calls.push({ path, authorization: req.headers.get('authorization'), segmentIds: user.segments.map((s) => s.id) });
       const intercepted = onChat?.(calls.length);

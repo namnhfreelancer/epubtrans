@@ -25,6 +25,8 @@ export interface MockProviderState {
   guideRequests: number;
   /** Glossary-candidate classification requests (one per batch of candidates). */
   glossaryRequests: number;
+  /** Lemmas sent in each Word Wise gloss request, in arrival order. */
+  hintRequests: string[][];
   /** Prefix prepended to every translated segment. */
   prefix: string;
   /** Prefix each translation with the target language tag of its request instead (`[de] `), to see which language a tab used. */
@@ -64,6 +66,11 @@ function answer(body: ChatBody, state: MockProviderState): string {
     state.guideRequests++;
     return JSON.stringify({ sections: MOCK_GUIDE.sections });
   }
+  if (system.includes('Word Wise hints')) {
+    const { items } = JSON.parse(user) as { items: { id: string; lemma: string }[] };
+    state.hintRequests.push(items.map((i) => i.lemma));
+    return JSON.stringify({ items: items.map((i) => ({ id: i.id, sense: 'main', gloss: `≈${i.lemma}` })) });
+  }
   const { segments } = JSON.parse(user) as { segments: { id: string; html?: string; draft?: string }[] };
   const review = segments.some((s) => s.draft !== undefined);
   const prefix = state.prefixByTarget ? `[${TARGET_TAG.exec(`${system}\n${user}`)?.[1] ?? '?'}] ` : state.prefix;
@@ -84,7 +91,7 @@ async function fulfill(route: Route, status: number, json?: unknown): Promise<vo
   }
 }
 
-/** Installs the fake provider on `page`: GET /models, POST /chat/completions (translate, review, guideline, glossary). */
+/** Installs the fake provider on `page`: GET /models, POST /chat/completions (translate, review, guideline, glossary, Word Wise glosses). */
 export async function installMockProvider(
   page: Page,
   opts: Partial<Pick<MockProviderState, 'delayMs' | 'prefix' | 'prefixByTarget'>> = {},
@@ -93,6 +100,7 @@ export async function installMockProvider(
     segmentRequests: [],
     guideRequests: 0,
     glossaryRequests: 0,
+    hintRequests: [],
     prefix: opts.prefix ?? '[vi] ',
     prefixByTarget: opts.prefixByTarget ?? false,
     delayMs: opts.delayMs ?? 0,

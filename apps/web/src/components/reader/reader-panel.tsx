@@ -12,6 +12,7 @@ import {
   type StepDirection,
 } from '../../lib/error-index';
 import { navigate, routeHref } from '../../lib/hash-route';
+import { useHintsRunning } from '../../lib/hint-jobs';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { countChapterSegments } from '../../lib/segment-counts';
 import { pauseJob, useJob } from '../../lib/translation-jobs';
@@ -34,6 +35,7 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
   const provider = useActiveProvider();
   const job = useJob(project.id);
   const sampleRunning = useSampleRunning(project.id);
+  const hintsRunning = useHintsRunning(project.id);
   const { start: retryAll, error: retryError, busyElsewhere } = useStartTranslation(project, provider);
   const [index, setIndex] = useState(() =>
     Math.max(
@@ -186,7 +188,15 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
                 running: retrying,
                 // Resuming only navigates to the setup page, which shows the estimate and its own Start guards.
                 resume: resumeInstead ? { pending: unfinished, failed: errors.locations.length } : undefined,
-                blockedHint: resumeInstead ? undefined : sampleRunning ? t('sample.blocksRun') : busyElsewhere ? t('run.busyElsewhere') : undefined,
+                blockedHint: resumeInstead
+                  ? undefined
+                  : sampleRunning
+                    ? t('sample.blocksRun')
+                    : hintsRunning
+                      ? t('hints.blocksRun')
+                      : busyElsewhere
+                        ? t('run.busyElsewhere')
+                        : undefined,
                 busyElsewhere,
                 error: retryError,
                 onRetry: () => (resumeInstead ? navigate({ name: 'book', id: project.id, tab: 'setup' }) : void retryAll()),

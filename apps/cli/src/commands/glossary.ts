@@ -25,7 +25,7 @@ export async function glossaryCommand(argv: string[], io: Io): Promise<number> {
     );
   }
   assertOutputIsSeparate(flags.out, file);
-  const project = await readProjectFile(file);
+  const project = await readProjectFile(file, io);
   await writeFileAtomic(flags.out, new TextEncoder().encode(formatGlossaryFile(project.settings.glossary, format)));
   io.err(`Wrote ${project.settings.glossary.length} glossary entries to ${flags.out} (${format})\n`);
   return 0;

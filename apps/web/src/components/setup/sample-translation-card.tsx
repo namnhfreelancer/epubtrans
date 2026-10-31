@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { refreshJobLocks, useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { formatNumber, formatUsd } from '../../lib/format';
+import { useHintsRunning } from '../../lib/hint-jobs';
 import { errorText, localizedError } from '../../lib/notices';
 import { cancelSampleJob, startSampleJob, useSampleJob } from '../../lib/sample-jobs';
 import { useJobActive } from '../../lib/translation-jobs';
@@ -18,6 +19,7 @@ export function SampleTranslationCard({ project, version, provider }: { project:
   const { t, locale } = useI18n();
   const sample = useSampleJob(project.id);
   const fullRunActive = useJobActive(project.id);
+  const hintsRunning = useHintsRunning(project.id);
   const running = sample.status === 'running';
   // A sample run holds the same cross-tab job lock as the full run: blocked while another tab translates the book.
   const busyElsewhere = useJobRunningElsewhere(project.id) && !running;
@@ -43,8 +45,8 @@ export function SampleTranslationCard({ project, version, provider }: { project:
     }
   };
   const newSample = () => void start({ passages: count, seed: randomSampleSeed() });
-  const locked = running || fullRunActive || busyElsewhere;
-  const lockedHint = fullRunActive ? t('sample.lockedByRun') : busyElsewhere ? t('run.busyElsewhere') : undefined;
+  const locked = running || fullRunActive || hintsRunning || busyElsewhere;
+  const lockedHint = fullRunActive ? t('sample.lockedByRun') : hintsRunning ? t('hints.blocksRun') : busyElsewhere ? t('run.busyElsewhere') : undefined;
   const usd = estimate?.usd;
 
   return (

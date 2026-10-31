@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { FONT_RUNTIME_CACHING } from './pwa-font-caching';
 
 /** Deploy base path: `/` locally, `/epubtrans/` on GitHub Pages (set through BASE_PATH). */
 function basePath(raw: string | undefined): string {
@@ -76,6 +77,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         cleanupOutdatedCaches: true,
+        // Bundled export fonts are cached when first used, not precached (see pwa-font-caching.ts).
+        runtimeCaching: [FONT_RUNTIME_CACHING],
         // autoUpdate: a new worker takes over open tabs immediately, so the app works offline after the first visit.
         clientsClaim: true,
         skipWaiting: true,
@@ -84,6 +87,9 @@ export default defineConfig({
   ],
   build: {
     target: 'es2022',
+    // Embeddable fonts and their licenses stay separate files of this origin (fetched only when an export embeds them),
+    // never data: URLs, which `connect-src` would block.
+    assetsInlineLimit: (file) => (file.includes('/data/fonts/') ? false : undefined),
     chunkSizeWarningLimit: 2048,
     // Keeps `/*! ... @license ... */` notices (the vendored foliate-js MIT notice) in the minified chunks.
     rolldownOptions: { output: { comments: { legal: true } } },

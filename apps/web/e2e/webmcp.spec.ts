@@ -117,6 +117,13 @@ test('an in-browser agent drives a whole translation through the WebMCP tools', 
   expect(download.suggestedFilename()).toBe(exported.fileName);
   expectEpubZip(await readDownload(download));
 
+  // The original-text mode needs no translation and is named like the Export tab names it.
+  const [originalDownload, original] = await Promise.all([page.waitForEvent('download'), callTool(page, log, 'export_epub', { bookId, mode: 'original' })]);
+  expect(original).toMatchObject({ ok: true, hints: { included: false } });
+  expect(originalDownload.suggestedFilename()).toBe(original.fileName);
+  expect(originalDownload.suggestedFilename()).toMatch(/\.original\.epub$/);
+  expectEpubZip(await readDownload(originalDownload));
+
   // Delete: declined first, then accepted.
   answerNextDialog(page, false, dialogs);
   expect(await callTool(page, log, 'delete_book', { bookId })).toMatchObject({ ok: true, deleted: false, reason: 'declined' });

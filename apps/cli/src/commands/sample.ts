@@ -1,9 +1,5 @@
 import {
-  createDefaultSettings,
-  detectLanguage,
   estimateSampleCost,
-  importBook,
-  loadProjectFile,
   type Project,
   type ProjectSettings,
   randomSampleSeed,
@@ -14,65 +10,20 @@ import {
   translateSample,
 } from '@epubtrans/core';
 import { expectPositionals, parseArgs, UsageError } from '../args';
-import { domEnv } from '../dom-env';
 import { SAMPLE_FLAGS } from '../flag-specs';
 import { applyGlossaryFile } from '../glossary-import';
 import type { Io } from '../io';
 import { confirmRun, EXIT } from '../pipeline';
 import { lookupEstimatePrices } from '../price-lookup';
-import { countStatuses, createProgress, formatTokens, formatUsd, tokensUsedLine, usageCost } from '../progress';
+import { createProgress, formatTokens, formatUsd, tokensUsedLine, usageCost } from '../progress';
 import { createProjectSaver, writeProjectFile } from '../project-store';
 import { formatSampleReport } from '../sample-report';
-import { applyRunFlags, parseLanguage, selectProvider } from '../settings';
-import { PROJECT_EXTENSION } from './output-paths';
+import { applyRunFlags, selectProvider } from '../settings';
+import { openProject } from './open-project';
 import { buildProvider } from './provider-setup';
-import { readBytes } from './translate';
 
 const USAGE =
   'epubtrans sample <input.(epub|mobi|azw3|fb2|txt|md) | project.epubtrans> [--passages N] [--words N] [--seed S] [--new] --to <lang> --model <id> [options]';
-
-interface Opened {
-  project: Project;
-  projectPath: string;
-  settings: ProjectSettings;
-  existing: boolean;
-}
-
-/** Loads the project (a `.epubtrans` input, or the file saved next to a book by `translate`/`sample`) or imports the book. */
-async function openProject(input: string, flags: { project?: string; to?: string; from?: string }, io: Io): Promise<Opened> {
-  const isProjectFile = input.toLowerCase().endsWith(PROJECT_EXTENSION);
-  const projectPath = isProjectFile ? input : (flags.project ?? `${input}${PROJECT_EXTENSION}`);
-  const existingBytes = await readBytes(projectPath, 'project file');
-  if (isProjectFile && !existingBytes) throw new UsageError(`Project file not found: ${input}`);
-
-  if (existingBytes) {
-    let project: Project;
-    try {
-      project = await loadProjectFile(existingBytes);
-    } catch (err) {
-      throw new UsageError(`${projectPath} is not a valid epubtrans project: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    const c = countStatuses(project);
-    io.err(`Using ${projectPath}: ${c.done}/${c.total} segments already translated\n`);
-    if (flags.to !== undefined && parseLanguage(flags.to, '--to').toLowerCase() !== project.settings.targetLang.toLowerCase()) {
-      throw new UsageError(`${projectPath} translates to "${project.settings.targetLang}", not "${flags.to}". Use another --project path or delete that file.`);
-    }
-    const settings = { ...project.settings };
-    if (flags.from !== undefined) settings.sourceLang = flags.from === 'auto' ? 'auto' : parseLanguage(flags.from, '--from');
-    return { project, projectPath, settings, existing: true };
-  }
-
-  if (flags.to === undefined) throw new UsageError(`--to <language> is required for a new project. Usage: ${USAGE}`);
-  const bytes = await readBytes(input, 'input file');
-  if (!bytes) throw new UsageError(`Input file not found: ${input}`);
-  io.err(`Importing ${input} ...\n`);
-  const project = await importBook(bytes, input.split(/[\\/]/).pop() ?? input, domEnv);
-  io.err(`Imported "${project.title}": ${project.chapters.length} chapters, ${countStatuses(project).total} segments\n`);
-  const requestedFrom = flags.from === undefined || flags.from === 'auto' ? 'auto' : parseLanguage(flags.from, '--from');
-  const detected = requestedFrom === 'auto' ? detectLanguage(project) : requestedFrom;
-  const settings = createDefaultSettings({ sourceLang: detected === 'und' ? 'auto' : detected, targetLang: parseLanguage(flags.to, '--to') });
-  return { project, projectPath, settings, existing: false };
-}
 
 interface SampleChoice {
   passages?: number;
@@ -121,7 +72,7 @@ function describeEstimate(project: Project, settings: ProjectSettings, selection
 export async function sampleCommand(argv: string[], io: Io): Promise<number> {
   const { positionals, flags } = parseArgs(argv, SAMPLE_FLAGS);
   const [input] = expectPositionals(positionals, 1, USAGE) as [string];
-  const opened = await openProject(input, flags, io);
+  const opened = await openProject(input, flags, io, USAGE);
   const { project, projectPath } = opened;
 
   const selection = chooseSelection(project, { passages: flags.passages, words: flags.words, seed: flags.seed, fresh: flags.new });

@@ -9,6 +9,7 @@ import {
 } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
 import { launchWithJobLock } from './cross-tab-job-lock';
+import { isHintJobActive } from './hint-jobs';
 import type { SettingsGuard } from './project-repository';
 import { refreshSettingsFromStorage } from './project-settings-store';
 import { createJobBaseline, persistJobSegment, persistLastSample, touchProject } from './project-store';
@@ -88,7 +89,7 @@ export function startSampleJob(
   provider: ChatProvider,
   request: SampleRequest,
 ): Promise<StartJobResult> {
-  if (controllers.has(project.id) || isJobActive(project.id)) return Promise.resolve('already-running');
+  if (controllers.has(project.id) || isJobActive(project.id) || isHintJobActive(project.id)) return Promise.resolve('already-running');
   const controller = new AbortController();
   controllers.set(project.id, controller);
   const { started, settled } = launchWithJobLock(project.id, () => runSample(project, settingsFor, provider, request, controller));

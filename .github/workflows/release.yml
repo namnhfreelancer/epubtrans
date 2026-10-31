@@ -56,6 +56,14 @@ jobs:
             dist/epubtrans-windows-x64.exe \
             dist/SHA256SUMS \
             --clobber
+      - name: Add the word frequency data license to the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          gh release view "$TAG" --json body --jq .body > release-notes.md
+          printf '\n\n%s\n' "License note: the binaries embed the word frequency lists of packages/core/data/wordfreq/, derived from wordfreq and licensed CC BY-SA 4.0, not under the epubtrans license (see packages/core/data/wordfreq/README.md)." >> release-notes.md
+          gh release edit "$TAG" --notes-file release-notes.md
       - name: Publish the release
         # Last step on purpose: if anything above fails the release stays a draft and "latest" is unchanged.
         env:

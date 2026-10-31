@@ -1,11 +1,26 @@
 import { strFromU8, strToU8 } from 'fflate';
+import { ExportStyleError, type IgnoredKeyHandler, validateExportStyle } from '../export-style/export-style-validation';
 import { isGlossaryTermType } from '../glossary/glossary-entry';
 import { MAX_IDENTICAL_MIN_LETTERS } from '../translate/identical-translation';
 import { MAX_BATCH_SEGMENTS_LIMIT } from '../translate/translate-project';
 import { MAX_CACHED_INPUT_RATIO } from '../translate/usage-cost';
-import type { Chapter, GlossaryEntry, Project, ProjectSettings, ReasoningLevel, SampleSelection, Segment, SegmentStatus } from '../types';
+import type {
+  Chapter,
+  ExportStyle,
+  GlossaryEntry,
+  Project,
+  ProjectSettings,
+  ReasoningLevel,
+  SampleSelection,
+  Segment,
+  SegmentStatus,
+  WordHintEntry,
+  WordHintSettings,
+  WordHints,
+} from '../types';
 import { redactSecrets } from '../util/redact-secrets';
 import { readZip, writeZip } from '../util/zip-archive';
+import { clampHintLevel, defaultWordHintSettings, MAX_HINTS_PER_CHAPTER_LIMIT, MAX_HINTS_PER_PARAGRAPH_LIMIT } from '../word-hints/hint-levels';
 
 /**
  * `.epubtrans` project file: a zip with `project.json` (schema-versioned state without the
@@ -31,7 +46,16 @@ export async function saveProjectFile(project: Project): Promise<Uint8Array> {
   );
 }
 
-export async function loadProjectFile(bytes: Uint8Array): Promise<Project> {
+/** Options for reading project state. */
+export interface LoadProjectOptions {
+  /**
+   * Called with the path of each unknown key dropped from `settings.exportStyle` (a newer version may add style fields;
+   * the project still loads). Invalid style values still fail the load.
+   */
+  onIgnoredKey?: IgnoredKeyHandler;
+}
+
+export async function loadProjectFile(bytes: Uint8Array, options: LoadProjectOptions = {}): Promise<Project> {
   const files = readZip(bytes);
   const json = files.get(PROJECT_JSON);
   const sourceEpub = files.get(SOURCE_EPUB);
@@ -42,7 +66,7 @@ export async function loadProjectFile(bytes: Uint8Array): Promise<Project> {
   } catch {
     throw new Error('project.json is not valid JSON');
   }
-  return { ...validateProjectState(state), sourceEpub };
+  return { ...validateProjectState(state, options), sourceEpub };
 }
 
 type Json = Record<string, unknown>;
@@ -72,11 +96,12 @@ function obj(v: unknown, path: string): Json {
 }
 
 /** Validates untrusted project state (project file, IndexedDB) and returns a clean copy. */
-export function validateProjectState(input: unknown): Omit<Project, 'sourceEpub'> {
+export function validateProjectState(input: unknown, options: LoadProjectOptions = {}): Omit<Project, 'sourceEpub'> {
   const p = obj(input, 'project');
   if (p.schemaVersion !== 1) throw new Error(`Unsupported project schema version: ${String(p.schemaVersion)}`);
   const author = optStr(p, 'author', 'project');
   const lastSample = p.lastSample === undefined ? undefined : validateSample(obj(p.lastSample, 'project.lastSample'));
+  const wordHints = p.wordHints === undefined || p.wordHints === null ? undefined : validateWordHints(obj(p.wordHints, 'project.wordHints'));
   return {
     schemaVersion: 1,
     id: str(p, 'id', 'project'),
@@ -84,9 +109,10 @@ export function validateProjectState(input: unknown): Omit<Project, 'sourceEpub'
     ...(author !== undefined ? { author } : {}),
     createdAt: str(p, 'createdAt', 'project'),
     updatedAt: str(p, 'updatedAt', 'project'),
-    settings: validateSettings(obj(p.settings, 'project.settings')),
+    settings: validateSettings(obj(p.settings, 'project.settings'), options.onIgnoredKey),
     chapters: arr(p, 'chapters', 'project').map((c, i) => validateChapter(obj(c, `chapters[${i}]`), `chapters[${i}]`)),
     ...(lastSample !== undefined ? { lastSample } : {}),
+    ...(wordHints !== undefined ? { wordHints } : {}),
   };
 }
 
@@ -107,7 +133,7 @@ function validateSample(s: Json): SampleSelection {
   };
 }
 
-function validateSettings(s: Json): ProjectSettings {
+function validateSettings(s: Json, onIgnoredKey: IgnoredKeyHandler | undefined): ProjectSettings {
   const path = 'settings';
   if (typeof s.twoPass !== 'boolean') fail(`${path}.twoPass`, 'a boolean');
   const concurrency = optNum(s, 'concurrency', path) ?? fail(`${path}.concurrency`, 'a number');
@@ -121,6 +147,9 @@ function validateSettings(s: Json): ProjectSettings {
   const identicalMinLetters = optInt(s, 'identicalMinLetters', path, 0, MAX_IDENTICAL_MIN_LETTERS);
   // An unknown future reasoning level falls back to the provider default rather than rejecting the file.
   const reasoning = REASONING_LEVELS.find((level) => level === s.reasoning);
+  const wordHints = s.wordHints === undefined || s.wordHints === null ? undefined : validateWordHintSettings(obj(s.wordHints, `${path}.wordHints`));
+  const exportStyle = s.exportStyle === undefined || s.exportStyle === null ? undefined : validateStyleSetting(s.exportStyle, onIgnoredKey);
+  if (s.attribution !== undefined && typeof s.attribution !== 'boolean') fail(`${path}.attribution`, 'a boolean');
   return {
     sourceLang: str(s, 'sourceLang', path),
     targetLang: str(s, 'targetLang', path),
@@ -137,6 +166,85 @@ function validateSettings(s: Json): ProjectSettings {
     ...(maxSegmentsPerBatch !== undefined ? { maxSegmentsPerBatch } : {}),
     ...(identicalMinLetters !== undefined ? { identicalMinLetters } : {}),
     ...(reasoning !== undefined ? { reasoning } : {}),
+    ...(wordHints !== undefined ? { wordHints } : {}),
+    ...(exportStyle !== undefined ? { exportStyle } : {}),
+    // Only `true` is kept: the option is off unless the user opted in.
+    ...(s.attribution === true ? { attribution: true } : {}),
+  };
+}
+
+/**
+ * Export style values are validated strictly (they end up in the book's CSS); the message names the bad field. Unknown
+ * keys are dropped instead, so a project saved by a newer version still opens (its translations stay reachable).
+ */
+function validateStyleSetting(value: unknown, onIgnoredKey: IgnoredKeyHandler | undefined): ExportStyle {
+  try {
+    return validateExportStyle(value, 'settings.exportStyle', onIgnoredKey ?? (() => {}));
+  } catch (err) {
+    if (err instanceof ExportStyleError) throw new Error(`Invalid project file: ${err.message.replace(/^Invalid export style: /, '')}`);
+    throw err;
+  }
+}
+
+const countLimit = (v: number | undefined, fallback: number, max: number) => (v === undefined ? fallback : Math.min(max, Math.max(0, Math.round(v))));
+
+/** Hint options are clamped to their ranges (an unknown style becomes ruby), so a slightly off file still loads. */
+function validateWordHintSettings(h: Json): WordHintSettings {
+  const path = 'settings.wordHints';
+  const defaults = defaultWordHintSettings();
+  if (h.enabled !== undefined && typeof h.enabled !== 'boolean') fail(`${path}.enabled`, 'a boolean');
+  const level = optNum(h, 'level', path);
+  const glossLang = optStr(h, 'glossLang', path)?.trim();
+  return {
+    enabled: h.enabled === true,
+    level: level === undefined ? defaults.level : clampHintLevel(level),
+    ...(glossLang ? { glossLang } : {}),
+    style: h.style === 'inline' ? 'inline' : 'ruby',
+    maxPerParagraph: countLimit(optNum(h, 'maxPerParagraph', path), defaults.maxPerParagraph, MAX_HINTS_PER_PARAGRAPH_LIMIT),
+    perChapter: countLimit(optNum(h, 'perChapter', path), defaults.perChapter, MAX_HINTS_PER_CHAPTER_LIMIT),
+  };
+}
+
+/** Longest gloss or label accepted from a file: generation caps them far lower, this only bounds untrusted input. */
+const MAX_HINT_TEXT = 200;
+
+function validateWordHints(h: Json): WordHints {
+  const path = 'wordHints';
+  return {
+    sourceLang: str(h, 'sourceLang', path),
+    glossLang: str(h, 'glossLang', path),
+    entries: arr(h, 'entries', path).map((raw, i) => validateWordHintEntry(obj(raw, `${path}.entries[${i}]`), `${path}.entries[${i}]`)),
+  };
+}
+
+function boundedStr(o: Json, key: string, path: string): string {
+  const v = str(o, key, path);
+  return v.length <= MAX_HINT_TEXT ? v : fail(`${path}.${key}`, `at most ${MAX_HINT_TEXT} characters`);
+}
+
+/** Every occurrence must name a sense of its entry; a gloss is plain text and is only ever written as a text node. */
+function validateWordHintEntry(e: Json, path: string): WordHintEntry {
+  const rank = optNum(e, 'rank', path) ?? fail(`${path}.rank`, 'a number');
+  const senses = arr(e, 'senses', path).map((raw, i) => {
+    const s = obj(raw, `${path}.senses[${i}]`);
+    return { id: boundedStr(s, 'id', `${path}.senses[${i}]`), gloss: boundedStr(s, 'gloss', `${path}.senses[${i}]`) };
+  });
+  const ids = new Set(senses.map((s) => s.id));
+  return {
+    lemma: boundedStr(e, 'lemma', path),
+    rank,
+    senses,
+    occurrences: arr(e, 'occurrences', path).map((raw, i) => {
+      const op = `${path}.occurrences[${i}]`;
+      const o = obj(raw, op);
+      const nth = optNum(o, 'nth', op);
+      if (nth === undefined || nth < 0 || !Number.isInteger(nth)) fail(`${op}.nth`, 'a non-negative integer');
+      const sense = str(o, 'sense', op);
+      if (!ids.has(sense)) fail(`${op}.sense`, 'the id of a sense of its entry');
+      // Optional: absent in files written before per-form ranks (the entry's rank applies then).
+      const occRank = optNum(o, 'rank', op);
+      return { segmentId: str(o, 'segmentId', op), word: boundedStr(o, 'word', op), nth, sense, ...(occRank !== undefined ? { rank: occRank } : {}) };
+    }),
   };
 }
 
