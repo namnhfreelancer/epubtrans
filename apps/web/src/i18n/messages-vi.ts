@@ -118,6 +118,8 @@ export const vi: Record<MessageKey, string> = {
   'setup.estimateUsd': '≈ {usd}',
   'setup.estimateNoPrice': 'Nhập giá để xem chi phí.',
   'setup.estimateNothing': 'Không còn gì để dịch.',
+  'setup.estimateCalculating': 'Đang tính ước tính…',
+  'setup.estimateUpdatesAfterRun': 'Ước tính sẽ được cập nhật sau khi chạy xong.',
   'setup.priceFound': 'Giá từ {source} (khớp với: {id}).',
   'setup.priceFromProvider': 'Giá từ danh sách mô hình của nhà cung cấp.',
   'setup.priceLooking': 'Đang tra giá công khai…',
@@ -176,6 +178,8 @@ export const vi: Record<MessageKey, string> = {
   'reader.noErrors': 'Không có đoạn nào bị lỗi.',
   'reader.retryAll': 'Dịch lại tất cả đoạn lỗi',
   'reader.retryingAll': 'Đang dịch lại…',
+  'reader.resumeTranslation': 'Tiếp tục dịch ({pending} chưa dịch, {failed} lỗi)',
+  'reader.resumeHint': 'Mở trang thiết lập, nơi hiển thị ước tính chi phí và nút Bắt đầu.',
 
   'status.pending': 'Chờ dịch',
   'status.translated': 'Đã dịch',
@@ -212,6 +216,14 @@ export const vi: Record<MessageKey, string> = {
   'sample.failed': 'Dịch mẫu đã dừng: {message}',
   'sample.cancelled': 'Đã hủy dịch mẫu. Các đoạn đã dịch xong vẫn được giữ lại.',
   'sample.done': 'Đã dịch xong các đoạn mẫu. Hãy xem bên dưới; nếu cần, sửa hướng dẫn văn phong hoặc bảng thuật ngữ rồi dịch lại.',
+  'sample.allFailed':
+    'Cả {n} đoạn mẫu đều dịch không thành công nên không có bản dịch mới. Các đoạn đã có bản dịch vẫn giữ nguyên. Hãy kiểm tra cài đặt nhà cung cấp hoặc thử lại sau.',
+  'sample.someFailed':
+    '{n} đoạn mẫu dịch không thành công và vẫn giữ bản dịch trước đó (đoạn chưa có bản dịch được đánh dấu lỗi). Các đoạn này được gắn nhãn bên dưới.',
+  'sample.keptEdited': 'Đã giữ nguyên {n} đoạn bạn sửa tay.',
+  'sample.badgeFailedKept': 'Lỗi – đang hiện bản dịch cũ',
+  'sample.badgeFailed': 'Lỗi',
+  'sample.badgeEdited': 'Đã sửa tay – không dịch lại',
   'sample.seed': 'Hạt giống {seed}',
   'sample.viewerTitle': 'Các đoạn mẫu',
   'sample.passageHeading': 'Đoạn {n}: {title}',
@@ -240,7 +252,7 @@ export const vi: Record<MessageKey, string> = {
   'guide.maxEntries': 'Số mục thuật ngữ tối đa',
   'guide.maxEntriesHint': 'Bảng thuật ngữ lớn dần theo độ dài sách: khoảng một mục cho mỗi 500 từ, tối thiểu 30, tối đa bằng số này.',
   'guide.extendsHint':
-    'Khi tạo, hướng dẫn hiện tại (mẫu có sẵn hoặc nội dung bạn tự viết) được giữ nguyên và một khối “Book-specific guideline” được thêm bên dưới; tạo lại chỉ thay khối đó.',
+    'Khi tạo, hướng dẫn hiện tại (mẫu có sẵn hoặc nội dung bạn tự viết) được giữ nguyên và một khối “Book-specific guideline” được thêm bên dưới; tạo lại sẽ thay mọi thứ bên dưới tiêu đề đó, kể cả nội dung bạn tự thêm ở đó, nên hãy viết quy tắc riêng ở phía trên.',
   'guide.applyPresetKeepsGenerated': 'Thay phần hướng dẫn gốc bằng mẫu “{preset}”? Khối hướng dẫn riêng cho sách được giữ lại.',
   'guide.phase.extract': 'Đang quét sách để tìm tên riêng và thuật ngữ…',
   'guide.phase.guideline': 'Đang soạn hướng dẫn văn phong từ các đoạn trích khắp cuốn sách…',
@@ -249,6 +261,7 @@ export const vi: Record<MessageKey, string> = {
   'guide.skipped': 'Đã bỏ qua {n} lô ứng viên vì câu trả lời của mô hình không dùng được.',
   'guide.sections': 'Các mục của hướng dẫn',
   'guide.cancel': 'Hủy',
+  'guide.lockedWhileGenerating': 'Đang tạo… hướng dẫn và bảng thuật ngữ bị khóa cho đến khi hoàn tất (hoặc bạn hủy).',
   // Word Wise hints
   'app.credits': 'Gợi ý Word Wise dùng dữ liệu tần suất từ của wordfreq (Robyn Speer và cộng sự, dữ liệu theo giấy phép CC BY-SA 4.0).',
   'hints.title': 'Gợi ý Word Wise',

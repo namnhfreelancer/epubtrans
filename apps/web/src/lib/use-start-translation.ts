@@ -16,7 +16,8 @@ export interface StartTranslation {
 
 /**
  * Starts (or resumes) the translation job of a book: pending and failed segments are processed, finished ones are skipped.
- * Shared by the setup page ("Retry failed segments") and the reader ("Retry all failed") so both go through the same
+ * Shared by the setup page ("Start", "Resume", "Retry failed segments") and the reader ("Retry all failed", offered only
+ * when nothing is pending, since a start also translates pending segments) so both go through the same
  * provider checks, the same job registry (one job per book, so a running job blocks a second start) and the same
  * cross-tab job lock (one tab at a time translates a book).
  */

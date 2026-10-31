@@ -2,7 +2,7 @@ import type { Project } from '@epubtrans/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { buildErrorIndex, errorOrdinal, findAdjacentError, locateSegment, type SegmentLocation, type StepDirection } from '../../lib/error-index';
-import { routeHref } from '../../lib/hash-route';
+import { navigate, routeHref } from '../../lib/hash-route';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { countChapterSegments } from '../../lib/segment-counts';
 import { pauseJob, useJob } from '../../lib/translation-jobs';
@@ -46,6 +46,11 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
   const errors = useMemo(() => buildErrorIndex(project.chapters), [project, version]);
   const retrying = job.status === 'running' || job.status === 'pausing';
+  // Core has no "failed segments only" run: a start also translates every untranslated segment (and, in two-pass
+  // mode, reviews every draft not edited by hand). With such work outstanding the button must not start a paid book
+  // run by itself.
+  const unfinished = progress.reduce((sum, c) => sum + c.pending + (project.settings.twoPass ? c.reviewable : 0), 0);
+  const resumeInstead = unfinished > 0;
 
   const jumpTo = (target: SegmentLocation) => {
     setIndex(target.chapter);
@@ -153,10 +158,12 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
               onOnlyErrorsChange={toggleOnlyErrors}
               retry={{
                 running: retrying,
-                blockedHint: sampleRunning ? t('sample.blocksRun') : busyElsewhere ? t('run.busyElsewhere') : undefined,
+                // Resuming only navigates to the setup page, which shows the estimate and its own Start guards.
+                resume: resumeInstead ? { pending: unfinished, failed: errors.locations.length } : undefined,
+                blockedHint: resumeInstead ? undefined : sampleRunning ? t('sample.blocksRun') : busyElsewhere ? t('run.busyElsewhere') : undefined,
                 busyElsewhere,
                 error: retryError,
-                onRetry: () => void retryAll(),
+                onRetry: () => (resumeInstead ? navigate({ name: 'book', id: project.id, tab: 'setup' }) : void retryAll()),
                 onPause: () => pauseJob(project.id),
               }}
             />

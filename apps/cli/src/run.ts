@@ -10,6 +10,7 @@ import { translateCommand } from './commands/translate';
 import { COMMAND_HELP, MAIN_HELP } from './help';
 import type { Io } from './io';
 import { EXIT } from './pipeline';
+import { terminalSafeIo } from './terminal-text';
 
 export const VERSION: string = rootPackage.version;
 
@@ -24,8 +25,12 @@ const COMMANDS: Record<string, Command> = {
   presets: presetsCommand,
 };
 
-/** Dispatches argv (without the runtime and script path) and returns the exit code; never throws. */
-export async function run(argv: string[], io: Io): Promise<number> {
+/**
+ * Dispatches argv (without the runtime and script path) and returns the exit code; never throws.
+ * All output goes through `terminalSafeIo`: books, project files, model answers and price catalogs are untrusted.
+ */
+export async function run(argv: string[], rawIo: Io): Promise<number> {
+  const io = terminalSafeIo(rawIo);
   const [name, ...rest] = argv;
   if (name === undefined || name === '--help' || name === '-h' || name === 'help') {
     io.out(MAIN_HELP);

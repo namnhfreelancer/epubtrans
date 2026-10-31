@@ -123,6 +123,16 @@ describe('model matching', () => {
     expect(matchModelPricing(liteLlmEntries, 'claude-3.7-sonnet', 'anthropic')?.id).toBe('github_copilot/claude-3.7-sonnet');
   });
 
+  it('never picks a crafted id with control characters or an odd prefix by fuzzy matching', () => {
+    const entries: PricingEntry[] = [
+      { id: '\x1b[2J/gpt-4o', priceInPerM: 1, priceOutPerM: 2 },
+      { id: 'evil maker/gpt-4o', priceInPerM: 1, priceOutPerM: 2 },
+      { id: 'openai/gpt-4o-long', priceInPerM: 1, priceOutPerM: 2 },
+    ];
+    expect(matchModelPricing(entries, 'gpt-4o')).toBeUndefined();
+    expect(matchModelPricing([...entries, { id: 'x/gpt-4o', priceInPerM: 1, priceOutPerM: 2 }], 'gpt-4o')?.id).toBe('x/gpt-4o');
+  });
+
   it('returns undefined instead of guessing between differently priced matches', () => {
     expect(matchModelPricing(openRouterEntries, 'twin-model')).toBeUndefined();
     expect(matchModelPricing(openRouterEntries, 'twin-model', 'openai')).toBeUndefined();

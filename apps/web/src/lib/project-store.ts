@@ -197,8 +197,10 @@ export function saveTranslationEdit(project: Project, segment: Segment, html: st
   if (value) {
     segment.translationHtml = value;
     segment.status = segment.status === 'reviewed' ? 'reviewed' : 'translated';
+    segment.userEdited = true;
   } else {
     delete segment.translationHtml;
+    delete segment.userEdited;
     segment.status = 'pending';
   }
   delete segment.error;

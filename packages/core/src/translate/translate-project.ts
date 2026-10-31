@@ -7,13 +7,20 @@ import { estimateTokens } from './token-estimate';
 export const MAX_BATCH_TOKENS = 1500;
 export const MAX_CONCURRENCY = 16;
 
-/** Splits consecutive segments into batches of at most `maxTokens` source tokens (one oversized segment per batch). */
-export function makeBatches(segments: Segment[], maxTokens = MAX_BATCH_TOKENS): Segment[][] {
+/**
+ * Splits consecutive segments into batches of at most `maxTokens` source tokens (one oversized segment per batch).
+ * `tokensOf` lets a caller that already knows the source token counts (the cost estimate) reuse them.
+ */
+export function makeBatches(
+  segments: Segment[],
+  maxTokens = MAX_BATCH_TOKENS,
+  tokensOf: (s: Segment) => number = (s) => estimateTokens(s.sourceHtml),
+): Segment[][] {
   const batches: Segment[][] = [];
   let current: Segment[] = [];
   let tokens = 0;
   for (const s of segments) {
-    const t = estimateTokens(s.sourceHtml);
+    const t = tokensOf(s);
     if (current.length && tokens + t > maxTokens) {
       batches.push(current);
       current = [];
@@ -31,14 +38,23 @@ export function validateSettings(settings: ProjectSettings): void {
   if (!Number.isFinite(settings.concurrency) || settings.concurrency < 1) throw new Error('Concurrency must be at least 1');
 }
 
+/**
+ * True when automatic runs must leave the segment alone: the user wrote its translation by hand (`userEdited`)
+ * and the caller did not ask to overwrite such edits. A flagged segment without a translation is not protected,
+ * so it can never get stuck as pending.
+ */
+export const keepsUserEdit = (s: Segment, overwriteUserEdited = false): boolean =>
+  !overwriteUserEdited && s.userEdited === true && s.translationHtml !== undefined;
+
 export const concurrencyOf = (settings: Pick<ProjectSettings, 'concurrency'>) => Math.min(MAX_CONCURRENCY, Math.max(1, Math.floor(settings.concurrency)));
 
 /** What a user edit or a retranslation changes; compared against the state when the phase started. */
-const revisionOf = (s: Segment) => `${s.status}\u0000${s.translationHtml ?? ''}`;
+const revisionOf = (s: Segment) => `${s.status}\u0000${s.userEdited === true}\u0000${s.translationHtml ?? ''}`;
 
 /**
  * Translates every segment that is 'pending' or 'error' (finished segments are skipped, which makes
- * runs resumable), then — when `settings.twoPass` — reviews every 'translated' segment.
+ * runs resumable), then — when `settings.twoPass` — reviews every 'translated' segment. Segments the user
+ * edited by hand (`userEdited`) are skipped in both passes unless `opts.overwriteUserEdited` is set.
  * Segments are mutated in place and reported through `onSegment` for persistence. A segment changed by
  * someone else during the run (manual edit, retranslation) is left as is and not reported.
  * Rejects on abort or on a fatal provider error (bad key, unknown model); other failures mark segments as 'error'.
@@ -51,8 +67,9 @@ export async function translateProject(project: Project, provider: ChatProvider,
   opts.signal?.addEventListener('abort', onAbort, { once: true });
   const usage = { input: 0, output: 0 };
   try {
-    await runPhase(project, 'translate', (s) => s.status === 'pending' || s.status === 'error');
-    if (settings.twoPass) await runPhase(project, 'review', (s) => s.status === 'translated');
+    const editable = (s: Segment) => !keepsUserEdit(s, opts.overwriteUserEdited);
+    await runPhase(project, 'translate', (s) => (s.status === 'pending' || s.status === 'error') && editable(s));
+    if (settings.twoPass) await runPhase(project, 'review', (s) => s.status === 'translated' && editable(s));
   } finally {
     opts.signal?.removeEventListener('abort', onAbort);
   }

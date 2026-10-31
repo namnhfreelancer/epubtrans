@@ -12,6 +12,8 @@ interface ReaderErrorControlsProps {
   onOnlyErrorsChange: (value: boolean) => void;
   retry: {
     running: boolean;
+    /** Untranslated work remains: the button opens the setup page (estimate + Start) instead of retrying directly. */
+    resume?: { pending: number; failed: number };
     /** Why "Retry all failed" is disabled (samples running, or a job in another tab). */
     blockedHint?: string;
     /** Another tab is translating the book: the hint is also shown as a notice. */
@@ -22,7 +24,7 @@ interface ReaderErrorControlsProps {
   };
 }
 
-/** Previous/next error, errors-only filter and "retry all failed"; the `[` and `]` keys step like the buttons. */
+/** Previous/next error, errors-only filter and "retry all failed" ("resume translation" while untranslated work remains); the `[` and `]` keys step like the buttons. */
 export function ReaderErrorControls({ total, ordinal, canStep, onStep, onlyErrors, onOnlyErrorsChange, retry }: ReaderErrorControlsProps) {
   const { t } = useI18n();
   return (
@@ -69,10 +71,10 @@ export function ReaderErrorControls({ total, ordinal, canStep, onStep, onlyError
             variant="primary"
             data-testid="retry-all-failed"
             onClick={retry.onRetry}
-            disabled={retry.running || Boolean(retry.blockedHint)}
-            title={retry.blockedHint}
+            disabled={Boolean(retry.busyElsewhere) || (!retry.resume && (retry.running || Boolean(retry.blockedHint)))}
+            title={retry.resume ? t('reader.resumeHint') : retry.blockedHint}
           >
-            {retry.running ? t('reader.retryingAll') : t('reader.retryAll')}
+            {retry.resume ? t('reader.resumeTranslation', retry.resume) : retry.running ? t('reader.retryingAll') : t('reader.retryAll')}
           </Button>
         )}
       </span>

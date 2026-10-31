@@ -1,3 +1,4 @@
+import { ProviderError } from '../providers/provider-http';
 import { buildContextBlock, extractJson } from '../translate/prompt-protocol';
 import { abortError, withRetry } from '../translate/retry-with-backoff';
 import type { ChatProvider, GlossaryEntry, ProjectSettings } from '../types';
@@ -73,8 +74,9 @@ export function parseClassifyAnswer(text: string, candidates: readonly GlossaryC
 
 /**
  * Classifies and translates candidates in batches of `CLASSIFY_BATCH_SIZE`, with retry/backoff per request.
- * Provider errors (bad key, rate limits after all retries) and aborts reject the whole call; an answer that
- * stays unparsable after a second request only skips its batch.
+ * Fatal provider errors (bad key, unknown model) and aborts reject the whole call. A batch whose request still
+ * fails after all retries (rate limit, outage, rejected content), or whose answer stays unparsable after a second
+ * request, is skipped, so the batches already paid for are kept; only when every batch fails does the call reject.
  */
 export async function classifyCandidates(
   candidates: readonly GlossaryCandidate[],
@@ -97,11 +99,21 @@ export async function classifyCandidates(
   opts.signal?.addEventListener('abort', onAbort, { once: true });
   const signal = controller.signal;
 
+  let lastProviderError: ProviderError | undefined;
   const classify = async (index: number) => {
     const batch = batches[index] as GlossaryCandidate[];
     const user = buildClassifyUserMessage(batch, opts.bookTitle);
     for (let attempt = 1; ; attempt++) {
-      const res = await withRetry(() => provider.chat({ system, user, maxTokens: MAX_OUTPUT_TOKENS, signal }), signal);
+      let res: Awaited<ReturnType<ChatProvider['chat']>>;
+      try {
+        res = await withRetry(() => provider.chat({ system, user, maxTokens: MAX_OUTPUT_TOKENS, signal }), signal);
+      } catch (err) {
+        if (!(err instanceof ProviderError) || err.fatal || signal.aborted) throw err;
+        lastProviderError = err;
+        skippedBatches++;
+        results[index] = [];
+        break;
+      }
       try {
         results[index] = parseClassifyAnswer(res.text, batch);
         break;
@@ -138,6 +150,7 @@ export async function classifyCandidates(
     opts.signal?.removeEventListener('abort', onAbort);
   }
   if (failure !== undefined) throw failure;
+  if (lastProviderError && skippedBatches === batches.length) throw lastProviderError;
   // Batch order, not completion order, keeps the result deterministic.
   return { entries: results.flat(), skippedBatches };
 }
