@@ -77,6 +77,13 @@ describe('lemmatizeEnglish', () => {
     ['quizzes', 'quiz'],
     ['caresses', 'caress'],
     ['hisses', 'hiss'],
+    // Nouns ending in -eed are not past tenses.
+    ['steed', 'steed'],
+    ['creed', 'creed'],
+    ['tweed', 'tweed'],
+    ['steeds', 'steed'],
+    ['freed', 'free'],
+    ['agreed', 'agree'],
   ];
   for (const [word, lemma] of cases) it(`${word} → ${lemma}`, () => expect(lemmatizeEnglish(word, en.rank)).toBe(lemma));
 
