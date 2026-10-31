@@ -30,6 +30,7 @@ function translationLabel(segment: Segment, outcome: SampleOutcome): string {
   if (outcome.keptEdited?.includes(segment.id)) return 'translation (edited by hand, kept):';
   // A failed segment without an earlier translation is an 'error' and printed as not translated below.
   if (outcome.failed?.includes(segment.id) && segment.status !== 'error') return 'translation (sample failed, earlier translation kept):';
+  if (segment.warning === 'identical' && segment.status !== 'error') return 'translation (warning: identical to the source):';
   return 'translation:';
 }
 
