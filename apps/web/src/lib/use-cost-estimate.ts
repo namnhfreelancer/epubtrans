@@ -3,7 +3,7 @@ import { type DependencyList, useEffect, useMemo, useRef, useState } from 'react
 import { createEstimateScheduler } from './estimate-scheduler';
 
 export interface CostEstimateState {
-  /** The last computed estimate; undefined until the first one is ready. */
+  /** The last computed estimate; undefined until the first one is ready (or when `compute` has nothing to estimate). */
   estimate: CostEstimate | undefined;
   /** A run is in progress, so `estimate` is deliberately not refreshed until it ends. */
   deferred: boolean;
@@ -14,8 +14,8 @@ export interface CostEstimateState {
  * when the thread is idle. While `paused` (a translation or sample run) the last estimate is kept and only the
  * first one is computed; it is refreshed once the run ends. `deps` are everything `compute` reads.
  */
-export function useCostEstimate(compute: () => CostEstimate, paused: boolean, deps: DependencyList): CostEstimateState {
-  const [estimate, setEstimate] = useState<CostEstimate>();
+export function useCostEstimate(compute: () => CostEstimate | undefined, paused: boolean, deps: DependencyList): CostEstimateState {
+  const [estimate, setEstimate] = useState<CostEstimate | undefined>();
   const hasEstimate = useRef(false);
   const computeRef = useRef(compute);
   const scheduler = useMemo(

@@ -13,7 +13,8 @@ test("the reader's retry does not start a full run while segments are pending: i
   mock.invalidAll = true;
   await page.locator('#sample-passages').fill('2');
   await page.getByTestId('sample-translate').click();
-  await expect(page.getByTestId('sample-complete')).toBeVisible({ timeout: 90_000 });
+  // Nothing was translated: the sample run reports an error rather than success.
+  await expect(page.getByTestId('sample-all-failed')).toBeVisible({ timeout: 90_000 });
   const failed = Number(/(\d+)/.exec((await page.getByTestId('run-errors').textContent()) ?? '')?.[1]);
   expect(failed).toBeGreaterThan(0);
   const pending = total - failed;

@@ -77,3 +77,57 @@ test('translates samples, shows them side by side, translates them again, then t
   await expect(page.getByTestId('sample-new')).toBeEnabled();
   await expect(page.getByTestId('sample-translation').first()).toContainText('[new]');
 });
+
+test('a sample re-run that partly fails warns and labels failed and hand-edited segments; a fully failed one is an error', async ({ page }) => {
+  const mock = await installMockProvider(page);
+  await configureMockProvider(page);
+  await importBook(page, FIXTURES.epub);
+  await openFirstBook(page);
+  await page.locator('#sample-passages').fill('2');
+  await page.getByTestId('sample-translate').click();
+  await expect(page.getByTestId('sample-complete')).toBeVisible();
+  const [failedId = '', editedId = '', ...rest] = await viewerIds(page);
+  expect(rest.length).toBeGreaterThan(0);
+  const sampleSegment = (id: string) => page.locator(`[data-testid="sample-segment"][data-segment-id="${id}"]`);
+
+  // Edit one sampled segment by hand in the reader, then come back to the setup page.
+  await page.evaluate((id) => {
+    window.location.hash = window.location.hash.replace(/\/setup$/, `/read/${encodeURIComponent(id)}`);
+  }, editedId);
+  const row = page.locator(`[data-testid="segment-row"][data-segment-id="${editedId}"]`);
+  await row.getByRole('button', { name: 'Edit' }).click();
+  await row.getByTestId('segment-editor').fill('Bản tôi tự sửa');
+  await row.getByTestId('segment-editor').blur();
+  await expect(row.getByTestId('segment-translation')).toHaveText('Bản tôi tự sửa');
+  await page.getByRole('link', { name: 'Translate', exact: true }).click();
+
+  // Again, with one segment answered invalidly: a warning instead of the success message, and labels.
+  mock.invalidIds.add(failedId);
+  mock.prefix = '[again] ';
+  const before = mock.segmentRequests.length;
+  await page.getByTestId('sample-again').click();
+  await expect(page.getByTestId('sample-partly-failed')).toHaveText(
+    '1 sample segments failed and kept their previous translation (segments without one are marked as errors). They are labelled below.',
+  );
+  await expect(page.getByTestId('sample-kept-edited')).toHaveText(' 1 hand-edited segments were kept.');
+  await expect(page.getByTestId('sample-complete')).toHaveCount(0);
+  expect(translatedIds(mock, before)).not.toContain(editedId);
+
+  await expect(sampleSegment(failedId).getByTestId('sample-badge-failed')).toHaveText('Failed – earlier translation shown');
+  await expect(sampleSegment(failedId).getByTestId('sample-translation')).toContainText('[vi]');
+  await expect(sampleSegment(editedId).getByTestId('sample-badge-edited')).toHaveText('Edited by hand – not resampled');
+  await expect(sampleSegment(editedId).getByTestId('sample-translation')).toContainText('Bản tôi tự sửa');
+  for (const id of rest) {
+    await expect(sampleSegment(id).getByTestId('sample-translation')).toContainText('[again]');
+    await expect(sampleSegment(id).locator('[data-testid^="sample-badge-"]')).toHaveCount(0);
+  }
+
+  // Every segment that was sent fails: the run ends as an error, earlier translations stay.
+  mock.invalidAll = true;
+  await page.getByTestId('sample-again').click();
+  await expect(page.getByTestId('sample-all-failed')).toContainText(`All ${rest.length + 1} sample segments failed`);
+  await expect(page.getByTestId('sample-partly-failed')).toHaveCount(0);
+  await expect(page.getByTestId('sample-complete')).toHaveCount(0);
+  await expect(sampleSegment(rest[0] ?? '').getByTestId('sample-badge-failed')).toHaveText('Failed – earlier translation shown');
+  await expect(sampleSegment(rest[0] ?? '').getByTestId('sample-translation')).toContainText('[again]');
+});

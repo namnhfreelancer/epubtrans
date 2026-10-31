@@ -47,8 +47,9 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
   const errors = useMemo(() => buildErrorIndex(project.chapters), [project, version]);
   const retrying = job.status === 'running' || job.status === 'pausing';
   // Core has no "failed segments only" run: a start also translates every untranslated segment (and, in two-pass
-  // mode, reviews every draft). With such work outstanding the button must not start a paid book run by itself.
-  const unfinished = progress.reduce((sum, c) => sum + c.pending + (project.settings.twoPass ? c.translated : 0), 0);
+  // mode, reviews every draft not edited by hand). With such work outstanding the button must not start a paid book
+  // run by itself.
+  const unfinished = progress.reduce((sum, c) => sum + c.pending + (project.settings.twoPass ? c.reviewable : 0), 0);
   const resumeInstead = unfinished > 0;
 
   const jumpTo = (target: SegmentLocation) => {

@@ -214,6 +214,13 @@ export const en = {
   'sample.failed': 'Sample translation stopped: {message}',
   'sample.cancelled': 'Sample translation cancelled. Finished segments are kept.',
   'sample.done': 'Samples translated. Check them below; change the guideline or glossary and translate again if needed.',
+  'sample.allFailed':
+    'All {n} sample segments failed, so nothing new was translated. Segments that already had a translation keep it. Check the provider settings or try again later.',
+  'sample.someFailed': '{n} sample segments failed and kept their previous translation (segments without one are marked as errors). They are labelled below.',
+  'sample.keptEdited': '{n} hand-edited segments were kept.',
+  'sample.badgeFailedKept': 'Failed – earlier translation shown',
+  'sample.badgeFailed': 'Failed',
+  'sample.badgeEdited': 'Edited by hand – not resampled',
   'sample.seed': 'Seed {seed}',
   'sample.viewerTitle': 'Samples',
   'sample.passageHeading': 'Passage {n}: {title}',

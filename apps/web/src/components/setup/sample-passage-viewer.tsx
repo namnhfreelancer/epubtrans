@@ -1,9 +1,35 @@
-import type { Project, SampleSelection } from '@epubtrans/core';
+import type { Project, SampleSelection, Segment } from '@epubtrans/core';
+import type { ReactNode } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
+import type { MessageKey } from '../../i18n/messages-en';
 import { SegmentText } from '../reader/segment-row';
 
-/** The sampled passages, one block per chapter, with every segment as a source / translation pair. */
-export function SamplePassageViewer({ project, selection }: { project: Project; selection: SampleSelection }) {
+const BADGE_STYLES = {
+  failed: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+  edited: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+} as const;
+
+function Badge({ kind, children }: { kind: keyof typeof BADGE_STYLES; children: ReactNode }) {
+  return (
+    <span data-testid={`sample-badge-${kind}`} className={`mb-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${BADGE_STYLES[kind]}`}>
+      {children}
+    </span>
+  );
+}
+
+/** Why the segment does not show this run's answer, if it does not: the run failed for it, or it was edited by hand. */
+function badgeOf(segment: Segment, failed: ReadonlySet<string> | undefined): { kind: keyof typeof BADGE_STYLES; label: MessageKey } | undefined {
+  // A hand edit is never resampled (also after a failed run that skipped it), so that label wins.
+  if (segment.userEdited && segment.translationHtml !== undefined) return { kind: 'edited', label: 'sample.badgeEdited' };
+  if (!failed?.has(segment.id)) return undefined;
+  return { kind: 'failed', label: segment.status === 'error' ? 'sample.badgeFailed' : 'sample.badgeFailedKept' };
+}
+
+/**
+ * The sampled passages, one block per chapter, with every segment as a source / translation pair. `failed` lists the
+ * segments the last finished sample run could not translate; they and hand-edited segments are labelled.
+ */
+export function SamplePassageViewer({ project, selection, failed }: { project: Project; selection: SampleSelection; failed?: ReadonlySet<string> }) {
   const { t } = useI18n();
   const { sourceLang, targetLang } = project.settings;
   const segments = new Map(project.chapters.flatMap((c) => c.segments.map((s) => [s.id, s] as const)));
@@ -26,6 +52,7 @@ export function SamplePassageViewer({ project, selection }: { project: Project; 
           {passage.segmentIds.map((id) => {
             const segment = segments.get(id);
             if (!segment) return null;
+            const badge = badgeOf(segment, failed);
             return (
               <article
                 key={id}
@@ -35,6 +62,7 @@ export function SamplePassageViewer({ project, selection }: { project: Project; 
               >
                 <SegmentText html={segment.sourceHtml} lang={sourceLang === 'auto' ? undefined : sourceLang} />
                 <div data-testid="sample-translation">
+                  {badge && <Badge kind={badge.kind}>{t(badge.label)}</Badge>}
                   {segment.translationHtml && segment.status !== 'error' ? (
                     <SegmentText html={segment.translationHtml} lang={targetLang} />
                   ) : segment.error ? (
