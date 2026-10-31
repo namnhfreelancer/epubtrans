@@ -101,6 +101,7 @@ export const HINTS_FLAGS = {
   'hints-per-paragraph': { type: 'number' },
   'hints-per-chapter': { type: 'number' },
   'style-file': { type: 'string' },
+  'glossary-file': { type: 'string' },
 } as const satisfies FlagSpecs;
 
 export const MODELS_FLAGS = PROVIDER_FLAGS;

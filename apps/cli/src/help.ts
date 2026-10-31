@@ -164,6 +164,9 @@ Options
   --hints-per-paragraph <n>  Export at most n hints per paragraph (default 3, 0 = no limit)
   --hints-per-chapter <n>  Export a word sense only the first n times per chapter (default 1, 0 = every time)
   --style-file <path>      Save an export style (JSON style or single web template) in the project, for later exports
+  --glossary-file <path>   Merge a glossary file (.csv, .tsv/.txt or .json; columns term, translation, type, note) into
+                           the project; entries already in the project are kept. Names in the glossary (people,
+                           places, organizations) are never hinted
   --to <lang>              Target language of a new project (default: --gloss-lang)
   --from <lang>            Source language (default: auto-detect)
   --project <file>         Project file (default: <input>.epubtrans)
@@ -179,7 +182,7 @@ Exit codes: 0 done, 1 error or cancelled, 2 usage error, 3 some words could not 
   glossary: `Usage: epubtrans glossary export <file.epubtrans> --out <file> [--format csv|tsv|json]
 
 Writes the project's glossary (term, translation, type, note) as CSV, TSV or JSON, for another book of a series
-(translate/sample --glossary-file) or the web app's glossary import. The format follows the --out extension.
+(translate/sample/hints --glossary-file) or the web app's glossary import. The format follows the --out extension.
 Cells that a spreadsheet would run as a formula are prefixed with ' (removed again on import).
 `,
   models: `Usage: epubtrans models [--provider <id>] [--base-url <url>] [--api-key-file <path>]
