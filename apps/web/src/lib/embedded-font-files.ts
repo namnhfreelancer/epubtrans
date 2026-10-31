@@ -3,7 +3,8 @@ import { EMBEDDED_FONT_FILES } from '@epubtrans/core';
 /**
  * Bundled OFL fonts (and their licenses) that an export style can embed. Vite emits them as separate static files of
  * this origin (`font-src`/`connect-src 'self'`), outside the precached app shell, and they are fetched only when an
- * export or a preview embeds that font. A loaded file is kept for the session.
+ * export or a preview embeds that font. A loaded file is kept for the session, and the service worker keeps it for
+ * offline use (`pwa-font-caching.ts`).
  */
 const FILE_URLS = import.meta.glob<string>(['../../../../packages/core/data/fonts/*.ttf', '../../../../packages/core/data/fonts/*.txt'], {
   query: '?url',
