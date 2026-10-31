@@ -14,13 +14,21 @@ function basePath(raw: string | undefined): string {
  * any https origin (custom base URLs vary) or to a local server. The same allowance covers the public price
  * catalogs (openrouter.ai, raw.githubusercontent.com), which are fetched as plain GETs without credentials.
  * Dev mode needs Vite's inline preamble, so the meta tag is only injected at build time.
+ *
+ * The book preview (foliate-js) renders each section as a blob: URL document in an iframe, and those documents inherit
+ * this policy. It needs `frame-src blob:` for the section frames; `style-src 'unsafe-inline' blob:` for foliate's
+ * shadow-DOM and reader <style> elements, the book's own <style>/style attributes and its stylesheets (rewritten to
+ * blob: URLs); `font-src blob:` for fonts embedded in the book. `script-src` stays `'self'`, so book scripts cannot
+ * run: exports are stripped of scripts, foliate is told to skip script resources, and each section document also gets
+ * its own `script-src 'none'` policy (`src/preview/preview-book-loader.ts`).
  */
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self'",
+  "style-src 'self' 'unsafe-inline' blob:",
   "img-src 'self' data: blob:",
-  "font-src 'self'",
+  "font-src 'self' blob:",
+  'frame-src blob:',
   "connect-src 'self' https: http://localhost:* http://127.0.0.1:*",
   "worker-src 'self'",
   "manifest-src 'self'",

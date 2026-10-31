@@ -4,10 +4,10 @@ import { useSyncExternalStore } from 'react';
  * Hash-based routing: works on GitHub Pages under any base path without a 404 fallback.
  * Routes: `#/`, `#/settings`, `#/book/<id>/<tab>`, and `#/book/<id>/read/<segmentId>` to open the reader on one segment.
  */
-export type BookTab = 'setup' | 'read' | 'export';
+export type BookTab = 'setup' | 'read' | 'preview' | 'export';
 export type Route = { name: 'library' } | { name: 'settings' } | { name: 'book'; id: string; tab: BookTab; segment?: string };
 
-const TABS: BookTab[] = ['setup', 'read', 'export'];
+const TABS: BookTab[] = ['setup', 'read', 'preview', 'export'];
 
 export function parseHash(hash: string): Route {
   const parts = hash
