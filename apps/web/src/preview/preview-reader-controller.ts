@@ -1,5 +1,6 @@
 import { PREVIEW_SEGMENT_ATTR } from '@epubtrans/core';
 import { openPreviewBook } from './preview-book-loader';
+import { openExternalLink } from './preview-external-link';
 import type { DevicePreset, PreviewFlow } from './preview-settings';
 import type { FoliateBook, TocItem } from './third-party/foliate-js/epub.js';
 import type { RelocateDetail, SearchEvent, View } from './third-party/foliate-js/view.js';
@@ -127,6 +128,12 @@ export class PreviewReaderController {
     view.style.height = '100%';
     view.addEventListener('relocate', (e) => this.onRelocate((e as CustomEvent<RelocateDetail>).detail));
     view.addEventListener('load', (e) => this.onSectionLoad((e as CustomEvent<{ doc: Document; index: number }>).detail.doc));
+    // Links to other sites open in a new tab without access to this window (a book is untrusted input);
+    // foliate's own fallback is cancelled so only http(s) and mailto links ever open.
+    view.addEventListener('external-link', (e) => {
+      e.preventDefault();
+      openExternalLink((e as CustomEvent<{ href_?: string }>).detail?.href_);
+    });
     this.host.append(view);
     this.view = view;
     return view;

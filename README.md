@@ -132,7 +132,7 @@ Layout: `packages/core` (engine), `apps/web` (Vite + React app), `apps/cli` (Bun
 
 ## Credits and license
 
-epubtrans was created by [nguyenvanduocit](https://github.com/nguyenvanduocit/epubtrans); v2 and its prompt presets are his work. This v3 rewrite (TypeScript monorepo, browser app, new CLI) builds on that project and keeps its attribution. The MOBI/KF8 parser is vendored from [foliate-js](https://github.com/johnfactotum/foliate-js) (MIT), see `packages/core/third-party/foliate-js/`.
+epubtrans was created by [nguyenvanduocit](https://github.com/nguyenvanduocit/epubtrans); v2 and its prompt presets are his work. This v3 rewrite (TypeScript monorepo, browser app, new CLI) builds on that project and keeps its attribution. Two parts are vendored from [foliate-js](https://github.com/johnfactotum/foliate-js) (MIT, Copyright (c) 2022 John Factotum): the MOBI/KF8 parser in `packages/core/third-party/foliate-js/` and the EPUB reader behind the web app's Preview tab in `apps/web/src/preview/third-party/foliate-js/`. Each copy keeps its license text, and the web build keeps the license notice in its bundles.
 
 See [LICENSE](LICENSE) for the terms that apply to this repository.
 

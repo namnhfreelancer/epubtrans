@@ -1,9 +1,14 @@
-// Vendored from foliate-js (https://github.com/johnfactotum/foliate-js), MIT License,
-// commit 78914aef4466eb960965702401634c2cb348e9b1. See ./LICENSE.
-// Local modifications for epubtrans (in-app EPUB preview):
-//  - `makeBook` and its file loaders (zip.js, comic book, FB2, PDF, MOBI) were removed, so the
-//    bundle carries no unused format code; `open()` takes an already opened book object.
-//  - `initTTS` was removed (tts.js is not vendored).
+/*!
+ * @license MIT
+ * foliate-js (https://github.com/johnfactotum/foliate-js), Copyright (c) 2022 John Factotum.
+ * Vendored from commit 78914aef4466eb960965702401634c2cb348e9b1; the MIT license text is in ./LICENSE.
+ * Local modifications for epubtrans (in-app EPUB preview):
+ *  - `makeBook` and its file loaders (zip.js, comic book, FB2, PDF, MOBI) were removed, so the
+ *    bundle carries no unused format code; `open()` takes an already opened book object.
+ *  - `initTTS` was removed (tts.js is not vendored).
+ *  - The fallback that opens an external link (when no `external-link` listener cancels the event) passes
+ *    `noopener,noreferrer`, so a book cannot reach the app window through `window.opener`.
+ */
 import * as CFI from './epubcfi.js'
 import { TOCProgress, SectionProgress } from './progress.js'
 import { Overlayer } from './overlayer.js'
@@ -256,7 +261,7 @@ export class View extends HTMLElement {
             const href = section?.resolveHref?.(href_) ?? href_
             if (book?.isExternal?.(href))
                 Promise.resolve(this.#emit('external-link', { a, href_ }, true))
-                    .then(x => x ? globalThis.open(href_, '_blank') : null)
+                    .then(x => x ? globalThis.open(href_, '_blank', 'noopener,noreferrer') : null)
                     .catch(e => console.error(e))
             else Promise.resolve(this.#emit('link', { a, href }, true))
                 .then(x => x ? this.goTo(href) : null)

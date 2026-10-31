@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate';
+import { removeNetworkHints } from './preview-network-hints';
 import type { DataEventDetail, EpubLoader, FoliateBook, LoadEventDetail } from './third-party/foliate-js/epub.js';
 
 /**
@@ -33,7 +34,10 @@ export function createArchiveLoader(bytes: Uint8Array): EpubLoader {
   };
 }
 
-/** Never loads scripts, and adds {@link PREVIEW_DOCUMENT_CSP} to each content document before it gets a blob URL. */
+/**
+ * Never loads scripts, and rewrites each content document before it gets a blob URL: network hints and meta refresh are
+ * removed, and {@link PREVIEW_DOCUMENT_CSP} is added.
+ */
 export function hardenBook(book: FoliateBook): void {
   const target = book.transformTarget;
   if (!target) throw new Error('The preview reader exposes no resource hooks; refusing to render without them.');
@@ -44,7 +48,9 @@ export function hardenBook(book: FoliateBook): void {
   target.addEventListener('data', (event) => {
     const detail = (event as CustomEvent<DataEventDetail>).detail;
     if (!MARKUP_TYPES.has(detail.type)) return;
-    detail.data = Promise.resolve(detail.data).then((data) => (typeof data === 'string' ? injectScriptBlockingCsp(data) : data));
+    detail.data = Promise.resolve(detail.data).then((data) =>
+      typeof data === 'string' ? injectScriptBlockingCsp(removeNetworkHints(data, detail.type)) : data,
+    );
   });
 }
 

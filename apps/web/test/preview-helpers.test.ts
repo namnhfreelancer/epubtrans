@@ -1,9 +1,12 @@
 import { createDefaultSettings, type Project } from '@epubtrans/core';
 import { strToU8, zipSync } from 'fflate';
-import { describe, expect, it } from 'vitest';
+import { DOMParser } from 'linkedom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createArchiveLoader, hardenBook, injectScriptBlockingCsp, PREVIEW_DOCUMENT_CSP } from '../src/preview/preview-book-loader';
+import { externalLinkTarget, openExternalLink } from '../src/preview/preview-external-link';
 import { previewFingerprint } from '../src/preview/preview-fingerprint';
 import { PREVIEW_MESSAGES } from '../src/preview/preview-messages';
+import { removeNetworkHints } from '../src/preview/preview-network-hints';
 import { previewReaderCss } from '../src/preview/preview-reader-css';
 import {
   DEFAULT_PREVIEW_SETTINGS,
@@ -16,6 +19,13 @@ import {
 } from '../src/preview/preview-settings';
 import type { FoliateBook } from '../src/preview/third-party/foliate-js/epub.js';
 import { REBUILD_DEBOUNCE_MS, REBUILD_MAX_WAIT_MS, rebuildDelay } from '../src/preview/use-preview-export';
+
+/** linkedom has no XMLSerializer; its nodes serialize themselves (XML syntax for XML documents). */
+class LinkedomXMLSerializer {
+  serializeToString(node: { toString(): string }): string {
+    return node.toString();
+  }
+}
 
 function memoryStorage() {
   const map = new Map<string, string>();
@@ -50,6 +60,27 @@ describe('preview document hardening', () => {
     expect(css.data).toBe('head{}');
   });
 
+  it('strips network hints and meta refresh from markup documents through the data hook', async () => {
+    vi.stubGlobal('DOMParser', DOMParser);
+    vi.stubGlobal('XMLSerializer', LinkedomXMLSerializer);
+    try {
+      const target = new EventTarget();
+      hardenBook({ transformTarget: target, sections: [], destroy: () => {} } satisfies FoliateBook);
+      const xhtml =
+        '<html xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="refresh" content="0;url=https://evil.example/"/>' +
+        '<link rel="prefetch" href="https://evil.example/p"/><link rel="stylesheet" href="a.css"/></head><body><p>keep</p></body></html>';
+      const page = { name: 'a.xhtml', type: 'application/xhtml+xml', data: xhtml as string | Promise<string> };
+      target.dispatchEvent(new CustomEvent('data', { detail: page }));
+      const out = (await page.data) as string;
+      expect(out).not.toMatch(/refresh|prefetch|evil\.example/);
+      expect(out).toContain('rel="stylesheet"');
+      expect(out).toContain('<p>keep</p>');
+      expect(out).toContain("script-src 'none'");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('refuses a book without resource hooks', () => {
     expect(() => hardenBook({ sections: [], destroy: () => {} })).toThrow(/resource hooks/);
   });
@@ -62,6 +93,86 @@ describe('preview document hardening', () => {
     expect(blob?.type).toBe('application/xhtml+xml');
     expect(loader.getSize('OEBPS/a.xhtml')).toBe(9);
     expect(loader.getSize('missing')).toBe(0);
+  });
+});
+
+describe('network hint removal', () => {
+  beforeEach(() => {
+    vi.stubGlobal('DOMParser', DOMParser);
+    vi.stubGlobal('XMLSerializer', LinkedomXMLSerializer);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const xhtml = (head: string) => `<html xmlns="http://www.w3.org/1999/xhtml"><head>${head}</head><body><p>text</p></body></html>`;
+
+  it('drops refresh metas in any case and spacing, and keeps other metas', () => {
+    const out = removeNetworkHints(
+      xhtml(
+        '<meta http-equiv=" Refresh " content="5;url=https://evil.example/"/><meta http-equiv="refresh" content="0"/><meta charset="utf-8"/><meta name="viewport" content="width=1"/>',
+      ),
+      'application/xhtml+xml',
+    );
+    expect(out).not.toMatch(/refresh/i);
+    expect(out).toContain('charset="utf-8"');
+    expect(out).toContain('name="viewport"');
+  });
+
+  it.each(['prefetch', 'preconnect', 'dns-prefetch', 'prerender', 'preload', 'modulepreload', 'ICON Prefetch'])('drops <link rel="%s">', (rel) => {
+    const out = removeNetworkHints(xhtml(`<link rel="${rel}" href="https://evil.example/x"/><link rel="stylesheet" href="s.css"/>`), 'application/xhtml+xml');
+    expect(out).not.toContain('evil.example');
+    expect(out).toContain('href="s.css"');
+  });
+
+  it('handles text/html documents', () => {
+    const out = removeNetworkHints(
+      '<html><head><meta http-equiv="refresh" content="0;url=https://evil.example/"><link rel=prefetch href="https://evil.example/p"></head><body><p>x</p></body></html>',
+      'text/html',
+    );
+    expect(out).not.toMatch(/refresh|evil\.example/);
+    expect(out).toContain('<p>x</p>');
+  });
+
+  it('returns documents without hints byte for byte', () => {
+    const plain = xhtml('<title>t</title><link rel="stylesheet" href="s.css"/>');
+    expect(removeNetworkHints(plain, 'application/xhtml+xml')).toBe(plain);
+    const mentionsRefresh = xhtml('<title>refresh</title>');
+    expect(removeNetworkHints(mentionsRefresh, 'application/xhtml+xml')).toBe(mentionsRefresh);
+  });
+});
+
+describe('external links', () => {
+  it('accepts only absolute http, https and mailto URLs', () => {
+    expect(externalLinkTarget('https://example.com/a?b=1')).toBe('https://example.com/a?b=1');
+    expect(externalLinkTarget('  HTTP://example.com ')).toBe('http://example.com/');
+    expect(externalLinkTarget('mailto:a@example.com')).toBe('mailto:a@example.com');
+    for (const bad of [
+      'javascript:alert(1)',
+      ' JavaScript:alert(1)',
+      'data:text/html,x',
+      'blob:https://x/1',
+      'file:///etc/passwd',
+      'ftp://x/',
+      '//example.com',
+      'chapter1.xhtml',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(externalLinkTarget(bad)).toBeUndefined();
+    }
+  });
+
+  it('opens a new tab with noopener and noreferrer, and nothing for other schemes', () => {
+    const open = vi.fn();
+    vi.stubGlobal('window', { open });
+    try {
+      openExternalLink('https://example.com/');
+      openExternalLink('javascript:alert(1)');
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenCalledWith('https://example.com/', '_blank', 'noopener,noreferrer');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

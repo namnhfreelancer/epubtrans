@@ -85,5 +85,7 @@ export default defineConfig({
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 2048,
+    // Keeps `/*! ... @license ... */` notices (the vendored foliate-js MIT notice) in the minified chunks.
+    rolldownOptions: { output: { comments: { legal: true } } },
   },
 });

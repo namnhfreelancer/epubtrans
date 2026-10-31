@@ -47,7 +47,7 @@ Tabs of the same origin share IndexedDB but each holds its own in-memory project
 
 ## Security notes
 
-- The production build injects a Content Security Policy meta tag: no inline scripts, provider calls limited to `https:` and `http://localhost`. For the preview it allows `frame-src blob:`, `style-src 'unsafe-inline' blob:` and `font-src blob:` (foliate renders each section as a blob: document that inherits the policy; see `vite.config.ts`). Scripts stay `'self'` only; in addition foliate skips script resources and every previewed section document carries its own `script-src 'none'` policy.
+- The production build injects a Content Security Policy meta tag: no inline scripts, provider calls limited to `https:` and `http://localhost`. For the preview it allows `frame-src blob:`, `style-src 'unsafe-inline' blob:` and `font-src blob:` (foliate renders each section as a blob: document that inherits the policy; see `vite.config.ts`). Scripts stay `'self'` only; in addition foliate skips script resources and every previewed section document carries its own `script-src 'none'` policy. The preview's copy of each section also loses `<meta http-equiv="refresh">` and prefetch/preconnect/preload `<link>` hints (they would navigate the frame or reach the network despite the policy), and links in a book to http(s) or mailto addresses open in a new tab with `noopener,noreferrer`; other link schemes are ignored.
 - Segment markup from books and models is reduced to attribute-free inline formatting before it is displayed.
 - The API key is kept in memory unless "Remember key on this device" is checked (then it is stored in `localStorage`).
 - Service workers (offline use, install) need a secure context: HTTPS or `localhost`.

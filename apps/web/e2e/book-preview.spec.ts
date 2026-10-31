@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { expect, type Frame, type Page, test } from '@playwright/test';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { configureMockProvider, FIXTURES, importBook, openFirstBook } from './support/app-helpers';
 import { installMockProvider } from './support/mock-provider';
 
@@ -235,4 +237,60 @@ test('rebuilds after an edit made elsewhere and stays on the same page', async (
   await expect(frame.locator(translated)).toHaveText('Bản xem trước đã cập nhật');
   await expect(frame.locator(`.et-pending[data-et-id="${segmentId}"]`)).toHaveCount(0);
   await expect.poll(() => onScreen(`.et-src[data-et-id="${segmentId}"]`)).toBe(true);
+});
+
+const EVIL_HOST = 'evil.example';
+const EXTERNAL_LINK = 'a[href^="https://www.gutenberg.org"]';
+
+/** The fixture book with a meta refresh and network-hint links added to every content document's head. */
+function bookWithNetworkHints(): { name: string; mimeType: string; buffer: Buffer } {
+  const files = unzipSync(new Uint8Array(readFileSync(FIXTURES.epub)));
+  const hints =
+    `<meta http-equiv="refresh" content="0;url=https://${EVIL_HOST}/refresh"/>` +
+    `<link rel="prefetch" href="https://${EVIL_HOST}/prefetch"/><link rel="preconnect" href="https://${EVIL_HOST}"/>` +
+    `<link rel="dns-prefetch" href="https://${EVIL_HOST}"/><link rel="preload" as="image" href="https://${EVIL_HOST}/preload.png"/>`;
+  const out: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = {};
+  for (const [name, data] of Object.entries(files)) {
+    if (name === 'mimetype') out[name] = [data, { level: 0 }];
+    else out[name] = /\.x?html?$/i.test(name) && name.includes('1080-h') ? strToU8(strFromU8(data).replace('</head>', `${hints}</head>`)) : data;
+  }
+  return { name: 'hinted.epub', mimeType: 'application/epub+zip', buffer: Buffer.from(zipSync(out)) };
+}
+
+test('opens external links without a window.opener and keeps meta refresh and network hints out of the preview', async ({ page, context }) => {
+  const evilRequests: string[] = [];
+  await context.route(`**://${EVIL_HOST}/**`, (route) => {
+    evilRequests.push(route.request().url());
+    return route.abort();
+  });
+  await context.route('https://www.gutenberg.org/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>external</title><p>external site</p>' }),
+  );
+
+  await page.goto('/#/');
+  await page.getByTestId('book-file-input').setInputFiles(bookWithNetworkHints());
+  await expect(page.getByTestId('book-card')).toHaveCount(1, { timeout: 60_000 });
+  await openFirstBook(page);
+  await page.getByRole('link', { name: 'Preview' }).click();
+  await sectionFrame(page, 'body');
+  await page.getByTestId('preview-toc-item').nth(1).click();
+  const frame = await sectionFrame(page, EXTERNAL_LINK);
+
+  // The section rendered (a surviving refresh would have turned the frame into an error page) and holds no hints.
+  await expect(frame.locator('[data-et-id]').first()).toBeAttached();
+  await expect(
+    frame.locator('meta[http-equiv="refresh" i], link[rel~="prefetch"], link[rel~="preconnect"], link[rel~="dns-prefetch"], link[rel~="preload"]'),
+  ).toHaveCount(0);
+  await page.waitForTimeout(500);
+  expect(evilRequests).toEqual([]);
+
+  // Clicking the link opens a new tab that cannot reach the app tab; the app tab stays where it was.
+  const appUrl = page.url();
+  const popupPromise = page.waitForEvent('popup');
+  await frame.locator(EXTERNAL_LINK).first().click();
+  const popup = await popupPromise;
+  await popup.waitForURL('https://www.gutenberg.org/');
+  expect(await popup.evaluate(() => window.opener)).toBeNull();
+  expect(page.url()).toBe(appUrl);
+  await popup.close();
 });

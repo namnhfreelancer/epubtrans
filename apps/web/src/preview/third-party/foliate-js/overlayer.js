@@ -1,5 +1,8 @@
-// Vendored unmodified from foliate-js (https://github.com/johnfactotum/foliate-js), MIT License,
-// commit 78914aef4466eb960965702401634c2cb348e9b1. See ./LICENSE.
+/*!
+ * @license MIT
+ * foliate-js (https://github.com/johnfactotum/foliate-js), Copyright (c) 2022 John Factotum.
+ * Vendored unmodified from commit 78914aef4466eb960965702401634c2cb348e9b1; the MIT license text is in ./LICENSE.
+ */
 const createSVGElement = tag =>
     document.createElementNS('http://www.w3.org/2000/svg', tag)
 
