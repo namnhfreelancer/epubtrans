@@ -1,8 +1,11 @@
 import { type ChatProvider, type Project, type ProjectSettings, type TokenUsage, type TranslationPhase, translateProject } from '@epubtrans/core';
 import { useSyncExternalStore } from 'react';
-import { persistSegment, touchProject } from './project-store';
+import { runWithJobLock } from './cross-tab-job-lock';
+import { createJobBaseline, persistJobSegment, touchProject } from './project-store';
 
 export type JobStatus = 'idle' | 'running' | 'pausing' | 'paused' | 'done' | 'failed';
+/** `busy-elsewhere`: another tab holds the project's job lock, so nothing was started here. */
+export type StartJobResult = 'started' | 'already-running' | 'busy-elsewhere';
 
 export interface JobState {
   status: JobStatus;
@@ -56,56 +59,76 @@ export function estimateRemainingMs(job: Pick<JobState, 'done' | 'total' | 'phas
 }
 
 /**
- * Starts (or resumes) translating a project in the background. Finished segments are skipped by core,
- * each finished segment is persisted right away, and a persistence failure stops the run so progress is never lost silently.
+ * Starts (or resumes) translating a project in the background, holding the project's cross-tab job lock
+ * for the whole run. Resolves once it is known whether the job started here. Finished segments are skipped
+ * by core, each finished segment is persisted right away (compare-and-set, so an edit saved meanwhile in
+ * any tab wins), and a persistence failure stops the run so progress is never lost silently.
  */
-export function startJob(project: Project, settings: ProjectSettings, provider: ChatProvider): void {
-  if (controllers.has(project.id)) return;
+export function startJob(project: Project, settings: ProjectSettings, provider: ChatProvider): Promise<StartJobResult> {
+  if (controllers.has(project.id)) return Promise.resolve('already-running');
   const controller = new AbortController();
   controllers.set(project.id, controller);
+  let report: (result: StartJobResult) => void = () => {};
+  const outcome = new Promise<StartJobResult>((resolve) => {
+    report = resolve;
+  });
+  const run = runWithJobLock(project.id, () => {
+    report('started');
+    return runJob(project, settings, provider, controller);
+  })
+    .then((acquired) => {
+      if (!acquired) report('busy-elsewhere');
+    })
+    .catch((err: unknown) => {
+      // runJob records its own failures; this only catches the lock manager failing after the job ran.
+      setJob(project.id, { status: 'failed', error: err instanceof Error ? err.message : String(err) });
+      report('started');
+    })
+    .finally(() => {
+      controllers.delete(project.id);
+      runs.delete(project.id);
+      touchProject(project.id);
+    });
+  runs.set(project.id, run);
+  return outcome;
+}
+
+/** One run of core's translator; never rejects (the outcome is recorded in the job state). */
+async function runJob(project: Project, settings: ProjectSettings, provider: ChatProvider, controller: AbortController): Promise<void> {
   setJob(project.id, { ...IDLE, status: 'running', phaseStartedAt: Date.now() });
+  const baseline = createJobBaseline(project);
   let writeError: Error | undefined;
   const writes: Promise<void>[] = [];
   let phase: TranslationPhase | undefined;
-
-  const run = async () => {
-    try {
-      await translateProject(project, provider, settings, {
-        signal: controller.signal,
-        onProgress: (p) => {
-          const patch: Partial<JobState> = { phase: p.phase, done: p.done, total: p.total, usage: p.usage };
-          if (p.phase !== phase) {
-            phase = p.phase;
-            patch.phaseStartedAt = Date.now();
-          }
-          setJob(project.id, patch);
-        },
-        onSegment: (segment) => {
-          const write = persistSegment(project.id, segment).catch((err: unknown) => {
-            writeError ??= err instanceof Error ? err : new Error(String(err));
-            controller.abort(writeError);
-          });
-          writes.push(write);
-          touchProject(project.id);
-        },
-      });
-      await Promise.all(writes);
-      if (writeError) throw writeError;
-      setJob(project.id, { status: 'done' });
-    } catch (err) {
-      await Promise.all(writes);
-      const failure = writeError ?? err;
-      const paused = !writeError && controller.signal.aborted && controller.signal.reason === PAUSE;
-      setJob(project.id, paused ? { status: 'paused' } : { status: 'failed', error: failure instanceof Error ? failure.message : String(failure) });
-    } finally {
-      controllers.delete(project.id);
-      touchProject(project.id);
-    }
-  };
-  runs.set(
-    project.id,
-    run().finally(() => runs.delete(project.id)),
-  );
+  try {
+    await translateProject(project, provider, settings, {
+      signal: controller.signal,
+      onProgress: (p) => {
+        const patch: Partial<JobState> = { phase: p.phase, done: p.done, total: p.total, usage: p.usage };
+        if (p.phase !== phase) {
+          phase = p.phase;
+          patch.phaseStartedAt = Date.now();
+        }
+        setJob(project.id, patch);
+      },
+      onSegment: (segment) => {
+        const write = persistJobSegment(project, segment, baseline).catch((err: unknown) => {
+          writeError ??= err instanceof Error ? err : new Error(String(err));
+          controller.abort(writeError);
+        });
+        writes.push(write);
+        touchProject(project.id);
+      },
+    });
+    await Promise.all(writes);
+    if (writeError) throw writeError;
+    setJob(project.id, { status: 'done' });
+  } catch (err) {
+    await Promise.all(writes);
+    const failure = writeError ?? err;
+    const paused = !writeError && controller.signal.aborted && controller.signal.reason === PAUSE;
+    setJob(project.id, paused ? { status: 'paused' } : { status: 'failed', error: failure instanceof Error ? failure.message : String(failure) });
+  }
 }
 
 /** Pauses a running job; finished segments are already persisted, so starting again resumes. */

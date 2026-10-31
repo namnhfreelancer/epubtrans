@@ -1,5 +1,6 @@
 import { type Project, type ProjectSettings, type Segment, validateProjectState } from '@epubtrans/core';
 import type { ProjectDatabase, ProjectMetaRow, SegmentStateRow } from './project-database';
+import { canOverwrite, isSegmentStateRow, type SegmentRevision } from './segment-revision';
 
 export interface ProjectSummary {
   id: string;
@@ -37,10 +38,26 @@ function applyState(s: Segment, row: SegmentStateRow | undefined): Segment {
   };
 }
 
+/** Outcome of a compare-and-set segment write; `stored` is the state that was kept when the write lost. */
+export type ConditionalSaveResult = { saved: true } | { saved: false; stored: SegmentStateRow | undefined };
+
 const isDone = (status: string) => status === 'translated' || status === 'reviewed';
+
+function validRow(row: unknown): SegmentStateRow | undefined {
+  if (row === undefined) return undefined;
+  if (!isSegmentStateRow(row)) throw new Error('Invalid segment state in storage');
+  return row;
+}
 
 /** Persistence helpers over {@link ProjectDatabase}. All data read back is validated with core's schema. */
 export function createProjectRepository(db: ProjectDatabase) {
+  /** Writes (or clears) one overlay row; must run inside a rw transaction over projects + segments. */
+  async function writeSegment(projectId: string, segment: Segment): Promise<void> {
+    if (segment.status === 'pending' && segment.translationHtml === undefined) await db.segments.delete([projectId, segment.id]);
+    else await db.segments.put(toStateRow(projectId, segment));
+    await db.projects.update(projectId, { updatedAt: new Date().toISOString() });
+  }
+
   return {
     /** Stores a newly imported project (or replaces one with the same id). */
     async saveProject(project: Project): Promise<void> {
@@ -99,11 +116,26 @@ export function createProjectRepository(db: ProjectDatabase) {
 
     /** Persists one segment's translation state (called as soon as a segment finishes or is edited). */
     async saveSegment(projectId: string, segment: Segment): Promise<void> {
-      await db.transaction('rw', [db.projects, db.segments], async () => {
-        if (segment.status === 'pending' && segment.translationHtml === undefined) await db.segments.delete([projectId, segment.id]);
-        else await db.segments.put(toStateRow(projectId, segment));
-        await db.projects.update(projectId, { updatedAt: new Date().toISOString() });
+      await db.transaction('rw', [db.projects, db.segments], () => writeSegment(projectId, segment));
+    },
+
+    /**
+     * Compare-and-set: persists the segment only if the stored state still equals `expected` (the state the
+     * writer based its change on). Read and write share one IndexedDB transaction, which IndexedDB serializes
+     * against writes from other tabs, so a concurrent edit is never overwritten.
+     */
+    async saveSegmentIfUnchanged(projectId: string, segment: Segment, expected: SegmentRevision): Promise<ConditionalSaveResult> {
+      return db.transaction('rw', [db.projects, db.segments], async (): Promise<ConditionalSaveResult> => {
+        const stored = validRow(await db.segments.get([projectId, segment.id]));
+        if (!canOverwrite(stored, expected)) return { saved: false, stored };
+        await writeSegment(projectId, segment);
+        return { saved: true };
       });
+    },
+
+    /** Reads one segment's stored translation state (undefined for a pristine pending segment). */
+    async loadSegmentState(projectId: string, segmentId: string): Promise<SegmentStateRow | undefined> {
+      return validRow(await db.segments.get([projectId, segmentId]));
     },
 
     async exists(id: string): Promise<boolean> {

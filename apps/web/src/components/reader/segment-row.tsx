@@ -1,6 +1,7 @@
 import { type Project, retranslateSegment, type Segment } from '@epubtrans/core';
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
+import { useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
 import { errorText, pushNotice } from '../../lib/notices';
 import { persistSegment, saveTranslationEdit, touchProject } from '../../lib/project-store';
 import { sanitizeSegmentHtml } from '../../lib/sanitize-segment-html';
@@ -38,9 +39,11 @@ export function SegmentRow({ project, segment, mode, provider }: SegmentRowProps
   const [rowError, setRowError] = useState<string>();
   const abortRef = useRef<AbortController | null>(null);
   const { sourceLang, targetLang } = project.settings;
-  // The running job would race a manual edit or retranslation of the same segment.
-  const jobActive = useJobActive(project.id);
-  const lockedHint = jobActive ? t('reader.lockedDuringJob') : undefined;
+  // A running job (in this tab or another one) would race a manual edit or retranslation of the same segment.
+  const jobHere = useJobActive(project.id);
+  const jobElsewhere = useJobRunningElsewhere(project.id);
+  const jobActive = jobHere || jobElsewhere;
+  const lockedHint = jobHere ? t('reader.lockedDuringJob') : jobElsewhere ? t('reader.lockedInOtherTab') : undefined;
 
   useEffect(() => () => abortRef.current?.abort(), []);
 

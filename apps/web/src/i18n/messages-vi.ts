@@ -136,6 +136,7 @@ export const vi: Record<MessageKey, string> = {
   'run.needKey': 'Hãy thêm khóa API trong Cài đặt trước.',
   'run.needModel': 'Hãy chọn mô hình trong Cài đặt trước.',
   'run.allDone': 'Tất cả các đoạn đã được dịch.',
+  'run.busyElsewhere': 'Sách này đang được dịch ở một thẻ khác. Hãy tạm dừng ở thẻ đó hoặc chờ dịch xong để bắt đầu ở đây.',
 
   'reader.chapters': 'Chương',
   'reader.view': 'Kiểu xem',
@@ -149,6 +150,7 @@ export const vi: Record<MessageKey, string> = {
   'reader.retranslate': 'Dịch lại',
   'reader.retranslating': 'Đang dịch lại…',
   'reader.lockedDuringJob': 'Không thể sửa hoặc dịch lại trong khi sách đang được dịch. Hãy tạm dừng bản dịch để chỉnh sửa.',
+  'reader.lockedInOtherTab': 'Không thể sửa hoặc dịch lại trong khi sách đang được dịch ở một thẻ khác.',
   'reader.retranslateFailed': 'Dịch lại thất bại: {message}',
   'reader.notTranslated': 'Chưa dịch',
   'reader.emptyChapter': 'Chương này không có nội dung.',
