@@ -2,6 +2,7 @@ import type { Project, ProjectSettings, SampleSelection, Segment } from '@epubtr
 import { useEffect, useSyncExternalStore } from 'react';
 import { repository } from './app-services';
 import { broadcast, closeProjectChannel, onCrossTabMessage, watchProjectChannel } from './cross-tab-channel';
+import { runWithJobLock } from './cross-tab-job-lock';
 import { createExternalStore } from './external-store';
 import { applyStoredState, revisionOf, type SegmentRevision } from './segment-revision';
 
@@ -114,6 +115,44 @@ export function updateSettings(project: Project, patch: Partial<ProjectSettings>
   return enqueueWrite(project.id, () => repository.saveSettings(project.id, snapshot));
 }
 
+/** Segments holding a translation (finished, reviewed, edited, or a draft kept by a failed review). */
+export const translatedSegmentCount = (project: Project): number =>
+  project.chapters.reduce((n, c) => n + c.segments.filter((s) => s.translationHtml !== undefined).length, 0);
+
+/** True when changing the target language would leave translations into the old language behind. */
+export const targetChangeNeedsDecision = (project: Project, targetLang: string): boolean =>
+  targetLang.toLowerCase() !== project.settings.targetLang.toLowerCase() && translatedSegmentCount(project) > 0;
+
+/**
+ * Applies a settings patch (a new target language) and resets every segment to pending: translations, errors, hand
+ * edits and warnings are dropped. Runs under the book's cross-tab job lock, so it never races a translation or sample
+ * run in any tab; resolves 'busy' (changing nothing) while one holds the lock. Storage is updated first, in one
+ * transaction, then the in-memory project, then other tabs are told which segments changed.
+ */
+export async function updateSettingsAndResetTranslations(project: Project, patch: Partial<ProjectSettings>): Promise<'done' | 'busy'> {
+  const ran = await runWithJobLock(project.id, async () => {
+    const settings = { ...project.settings, ...patch };
+    await enqueueWrite(project.id, () => repository.saveSettingsAndResetSegments(project.id, settings));
+    const changed: string[] = [];
+    for (const chapter of project.chapters) {
+      for (const s of chapter.segments) {
+        if (s.status === 'pending' && s.translationHtml === undefined && s.error === undefined) continue;
+        changed.push(s.id);
+        s.status = 'pending';
+        delete s.translationHtml;
+        delete s.error;
+        delete s.userEdited;
+        delete s.warning;
+      }
+    }
+    project.settings = settings;
+    project.updatedAt = new Date().toISOString();
+    touchProject(project.id);
+    for (const segmentId of changed) broadcast(project.id, { type: 'segment', segmentId });
+  });
+  return ran ? 'done' : 'busy';
+}
+
 const findSegment = (project: Project, segmentId: string): Segment | undefined => {
   for (const chapter of project.chapters) {
     const found = chapter.segments.find((s) => s.id === segmentId);
@@ -192,6 +231,8 @@ export function saveTranslationEdit(project: Project, segment: Segment, html: st
     segment.status = 'pending';
   }
   delete segment.error;
+  // The user looked at this translation and chose its text: an "identical to the source" warning no longer applies.
+  delete segment.warning;
   project.updatedAt = new Date().toISOString();
   touchProject(project.id);
   return persistSegment(project.id, segment);

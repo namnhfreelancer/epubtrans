@@ -1,4 +1,12 @@
-import { type ChatProvider, createProvider, getProviderPreset, PROVIDER_PRESETS, type ProjectSettings } from '@epubtrans/core';
+import {
+  type ChatProvider,
+  createProvider,
+  getProviderPreset,
+  PROVIDER_PRESETS,
+  type ProjectSettings,
+  REASONING_LEVELS,
+  type ReasoningLevel,
+} from '@epubtrans/core';
 import { createExternalStore } from './external-store';
 import { browserStorage, isPlainObject, type KeyValueStorage, readJson, writeString } from './safe-storage';
 
@@ -12,6 +20,8 @@ export interface ProviderProfile {
   /** USD per 1M tokens published by the provider for `model` (OpenRouter), used to prefill book prices. */
   priceInPerM?: number;
   priceOutPerM?: number;
+  /** Reasoning effort for reasoning models; absent means the provider's default. */
+  reasoning?: ReasoningLevel;
 }
 
 export interface ProviderConfig {
@@ -26,6 +36,7 @@ export interface ActiveProvider {
   model: string;
   priceInPerM?: number;
   priceOutPerM?: number;
+  reasoning?: ReasoningLevel;
 }
 
 const DEFAULT_CONFIG: ProviderConfig = { providerId: PROVIDER_PRESETS[0]?.id ?? 'anthropic', profiles: {} };
@@ -41,11 +52,13 @@ export function parseProviderConfig(value: unknown): ProviderConfig | undefined 
       if (!PROVIDER_PRESETS.some((p) => p.id === id) || !isPlainObject(raw)) continue;
       const priceInPerM = finite(raw.priceInPerM);
       const priceOutPerM = finite(raw.priceOutPerM);
+      const reasoning = REASONING_LEVELS.find((level) => level !== 'default' && level === raw.reasoning);
       profiles[id] = {
         baseURL: typeof raw.baseURL === 'string' ? raw.baseURL : '',
         model: typeof raw.model === 'string' ? raw.model : '',
         ...(priceInPerM !== undefined ? { priceInPerM } : {}),
         ...(priceOutPerM !== undefined ? { priceOutPerM } : {}),
+        ...(reasoning !== undefined ? { reasoning } : {}),
       };
     }
   }
@@ -61,17 +74,25 @@ export function resolveActiveProvider(config: ProviderConfig): ActiveProvider {
     model: profile.model.trim(),
     ...(profile.priceInPerM !== undefined ? { priceInPerM: profile.priceInPerM } : {}),
     ...(profile.priceOutPerM !== undefined ? { priceOutPerM: profile.priceOutPerM } : {}),
+    ...(profile.reasoning !== undefined ? { reasoning: profile.reasoning } : {}),
   };
 }
 
-/** Project settings for a run: the book's own choices plus the configured provider and model. */
+/** Project settings for a run: the book's own choices plus the configured provider, model and reasoning setting. */
 export function settingsForRun(settings: ProjectSettings, active: ActiveProvider): ProjectSettings {
-  return { ...settings, providerId: active.providerId, baseURL: active.baseURL, model: active.model };
+  const { reasoning: _bookValue, ...rest } = settings;
+  return {
+    ...rest,
+    providerId: active.providerId,
+    baseURL: active.baseURL,
+    model: active.model,
+    ...(active.reasoning !== undefined ? { reasoning: active.reasoning } : {}),
+  };
 }
 
 /** Creates the chat provider. The key is only ever sent to `active.baseURL` (enforced by core adapters). */
 export function buildProvider(active: ActiveProvider, apiKey: string): ChatProvider {
-  return createProvider(getProviderPreset(active.providerId), apiKey, active.baseURL, active.model);
+  return createProvider(getProviderPreset(active.providerId), apiKey, active.baseURL, active.model, undefined, { reasoning: active.reasoning });
 }
 
 export function createProviderConfigStore(storage: KeyValueStorage | undefined) {
@@ -91,6 +112,7 @@ export function createProviderConfigStore(storage: KeyValueStorage | undefined) 
       const current = config.profiles[providerId] ?? { baseURL: '', model: '' };
       const next: ProviderProfile = { ...current, ...patch };
       for (const k of ['priceInPerM', 'priceOutPerM'] as const) if (next[k] === undefined) delete next[k];
+      if (next.reasoning === undefined || next.reasoning === 'default') delete next.reasoning;
       save({ ...config, profiles: { ...config.profiles, [providerId]: next } });
     },
   };

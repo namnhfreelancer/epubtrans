@@ -9,6 +9,8 @@ export const FIXTURES = {
   mobi: fixturePath('a-modest-proposal.mobi'),
   azw3: fixturePath('a-modest-proposal.azw3'),
   fb2: fixturePath('aesop-fables.fb2'),
+  txt: fixturePath('aesop-fables.txt'),
+  md: fixturePath('aesop-fables.md'),
 } as const;
 
 function fixturePath(name: string): string {

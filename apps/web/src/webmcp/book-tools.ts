@@ -1,8 +1,10 @@
 import { composeGuideline, GUIDELINE_PRESETS, type ProjectSettings, splitGuideline } from '@epubtrans/core';
 import { isJobRunningElsewhere } from '../lib/cross-tab-job-lock';
+import { buildErrorIndex, isWarnedSegment } from '../lib/error-index';
+import { dialogText } from '../lib/format';
 import { getGuideJobState, isGuideJobRunning } from '../lib/guide-jobs';
 import { normalizeLanguageTag } from '../lib/languages';
-import { updateSettings } from '../lib/project-store';
+import { targetChangeNeedsDecision, translatedSegmentCount, updateSettings, updateSettingsAndResetTranslations } from '../lib/project-store';
 import { getSampleJobState } from '../lib/sample-jobs';
 import { countSegments, remainingWork } from '../lib/segment-counts';
 import { getJobState } from '../lib/translation-jobs';
@@ -39,7 +41,14 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
           sourceLang: settings.sourceLang,
           targetLang: settings.targetLang,
           twoPass: settings.twoPass,
-          counts: { total: counts.total, translated: counts.translated, reviewed: counts.reviewed, pending: counts.pending, failed: counts.error },
+          counts: {
+            total: counts.total,
+            translated: counts.translated,
+            reviewed: counts.reviewed,
+            pending: counts.pending,
+            failed: counts.error,
+            identicalToSource: buildErrorIndex(project.chapters, isWarnedSegment).locations.length,
+          },
           remaining: remainingWork(counts, settings.twoPass),
           job: {
             status: job.status,
@@ -75,7 +84,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
       name: 'update_book_settings',
       title: 'Update book settings',
       description:
-        'Changes a book’s target language, source language, two-pass review mode or guideline preset. Languages are BCP 47 tags such as vi, fr or zh-Hans (source also accepts auto). A preset replaces only the base guideline and keeps the generated book-specific block; replacing custom guideline text needs the user’s approval in the page, and the preset is not applied while guideline generation runs (reported in notApplied).',
+        'Changes a book’s target language, source language, two-pass mode or guideline preset (BCP 47 tags; source also accepts auto). A book with translations keeps its target language unless resetTranslations is true and the user approves (all segments go back to pending). A preset replaces only the base guideline; replacing custom text needs the user’s approval, and it is not applied while guideline generation runs (see notApplied).',
       inputSchema: objectSchema(
         {
           bookId: BOOK_ID,
@@ -83,6 +92,10 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
           sourceLang: { type: 'string', description: 'Source language as a BCP 47 tag, or auto to detect it.', maxLength: 35 },
           twoPass: { type: 'boolean', description: 'Review every draft in a second pass: better quality, about twice the cost.' },
           guidelinePreset: { type: 'string', enum: PRESET_IDS, description: 'Base style guideline to apply.' },
+          resetTranslations: {
+            type: 'boolean',
+            description: 'With a new targetLang on a book that has translations: reset every segment to pending (the user must approve).',
+          },
         },
         ['bookId'],
       ),
@@ -94,14 +107,31 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
         const sourceInput = args.optString('sourceLang');
         const twoPass = args.optBool('twoPass');
         const presetId = args.optString('guidelinePreset');
+        const resetRequested = args.optBool('resetTranslations') === true;
         if (targetInput === undefined && sourceInput === undefined && twoPass === undefined && presetId === undefined) {
           return fail('Nothing to change.', 'Pass at least one of targetLang, sourceLang, twoPass, guidelinePreset.');
         }
         const patch: Partial<ProjectSettings> = {};
+        let reset = false;
         if (targetInput !== undefined) {
           const tag = normalizeLanguageTag(targetInput);
           if (!tag) return fail(`"${targetInput}" is not a valid language tag.`, 'Use a BCP 47 tag such as vi, fr or zh-Hans.');
+          if (targetChangeNeedsDecision(project, tag)) {
+            const n = translatedSegmentCount(project);
+            if (!resetRequested) {
+              return fail(
+                `This book already has ${n} translated segments into ${project.settings.targetLang}; changing the target language now would mix two languages in one book. Nothing was changed.`,
+                'Keep the current target language, or call update_book_settings again with resetTranslations: true to translate the book again (the user must approve; existing translations are dropped).',
+              );
+            }
+            const question = ctx.t('webmcp.resetConfirm', { title: dialogText(project.title, 120), n, from: project.settings.targetLang, to: tag });
+            if (!ctx.confirm(ctx.t('webmcp.agentAsks', { question }))) return ok({ bookId: project.id, changed: false, reason: 'declined' });
+            reset = true;
+          }
           patch.targetLang = tag;
+        }
+        if (resetRequested && !reset) {
+          return fail('resetTranslations only applies when targetLang changes on a book that has translations. Nothing was changed.');
         }
         if (sourceInput !== undefined) {
           const tag = sourceInput.toLowerCase() === 'auto' ? 'auto' : normalizeLanguageTag(sourceInput);
@@ -129,7 +159,14 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
             preset = 'applied';
           }
         }
-        if (Object.keys(patch).length > 0) await updateSettings(project, patch);
+        if (reset) {
+          if ((await updateSettingsAndResetTranslations(project, patch)) === 'busy') {
+            return fail(
+              'The book is being translated or sampled (in this tab or another one); nothing was changed.',
+              'Wait until the run finishes or pause it, then try again.',
+            );
+          }
+        } else if (Object.keys(patch).length > 0) await updateSettings(project, patch);
         ctx.navigate({ name: 'book', id: project.id, tab: 'setup' });
         const { settings } = project;
         return ok({
@@ -137,6 +174,7 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
           targetLang: settings.targetLang,
           sourceLang: settings.sourceLang,
           twoPass: settings.twoPass,
+          ...(reset ? { translationsReset: true } : {}),
           ...(preset ? { guidelinePreset: preset === 'applied' ? chosen?.id : 'declined by the user' } : {}),
           ...(guideLocked ? { notApplied: ['guidelinePreset'], note: `guidelinePreset: generation is running. ${GUIDE_LOCKED_HINT}` } : {}),
         });

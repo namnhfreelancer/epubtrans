@@ -9,11 +9,13 @@ interface LanguageInputProps {
   label: string;
   value: string;
   allowAuto?: boolean;
+  /** Commit only when the field loses focus (or on Enter), not on every valid tag typed: for changes that ask a question. */
+  commitOnBlur?: boolean;
   onCommit: (tag: string) => void;
 }
 
 /** Searchable language list (datalist) that also accepts any valid BCP 47 tag typed in. */
-export function LanguageInput({ id, label, value, allowAuto = false, onCommit }: LanguageInputProps) {
+export function LanguageInput({ id, label, value, allowAuto = false, commitOnBlur = false, onCommit }: LanguageInputProps) {
   const { t, locale } = useI18n();
   const [text, setText] = useState(value);
   const [invalid, setInvalid] = useState(false);
@@ -32,13 +34,14 @@ export function LanguageInput({ id, label, value, allowAuto = false, onCommit }:
     setText(input);
     setInvalid(false);
     const tag = resolve(input);
-    if (tag && tag !== value) onCommit(tag);
+    if (!commitOnBlur && tag && tag !== value) onCommit(tag);
   };
 
   const onBlur = () => {
     const tag = resolve(text);
     if (!tag) return setInvalid(true);
     setText(tag);
+    if (commitOnBlur && tag !== value) onCommit(tag);
   };
 
   const current = value === 'auto' ? t('setup.auto') : languageLabel(value, locale);
@@ -54,6 +57,12 @@ export function LanguageInput({ id, label, value, allowAuto = false, onCommit }:
         aria-invalid={invalid}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
+        onKeyDown={(e) => {
+          if (!commitOnBlur || e.key !== 'Enter') return;
+          // Without preventDefault the same key press would activate the first button of a dialog the commit opens.
+          e.preventDefault();
+          e.currentTarget.blur();
+        }}
       />
       <datalist id={`${id}-options`}>
         {allowAuto && <option value="auto">{t('setup.auto')}</option>}

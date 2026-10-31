@@ -26,11 +26,12 @@ const toStateRow = (projectId: string, s: Segment): SegmentStateRow => ({
   ...(s.translationHtml !== undefined ? { translationHtml: s.translationHtml } : {}),
   ...(s.error !== undefined ? { error: s.error } : {}),
   ...(s.userEdited ? { userEdited: true } : {}),
+  ...(s.warning ? { warning: s.warning } : {}),
 });
 
 function applyState(s: Segment, row: SegmentStateRow | undefined): Segment {
   if (!row) return s;
-  const { translationHtml, error, userEdited: _stale, ...rest } = s;
+  const { translationHtml, error, userEdited: _stale, warning: _staleWarning, ...rest } = s;
   return {
     ...rest,
     status: row.status,
@@ -38,6 +39,7 @@ function applyState(s: Segment, row: SegmentStateRow | undefined): Segment {
     // Rows saved by older versions may hold a provider error that echoed the API key.
     ...(row.error !== undefined ? { error: redactSecrets(row.error) } : {}),
     ...(row.userEdited ? { userEdited: true } : {}),
+    ...(row.warning ? { warning: row.warning } : {}),
   };
 }
 
@@ -120,6 +122,18 @@ export function createProjectRepository(db: ProjectDatabase) {
     async saveSettings(id: string, settings: ProjectSettings): Promise<void> {
       const updated = await db.projects.update(id, { settings, updatedAt: new Date().toISOString() });
       if (!updated) throw new ProjectNotFoundError(`Project ${id} not found`);
+    },
+
+    /**
+     * Saves new settings and drops every segment's translation state (all segments pending again) in one transaction,
+     * so storage never holds the new language pair with translations into the old target language.
+     */
+    async saveSettingsAndResetSegments(id: string, settings: ProjectSettings): Promise<void> {
+      await db.transaction('rw', [db.projects, db.segments], async () => {
+        const updated = await db.projects.update(id, { settings, updatedAt: new Date().toISOString() });
+        if (!updated) throw new ProjectNotFoundError(`Project ${id} not found`);
+        await db.segments.where('projectId').equals(id).delete();
+      });
     },
 
     /** Remembers the passages of the last sample translation so the viewer and "translate again" survive a reload. */

@@ -1,4 +1,4 @@
-import { getProviderPreset, PROVIDER_PRESETS } from '@epubtrans/core';
+import { getProviderPreset, PROVIDER_PRESETS, REASONING_LEVELS } from '@epubtrans/core';
 import { buildProvider, providerConfig } from '../lib/provider-config-store';
 import { currentProviderState } from '../lib/use-active-provider';
 import { englishMessage, providerFailure } from './tool-context';
@@ -14,11 +14,16 @@ export function providerTools(): ToolSpec[] {
       name: 'configure_provider',
       title: 'Choose provider and model',
       description:
-        'Selects the AI provider preset used for translation and, optionally, the model id. Reports whether the user has stored an API key for it and whether translation can start. API keys and the custom endpoint URL are set by the user in Settings only.',
+        'Selects the AI provider preset used for translation and, optionally, the model id and the reasoning setting for reasoning models (default, low or off; an endpoint that rejects it is asked again without it). Reports whether the user has stored an API key for it and whether translation can start. API keys and the custom endpoint URL are set by the user in Settings only.',
       inputSchema: objectSchema(
         {
           providerId: { type: 'string', enum: PROVIDER_PRESETS.map((p) => p.id), description: 'Provider preset id.' },
           model: { type: 'string', description: 'Model id as listed by list_models, e.g. gpt-5-mini.', maxLength: 200 },
+          reasoning: {
+            type: 'string',
+            enum: [...REASONING_LEVELS],
+            description: 'Reasoning effort for reasoning models: default (provider default), low or off. Saved for this provider.',
+          },
         },
         ['providerId'],
       ),
@@ -26,14 +31,17 @@ export function providerTools(): ToolSpec[] {
       run: async (args) => {
         const preset = getProviderPreset(args.string('providerId'));
         const model = args.optString('model');
+        const reasoning = REASONING_LEVELS.find((level) => level === args.optString('reasoning'));
         providerConfig.selectProvider(preset.id);
         // A typed model id drops the provider-published price of the previous model, like editing the field in Settings.
         if (model !== undefined) providerConfig.updateProfile(preset.id, { model, priceInPerM: undefined, priceOutPerM: undefined });
+        if (reasoning !== undefined) providerConfig.updateProfile(preset.id, { reasoning });
         const state = currentProviderState();
         return ok({
           providerId: state.active.providerId,
           provider: preset.label,
           model: clip(state.active.model, 200),
+          reasoning: state.active.reasoning ?? 'default',
           keyPresent: state.apiKey !== '',
           ready: !state.problem,
           ...(state.problem ? { problem: englishMessage(state.problem) } : {}),

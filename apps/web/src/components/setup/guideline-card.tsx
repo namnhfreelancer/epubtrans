@@ -140,7 +140,7 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
           disabled={busy}
           onChange={(e) => void save({ guideline: e.target.value })}
         />
-        <GlossaryTable entries={project.settings.glossary} onChange={(glossary) => void save({ glossary })} locked={busy} />
+        <GlossaryTable entries={project.settings.glossary} onChange={(glossary) => void save({ glossary })} locked={busy} bookTitle={project.title} />
       </div>
     </Card>
   );

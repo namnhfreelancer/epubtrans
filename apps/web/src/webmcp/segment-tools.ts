@@ -103,14 +103,21 @@ export function segmentTools(ctx: ToolContext): ToolSpec[] {
           const result = await retranslateSegment(detached, segmentId, chat, settings, signal);
           if (live.userEdited || !sameRevision(revisionOf(live), started)) return fail(CHANGED_WHILE_RETRANSLATING, EDITED_HINT);
           // Same synchronous apply-then-compare-and-set as translation runs; a conflicting stored change reverts it.
-          const { translationHtml, status, error } = result;
+          const { translationHtml, status, error, warning } = result;
           Object.assign(live, { translationHtml, status });
           if (error === undefined) delete live.error;
           else live.error = error;
+          if (warning === undefined) delete live.warning;
+          else live.warning = warning;
           project.updatedAt = detached.updatedAt;
           touchProject(project.id);
           if (!(await persistJobSegment(project, live, new Map([[segmentId, started]])))) return fail(CHANGED_WHILE_RETRANSLATING, EDITED_HINT);
-          return ok({ segmentId, status: live.status, translation: untrustedText(live.translationHtml, 300) });
+          return ok({
+            segmentId,
+            status: live.status,
+            ...(live.warning ? { warning: 'identical to the source' } : {}),
+            translation: untrustedText(live.translationHtml, 300),
+          });
         } catch (err) {
           if (signal?.aborted) return CANCELLED();
           const message = err instanceof Error ? err.message : String(err);

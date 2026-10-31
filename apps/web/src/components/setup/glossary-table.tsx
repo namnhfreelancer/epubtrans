@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n/i18n-context';
 import { GLOSSARY_PAGE_SIZE, GLOSSARY_TYPE_FILTERS, type GlossaryTypeFilter, glossaryPage, patchGlossaryEntry } from '../../lib/glossary-view';
 import { Button } from '../ui/button';
 import { INPUT_CLASS } from '../ui/input-class';
+import { GlossaryFileButtons } from './glossary-file-buttons';
 
 /**
  * Editable glossary for hundreds of entries: search over term/translation/note, type filter, entry counts and
@@ -14,10 +15,13 @@ export function GlossaryTable({
   entries,
   onChange,
   locked = false,
+  bookTitle,
 }: {
   entries: GlossaryEntry[];
   onChange: (entries: GlossaryEntry[]) => void;
   locked?: boolean;
+  /** Names exported glossary files. */
+  bookTitle: string;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
@@ -46,9 +50,12 @@ export function GlossaryTable({
             {filtered ? t('glossary.count', { visible: view.matches, total: entries.length }) : t('glossary.countAll', { total: entries.length })}
           </span>
         </h3>
-        <Button size="sm" onClick={add} disabled={locked}>
-          {t('setup.addTerm')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <GlossaryFileButtons entries={entries} bookTitle={bookTitle} onChange={onChange} locked={locked} />
+          <Button size="sm" onClick={add} disabled={locked}>
+            {t('setup.addTerm')}
+          </Button>
+        </div>
       </div>
       {entries.length === 0 ? (
         <p className="text-sm text-stone-500 dark:text-stone-400">{t('setup.glossaryEmpty')}</p>

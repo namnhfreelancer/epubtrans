@@ -1,4 +1,4 @@
-import type { Chapter, Project, SegmentStatus } from '@epubtrans/core';
+import type { Chapter, Project, SegmentStatus, SegmentWarning } from '@epubtrans/core';
 import { Dexie, type Table } from 'dexie';
 
 /**
@@ -29,6 +29,8 @@ export interface SegmentStateRow {
   error?: string;
   /** The user saved this translation by hand (kept apart from machine output). */
   userEdited?: boolean;
+  /** Non-blocking flag set by automatic runs (the translation equals the source). */
+  warning?: SegmentWarning;
 }
 
 export class ProjectDatabase extends Dexie {

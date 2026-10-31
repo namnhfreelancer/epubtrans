@@ -2,6 +2,7 @@ import { type Project, retranslateSegment, type Segment } from '@epubtrans/core'
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { useJobRunningElsewhere } from '../../lib/cross-tab-job-lock';
+import { isWarnedSegment } from '../../lib/error-index';
 import { errorText, pushNotice } from '../../lib/notices';
 import { persistSegment, saveTranslationEdit, touchProject } from '../../lib/project-store';
 import { useSampleRunning } from '../../lib/sample-jobs';
@@ -108,6 +109,7 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
   // The freshest failure wins; the stored one (from a batch run) is shown only when no retranslation just failed.
   const failure = rowError ?? segmentErrorText(segment.error);
   const failed = segment.status === 'error';
+  const warned = isWarnedSegment(segment);
 
   return (
     <article
@@ -117,7 +119,7 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
       data-flash={flash || undefined}
       tabIndex={-1}
       className={`group border-b border-stone-200 py-4 outline-offset-2 last:border-b-0 focus-visible:outline-2 focus-visible:outline-teal-600 dark:border-stone-800 ${
-        failed ? 'border-l-4 border-l-red-500 pl-3' : ''
+        failed ? 'border-l-4 border-l-red-500 pl-3' : warned ? 'border-l-4 border-l-amber-400 pl-3' : ''
       } ${flash ? 'segment-flash' : ''}`}
     >
       <div className={mode === 'side' ? 'grid gap-3 md:grid-cols-2 md:gap-6' : 'space-y-2'}>
@@ -126,6 +128,15 @@ export function SegmentRow({ project, segment, mode, provider, flash = false }: 
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <StatusBadge status={segment.status} />
+        {warned && (
+          <span
+            data-testid="segment-warning"
+            title={t('reader.identicalHint')}
+            className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          >
+            {t('reader.identicalBadge')}
+          </span>
+        )}
         <span className="ml-auto flex gap-1" title={lockedHint}>
           <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={editing || jobActive} title={lockedHint}>
             {t('reader.edit')}

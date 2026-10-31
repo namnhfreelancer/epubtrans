@@ -1,7 +1,16 @@
 import type { Project } from '@epubtrans/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
-import { buildErrorIndex, errorOrdinal, findAdjacentError, locateSegment, type SegmentLocation, type StepDirection } from '../../lib/error-index';
+import {
+  buildErrorIndex,
+  errorOrdinal,
+  findAdjacentError,
+  isFailedSegment,
+  isWarnedSegment,
+  locateSegment,
+  type SegmentLocation,
+  type StepDirection,
+} from '../../lib/error-index';
 import { navigate, routeHref } from '../../lib/hash-route';
 import { useSampleRunning } from '../../lib/sample-jobs';
 import { countChapterSegments } from '../../lib/segment-counts';
@@ -10,6 +19,7 @@ import { useActiveProvider } from '../../lib/use-active-provider';
 import { useStartTranslation } from '../../lib/use-start-translation';
 import { ReaderChapterList } from './reader-chapter-list';
 import { ReaderErrorControls } from './reader-error-controls';
+import { ReaderWarningControls } from './reader-warning-controls';
 import { type ReaderMode, SegmentRow } from './segment-row';
 
 const FLASH_MS = 2000;
@@ -32,7 +42,10 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
     ),
   );
   const [mode, setMode] = useState<ReaderMode>('side');
-  const [onlyErrors, setOnlyErrors] = useState(false);
+  /** Errors-only or warnings-only view (the two filters are exclusive). */
+  const [filter, setFilter] = useState<'all' | 'errors' | 'warnings'>('all');
+  const onlyErrors = filter === 'errors';
+  const onlyWarnings = filter === 'warnings';
   /** The segment last jumped to; the next/previous error is searched from here. */
   const [cursor, setCursor] = useState<SegmentLocation>();
   /** A pending "scroll to and focus this segment" request; `n` makes repeated jumps to the same segment distinct. */
@@ -45,6 +58,8 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
   const progress = useMemo(() => project.chapters.map((c) => countChapterSegments([c])), [project, version]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
   const errors = useMemo(() => buildErrorIndex(project.chapters), [project, version]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` tracks in-place project mutations.
+  const warnings = useMemo(() => buildErrorIndex(project.chapters, isWarnedSegment), [project, version]);
   const retrying = job.status === 'running' || job.status === 'pausing';
   // Core has no "failed segments only" run: a start also translates every untranslated segment (and, in two-pass
   // mode, reviews every draft not edited by hand). With such work outstanding the button must not start a paid book
@@ -73,6 +88,14 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
   };
   const step = (direction: StepDirection) => {
     const target = adjacent[direction];
+    if (target) jumpTo(target);
+  };
+  const adjacentWarning: Record<StepDirection, SegmentLocation | undefined> = {
+    '-1': findAdjacentError(warnings, searchFrom, -1),
+    1: findAdjacentError(warnings, searchFrom, 1),
+  };
+  const stepWarning = (direction: StepDirection) => {
+    const target = adjacentWarning[direction];
     if (target) jumpTo(target);
   };
 
@@ -114,15 +137,18 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
 
   if (!chapter) return <p className="text-sm text-stone-500">{t('reader.empty')}</p>;
 
-  const visibleChapters = project.chapters.flatMap((_, i) => (!onlyErrors || (errors.perChapter[i] ?? 0) > 0 ? [i] : []));
-  const rows = onlyErrors ? chapter.segments.filter((s) => s.status === 'error') : chapter.segments;
-  const toggleOnlyErrors = (value: boolean) => {
-    setOnlyErrors(value);
-    // The chapter on screen would be empty: land on the first one that still has errors.
-    const first = errors.locations[0];
-    if (value && first && (errors.perChapter[index] ?? 0) === 0) setIndex(first.chapter);
+  const filtered = onlyErrors ? errors : onlyWarnings ? warnings : undefined;
+  const visibleChapters = project.chapters.flatMap((_, i) => (!filtered || (filtered.perChapter[i] ?? 0) > 0 ? [i] : []));
+  const rows = onlyErrors ? chapter.segments.filter(isFailedSegment) : onlyWarnings ? chapter.segments.filter(isWarnedSegment) : chapter.segments;
+  const toggleFilter = (kind: 'errors' | 'warnings', value: boolean) => {
+    setFilter(value ? kind : 'all');
+    // The chapter on screen would be empty: land on the first one that still has matching segments.
+    const index_ = kind === 'errors' ? errors : warnings;
+    const first = index_.locations[0];
+    if (value && first && (index_.perChapter[index] ?? 0) === 0) setIndex(first.chapter);
   };
   const showControls = errors.locations.length > 0 || onlyErrors;
+  const showWarnings = warnings.locations.length > 0 || onlyWarnings;
 
   return (
     <div className="grid gap-5 md:grid-cols-[15rem_minmax(0,1fr)]">
@@ -155,7 +181,7 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
               canStep={{ '-1': Boolean(adjacent[-1]), 1: Boolean(adjacent[1]) }}
               onStep={step}
               onlyErrors={onlyErrors}
-              onOnlyErrorsChange={toggleOnlyErrors}
+              onOnlyErrorsChange={(value) => toggleFilter('errors', value)}
               retry={{
                 running: retrying,
                 // Resuming only navigates to the setup page, which shows the estimate and its own Start guards.
@@ -168,6 +194,16 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
               }}
             />
           )}
+          {showWarnings && (
+            <ReaderWarningControls
+              total={warnings.locations.length}
+              ordinal={cursor ? errorOrdinal(warnings, cursor.id) : undefined}
+              canStep={{ '-1': Boolean(adjacentWarning[-1]), 1: Boolean(adjacentWarning[1]) }}
+              onStep={stepWarning}
+              onlyWarnings={onlyWarnings}
+              onOnlyWarningsChange={(value) => toggleFilter('warnings', value)}
+            />
+          )}
         </div>
         {mode === 'side' && (
           <div className="hidden grid-cols-2 gap-6 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-500 md:grid">
@@ -178,7 +214,7 @@ export function ReaderPanel({ project, version, segment }: { project: Project; v
         {chapter.segments.length === 0 ? (
           <p className="py-6 text-sm text-stone-500">{t('reader.emptyChapter')}</p>
         ) : rows.length === 0 ? (
-          <p className="py-6 text-sm text-stone-500">{t('reader.noErrorsInChapter')}</p>
+          <p className="py-6 text-sm text-stone-500">{onlyWarnings ? t('reader.noWarningsInChapter') : t('reader.noErrorsInChapter')}</p>
         ) : (
           rows.map((s) => <SegmentRow key={s.id} project={project} segment={s} mode={mode} provider={provider} flash={s.id === flashId} />)
         )}
