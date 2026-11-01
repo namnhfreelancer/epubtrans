@@ -59,7 +59,7 @@ function describeEstimate(project: Project, settings: ProjectSettings, selection
       ? `about ${formatUsd(usageCost({ input: estimate.inputTokens, output: estimate.outputTokens }, settings) ?? 0)}`
       : 'cost unknown (pass --price-in and --price-out, USD per 1M tokens, for a cost estimate)';
   return [
-    `Sample: ${segments} segments in ${selection.passages.length} passages (seed ${selection.seed})${settings.twoPass ? ' (+ review pass)' : ''}`,
+    `Sample: ${segments} segments in ${selection.passages.length} passages (seed ${selection.seed})${settings.twoPass ? ' (+ polish pass)' : ''}`,
     `Model: ${settings.model} via ${settings.baseURL}`,
     `Estimated usage: ~${formatTokens(estimate.inputTokens)} input / ~${formatTokens(estimate.outputTokens)} output tokens, ${cost}`,
   ].join('\n');

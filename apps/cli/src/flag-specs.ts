@@ -27,6 +27,8 @@ export const STYLE_FLAGS = {
 /** Request and accounting tuning shared by every command that translates. */
 const TUNING_FLAGS = {
   concurrency: { type: 'number' },
+  /** Polish pass for natural style; `--two-pass` is the original name, kept as an alias. */
+  polish: { type: 'boolean' },
   'two-pass': { type: 'boolean' },
   'price-in': { type: 'number' },
   'price-out': { type: 'number' },
