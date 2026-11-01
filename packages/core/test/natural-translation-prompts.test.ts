@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { estimateCost, estimateTokens, retranslateSegment, translateProject, translateSample } from '../src';
 import { buildPolishSystemPrompt, buildPolishUserMessage, buildTranslateSystemPrompt, buildTranslateUserMessage } from '../src/translate/prompt-protocol';
-import { MAX_CONTEXT_ITEM_CHARS, neighbourLookup, translateContextOf } from '../src/translate/read-only-context';
+import { MAX_CONTEXT_ITEM_CHARS, neighbourLookup, oneLine, polishContextText, translateContextOf } from '../src/translate/read-only-context';
 import type { ChatRequest, ProjectSettings } from '../src/types';
 import { answerAll, fakeTranslate, makeProject, mockProvider, segment } from './test-helpers';
 
@@ -145,6 +145,16 @@ describe('read-only context in runs', () => {
     expect(context?.source.startsWith('…')).toBe(true);
     expect(context?.source.endsWith('END.')).toBe(true);
     expect(context?.translation?.endsWith('END.')).toBe(true);
+  });
+
+  it('never cuts a surrogate pair in half when capping', () => {
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    for (let shift = 0; shift < 4; shift++) {
+      const text = `${'a'.repeat(shift)}${'😀'.repeat(400)}`;
+      expect(oneLine(text, 200)).not.toMatch(lone);
+      expect(polishContextText(text, 'before')).not.toMatch(lone);
+      expect(polishContextText(text, 'after')).not.toMatch(lone);
+    }
   });
 
   it('never uses the stale translation of a pending segment as context', async () => {

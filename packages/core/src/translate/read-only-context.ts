@@ -59,7 +59,16 @@ export const oneLine = (text: string, max: number): string => cap(text.replace(/
 
 function cap(text: string, max: number, keep: 'start' | 'end'): string {
   if (text.length <= max) return text;
-  return keep === 'end' ? `${text.slice(0, max - 1).trimEnd()}…` : `…${text.slice(text.length - max + 1).trimStart()}`;
+  // Never cut a surrogate pair in half: a lone surrogate makes some APIs reject the request body.
+  if (keep === 'end')
+    return `${text
+      .slice(0, max - 1)
+      .replace(/[\uD800-\uDBFF]$/, '')
+      .trimEnd()}…`;
+  return `…${text
+    .slice(text.length - max + 1)
+    .replace(/^[\uDC00-\uDFFF]/, '')
+    .trimStart()}`;
 }
 
 /**
