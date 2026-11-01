@@ -116,9 +116,12 @@ export const chapterTitleOf = (n: BatchNeighbours): string | undefined =>
 /** The segments right before a translate batch that form its context, in reading order. */
 export const translateContextSegments = (n: BatchNeighbours): Segment[] => nearby(n.segments, n.first, -1, TRANSLATE_CONTEXT_BEFORE, sourceOf).reverse();
 
-/** One context passage: the capped source, plus the capped translation when the segment has one. */
-export function translateContextItem(s: Segment): TranslateContextItem {
-  const translation = draftOf(s);
+/**
+ * One context passage: the capped source, plus the capped translation when the segment has one. `draft` reads the
+ * translation; the cost estimate passes one that stands in for translations that will only exist during the run.
+ */
+export function translateContextItem(s: Segment, draft: (s: Segment) => string | undefined = draftOf): TranslateContextItem {
+  const translation = draft(s);
   return {
     source: cap(sourceOf(s), MAX_CONTEXT_ITEM_CHARS, 'start'),
     ...(translation ? { translation: cap(translation, MAX_CONTEXT_ITEM_CHARS, 'start') } : {}),
@@ -129,7 +132,7 @@ export function translateContextItem(s: Segment): TranslateContextItem {
 export function translateContextOf(n: BatchNeighbours | undefined): TranslateContext {
   if (!n) return {};
   const chapter = chapterTitleOf(n);
-  const context = translateContextSegments(n).map(translateContextItem);
+  const context = translateContextSegments(n).map((s) => translateContextItem(s));
   return { ...(chapter ? { chapter } : {}), ...(context.length ? { context } : {}) };
 }
 

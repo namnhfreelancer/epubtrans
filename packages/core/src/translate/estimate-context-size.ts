@@ -49,11 +49,27 @@ export function neighboursInOrder(chapter: Chapter): (batch: Segment[]) => Batch
 /** Drafts do not exist yet when the estimate runs: the source stands in for a missing draft in the polish context. */
 export const draftOrSource = (s: Segment): string | undefined => draftOf(s) ?? (sourceOf(s) || undefined);
 
+/** Translations are usually somewhat longer in tokens than their source. */
+export const OUTPUT_RATIO = 1.3;
+
+/**
+ * A context segment that this run will still translate: it shows up in the context of a later batch with its
+ * translation, whose size is not known yet. A text as long as the source times `OUTPUT_RATIO` (or its existing draft,
+ * when that is longer) stands in, so the estimate stays an upper bound however the run orders its batches.
+ */
+const draftOrLongerSource = (s: Segment): string | undefined => {
+  const draft = draftOf(s);
+  const source = sourceOf(s);
+  const expected = source + source.slice(0, Math.ceil(source.length * (OUTPUT_RATIO - 1)));
+  return draft && draft.length > expected.length ? draft : expected || undefined;
+};
+
 interface ItemSizes {
   sourceText: string;
   status: Segment['status'];
   translationHtml: string | undefined;
   translate?: ContextChars;
+  translateStandIn?: ContextChars;
   before?: number;
   after?: number;
 }
@@ -81,8 +97,11 @@ function titleChars(title: string): ContextChars {
   return size;
 }
 
-/** Characters the translate context adds inside the user message object (0 when it has none). */
-export function translateContextChars(n: BatchNeighbours): ContextChars {
+/**
+ * Characters the translate context adds inside the user message object (0 when it has none). `willTranslate` marks
+ * the context segments that this run translates before they are read as context.
+ */
+export function translateContextChars(n: BatchNeighbours, willTranslate: (s: Segment) => boolean = () => false): ContextChars {
   const title = chapterTitleOf(n);
   const items = translateContextSegments(n);
   const out: ContextChars = { chars: 0, cjk: 0 };
@@ -95,9 +114,16 @@ export function translateContextChars(n: BatchNeighbours): ContextChars {
     out.chars += CONTEXT_KEY + items.length;
     for (const s of items) {
       const sizes = itemSizes(s);
-      sizes.translate ??= countChars(JSON.stringify(translateContextItem(s)));
-      out.chars += sizes.translate.chars;
-      out.cjk += sizes.translate.cjk;
+      let size: ContextChars;
+      if (willTranslate(s)) {
+        sizes.translateStandIn ??= countChars(JSON.stringify(translateContextItem(s, draftOrLongerSource)));
+        size = sizes.translateStandIn;
+      } else {
+        sizes.translate ??= countChars(JSON.stringify(translateContextItem(s)));
+        size = sizes.translate;
+      }
+      out.chars += size.chars;
+      out.cjk += size.cjk;
     }
   }
   return out;

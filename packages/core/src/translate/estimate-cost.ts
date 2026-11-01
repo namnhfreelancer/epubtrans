@@ -1,12 +1,11 @@
 import { type CompiledGlossary, compileGlossary, matchPrepared, type PreparedText, prepareText } from '../glossary/glossary-matcher';
-import type { CostEstimate, GlossaryEntry, Project, ProjectSettings, Segment, TranslateOptions } from '../types';
-import { neighboursInOrder, polishContextTokens, translateContextChars } from './estimate-context-size';
+import type { Chapter, CostEstimate, GlossaryEntry, Project, ProjectSettings, Segment, TranslateOptions } from '../types';
+import { neighboursInOrder, OUTPUT_RATIO, polishContextTokens, translateContextChars } from './estimate-context-size';
 import { buildPolishSystemPrompt, buildTranslateSystemPrompt, formatGlossaryEntry, stripTags } from './prompt-protocol';
+import { neighbourLookup } from './read-only-context';
 import { countCjk, estimateTokens } from './token-estimate';
 import { keepsUserEdit, MAX_BATCH_TOKENS, makeBatches, maxSegmentsOf } from './translate-project';
 
-/** Translations are usually somewhat longer in tokens than their source. */
-const OUTPUT_RATIO = 1.3;
 /** JSON envelope per segment in the answer (`{"id":"c1-2","html":""}`). */
 const ANSWER_OVERHEAD = 12;
 /** Characters of the translate user message around its segments, and the extra ones a glossary list adds. */
@@ -104,10 +103,17 @@ function entrySizes(glossary: CompiledGlossary): EntrySizes {
  * the translate pass over 'pending'/'error' segments plus, with `twoPass`, the polish pass (about twice the cost).
  * Both include the read-only context (chapter title, neighbouring passages) each request carries. Segments the user
  * edited by hand are left out, as `translateProject` skips them, unless `opts.overwriteUserEdited` is set.
+ * The context is sized as an upper bound: a preceding passage this run still translates counts with a translation
+ * the size of its source, as it carries one once translated. `opts.contextChapters` is the book the context
+ * passages come from when `project` only holds copies of some segments (a sample).
  * Fast enough to run on every project change of a 2000-page book: per-segment facts and glossary hits are cached
  * and summed per batch instead of rebuilding and matching each request.
  */
-export function estimateCost(project: Project, settings: ProjectSettings, opts: Pick<TranslateOptions, 'overwriteUserEdited'> = {}): CostEstimate {
+export function estimateCost(
+  project: Project,
+  settings: ProjectSettings,
+  opts: Pick<TranslateOptions, 'overwriteUserEdited'> & { contextChapters?: readonly Chapter[] } = {},
+): CostEstimate {
   const translateSystem = estimateTokens(buildTranslateSystemPrompt(settings, project));
   const reviewSystem = estimateTokens(buildPolishSystemPrompt(settings, project));
   const glossary = settings.glossary.length > 0 ? compileGlossary(settings.glossary) : undefined;
@@ -118,16 +124,20 @@ export function estimateCost(project: Project, settings: ProjectSettings, opts: 
   const byTokens = (s: Segment) => factsOf(s).sourceTokens;
   const editable = (s: Segment) => !keepsUserEdit(s, opts.overwriteUserEdited);
   const maxSegments = maxSegmentsOf(settings);
+  const lookup = opts.contextChapters && neighbourLookup(opts.contextChapters);
 
   let inputTokens = 0;
   let outputTokens = 0;
   for (const chapter of project.chapters) {
     const todo = chapter.segments.filter((s) => (s.status === 'pending' || s.status === 'error') && editable(s));
-    const translatePosition = neighboursInOrder(chapter);
+    const todoIds = new Set(todo.map((s) => s.id));
+    const willTranslate = (s: Segment) => todoIds.has(s.id);
+    const inOrder = neighboursInOrder(chapter);
+    const translatePosition = (batch: Segment[]) => lookup?.(batch) ?? inOrder(batch);
     for (const batch of makeBatches(todo, MAX_BATCH_TOKENS, byTokens, maxSegments)) {
       batchNo++;
       const message: CharCount = { chars: MESSAGE_ENVELOPE + batch.length - 1, cjk: 0 };
-      const context = translateContextChars(translatePosition(batch));
+      const context = translateContextChars(translatePosition(batch), willTranslate);
       message.chars += context.chars;
       message.cjk += context.cjk;
       let entries = 0;

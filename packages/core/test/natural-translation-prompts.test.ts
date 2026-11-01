@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateCost, estimateTokens, retranslateSegment, translateProject, translateSample } from '../src';
+import { estimateCost, estimateSampleCost, estimateTokens, retranslateSegment, translateProject, translateSample } from '../src';
 import { buildPolishSystemPrompt, buildPolishUserMessage, buildTranslateSystemPrompt, buildTranslateUserMessage } from '../src/translate/prompt-protocol';
 import { MAX_CONTEXT_ITEM_CHARS, neighbourLookup, oneLine, polishContextText, translateContextOf } from '../src/translate/read-only-context';
 import type { ChatRequest, ProjectSettings } from '../src/types';
@@ -251,25 +251,77 @@ describe('read-only context in runs', () => {
   });
 });
 
+/** A fixture book: chapters of paragraphs of uneven length (some past the context cap), a few already translated. */
+function fixtureBook(): ReturnType<typeof makeProject> {
+  const words = (n: number, seed: number) => Array.from({ length: n }, (_, i) => `word${(i * 7 + seed) % 97}`).join(' ');
+  const chapters = [0, 1, 2].map((c) =>
+    Array.from({ length: 24 }, (_, i) => {
+      const long = i % 7 === 3 ? 160 : 12 + ((i * 5 + c) % 30);
+      return segment(`c${c}-${i}`, `<p>${words(long, i + c)}.</p>`, c === 1 && i < 6 ? 'translated' : 'pending');
+    }),
+  );
+  const project = makeProject(chapters);
+  for (const s of project.chapters[1]?.segments.slice(0, 6) ?? []) s.translationHtml = fakeTranslate(s.sourceHtml);
+  project.title = 'Fixture “Book”';
+  return project;
+}
+
+/** Input tokens of the requests a mock run sent, counted like the estimate counts them. */
+const sentTokens = (calls: ChatRequest[]) => calls.reduce((n, c) => n + estimateTokens(c.system) + estimateTokens(c.user), 0);
+
 describe('cost estimate of the read-only context', () => {
-  it('matches the real translate requests exactly and follows translation changes', () => {
-    const project = makeProject([[segment('a', 'First <em>one</em>.'), segment('b', 'Second, “quoted”.'), segment('c', 'Third.')]]);
+  it('builds the context items of a batch with several preceding passages (map must not leak its index)', () => {
+    const project = makeProject([[segment('a', 'One.', 'translated'), segment('b', 'Two.'), segment('c', 'Three.')]]);
+    const [a, , c] = project.chapters[0]?.segments ?? [];
+    if (!a || !c) throw new Error('no segment');
+    a.translationHtml = 'Một.';
+    expect(translateContextOf(neighbourLookup(project.chapters)([c])).context).toEqual([{ source: 'One.', translation: 'Một.' }, { source: 'Two.' }]);
+  });
+
+  it('is exact when the preceding passages are already translated, and follows translation changes', () => {
+    const project = makeProject([[segment('a', 'First <em>one</em>.', 'translated'), segment('b', 'Second, “quoted”.')]]);
     project.title = 'Bench “Book”';
     project.settings = { ...project.settings, maxSegmentsPerBatch: 1 };
-    const exact = () => {
-      const lookup = neighbourLookup(project.chapters);
-      const system = estimateTokens(buildTranslateSystemPrompt(project.settings, project));
-      return (project.chapters[0]?.segments ?? [])
-        .filter((s) => s.status === 'pending')
-        .reduce((n, s) => n + system + estimateTokens(buildTranslateUserMessage([s], [], translateContextOf(lookup([s])))), 0);
-    };
-    expect(estimateCost(project, project.settings).inputTokens).toBe(exact());
     const a = project.chapters[0]?.segments[0];
-    if (!a) throw new Error('no segment');
-    a.status = 'translated';
-    a.translationHtml = 'Câu <em>đầu tiên</em> dài hơn nhiều so với bản gốc.';
-    expect(estimateCost(project, project.settings).inputTokens).toBe(exact());
-    a.translationHtml = 'Ngắn.';
-    expect(estimateCost(project, project.settings).inputTokens).toBe(exact());
+    const b = project.chapters[0]?.segments[1];
+    if (!a || !b) throw new Error('no segment');
+    const exact = () => {
+      const system = estimateTokens(buildTranslateSystemPrompt(project.settings, project));
+      return system + estimateTokens(buildTranslateUserMessage([b], [], translateContextOf(neighbourLookup(project.chapters)([b]))));
+    };
+    for (const translation of ['Câu <em>đầu tiên</em> dài hơn nhiều so với bản gốc.', 'Ngắn.']) {
+      a.translationHtml = translation;
+      expect(estimateCost(project, project.settings).inputTokens).toBe(exact());
+    }
+  });
+
+  it.each([1, 4])('never falls below what a full run at concurrency %i sends, and stays within 15%', async (concurrency) => {
+    const project = fixtureBook();
+    project.settings = { ...project.settings, concurrency, maxSegmentsPerBatch: 3 };
+    const estimated = estimateCost(project, project.settings).inputTokens;
+    const provider = mockProvider(answerAll);
+    await translateProject(project, provider, project.settings);
+    const sent = sentTokens(provider.calls);
+    expect(estimated).toBeGreaterThanOrEqual(sent);
+    expect(estimated).toBeLessThanOrEqual(sent * 1.15);
+  });
+
+  it('never falls below what a sample run sends, with the context taken from the whole book', async () => {
+    const project = fixtureBook();
+    project.settings = { ...project.settings, maxSegmentsPerBatch: 3 };
+    const selection = {
+      seed: 1,
+      passages: [
+        { chapterHref: 'OEBPS/c0.xhtml', chapterTitle: 'Chapter 0', segmentIds: ['c0-10', 'c0-11'] },
+        { chapterHref: 'OEBPS/c1.xhtml', chapterTitle: 'Chapter 1', segmentIds: ['c1-7', 'c1-8'] },
+        { chapterHref: 'OEBPS/c2.xhtml', chapterTitle: 'Chapter 2', segmentIds: ['c2-3', 'c2-4', 'c2-5'] },
+      ],
+    };
+    const estimated = estimateSampleCost(project, project.settings, selection).inputTokens;
+    const provider = mockProvider(answerAll);
+    await translateSample(project, provider, project.settings, { selection });
+    const sent = sentTokens(provider.calls);
+    expect(estimated).toBeGreaterThanOrEqual(sent);
+    expect(estimated).toBeLessThanOrEqual(sent * 1.15);
   });
 });

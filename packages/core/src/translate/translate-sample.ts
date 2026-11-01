@@ -175,7 +175,7 @@ function sampleView(
  * except those the user edited by hand (a sample skips them).
  */
 export function estimateSampleCost(project: Project, settings: ProjectSettings, selection: SampleSelection): CostEstimate {
-  return estimateCost(sampleView(project, selection).view, settings);
+  return estimateCost(sampleView(project, selection).view, settings, { contextChapters: project.chapters });
 }
 
 /** What a user edit changes; compared against the state when the sample run started. */
