@@ -1,7 +1,7 @@
 import { TOC_CHAPTER_TITLE } from '../import/import-book';
 import type { Chapter, ChatProvider, CostEstimate, Project, ProjectSettings, SamplePassage, SampleSelection, Segment, TranslateOptions } from '../types';
 import { estimateCost } from './estimate-cost';
-import { keepsUserEdit, translateProject } from './translate-project';
+import { keepsUserEdit, translateWithContext } from './translate-project';
 
 export const DEFAULT_SAMPLE_PASSAGES = 5;
 export const DEFAULT_SAMPLE_WORDS = 350;
@@ -211,27 +211,34 @@ export async function translateSample(
   const failed = new Set<string>();
   // Revision of each live segment as this run last left it; a different one means the user changed it meanwhile.
   const expected = new Map([...live].map(([id, { segment }]) => [id, revisionOf(segment)]));
-  await translateProject(view, provider, settings, {
-    ...(opts.signal ? { signal: opts.signal } : {}),
-    ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
-    onSegment: (copy) => {
-      const target = live.get(copy.id);
-      if (!target || expected.get(copy.id) !== revisionOf(target.segment)) return;
-      if (copy.status === 'error') {
-        failed.add(copy.id);
-        // An existing translation (possibly reviewed or exported already) beats a failed retry: keep it untouched.
-        if (target.segment.translationHtml !== undefined) return;
-      }
-      target.segment.status = copy.status;
-      if (copy.translationHtml !== undefined) target.segment.translationHtml = copy.translationHtml;
-      if (copy.error !== undefined) target.segment.error = copy.error;
-      else delete target.segment.error;
-      if (copy.warning !== undefined) target.segment.warning = copy.warning;
-      else delete target.segment.warning;
-      expected.set(copy.id, revisionOf(target.segment));
-      project.updatedAt = new Date().toISOString();
-      opts.onSegment?.(target.segment, target.chapter);
+  // The context around each passage (preceding paragraphs and their translations) comes from the whole book.
+  await translateWithContext(
+    view,
+    provider,
+    settings,
+    {
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
+      onSegment: (copy) => {
+        const target = live.get(copy.id);
+        if (!target || expected.get(copy.id) !== revisionOf(target.segment)) return;
+        if (copy.status === 'error') {
+          failed.add(copy.id);
+          // An existing translation (possibly reviewed or exported already) beats a failed retry: keep it untouched.
+          if (target.segment.translationHtml !== undefined) return;
+        }
+        target.segment.status = copy.status;
+        if (copy.translationHtml !== undefined) target.segment.translationHtml = copy.translationHtml;
+        if (copy.error !== undefined) target.segment.error = copy.error;
+        else delete target.segment.error;
+        if (copy.warning !== undefined) target.segment.warning = copy.warning;
+        else delete target.segment.warning;
+        expected.set(copy.id, revisionOf(target.segment));
+        project.updatedAt = new Date().toISOString();
+        opts.onSegment?.(target.segment, target.chapter);
+      },
     },
-  });
+    project.chapters,
+  );
   return { selection, failed: [...failed], keptEdited };
 }

@@ -1,6 +1,7 @@
 import { type CompiledGlossary, compileGlossary, matchPrepared, type PreparedText, prepareText } from '../glossary/glossary-matcher';
 import type { CostEstimate, GlossaryEntry, Project, ProjectSettings, Segment, TranslateOptions } from '../types';
-import { buildReviewSystemPrompt, buildTranslateSystemPrompt, formatGlossaryEntry, stripTags } from './prompt-protocol';
+import { neighboursInOrder, polishContextTokens, translateContextChars } from './estimate-context-size';
+import { buildPolishSystemPrompt, buildTranslateSystemPrompt, formatGlossaryEntry, stripTags } from './prompt-protocol';
 import { countCjk, estimateTokens } from './token-estimate';
 import { keepsUserEdit, MAX_BATCH_TOKENS, makeBatches, maxSegmentsOf } from './translate-project';
 
@@ -100,14 +101,15 @@ function entrySizes(glossary: CompiledGlossary): EntrySizes {
 
 /**
  * Estimates tokens (and USD when both prices are set) for the remaining work of `translateProject`:
- * the translate pass over 'pending'/'error' segments plus, with `twoPass`, the review pass. Segments the user
+ * the translate pass over 'pending'/'error' segments plus, with `twoPass`, the polish pass (about twice the cost).
+ * Both include the read-only context (chapter title, neighbouring passages) each request carries. Segments the user
  * edited by hand are left out, as `translateProject` skips them, unless `opts.overwriteUserEdited` is set.
  * Fast enough to run on every project change of a 2000-page book: per-segment facts and glossary hits are cached
  * and summed per batch instead of rebuilding and matching each request.
  */
 export function estimateCost(project: Project, settings: ProjectSettings, opts: Pick<TranslateOptions, 'overwriteUserEdited'> = {}): CostEstimate {
-  const translateSystem = estimateTokens(buildTranslateSystemPrompt(settings));
-  const reviewSystem = estimateTokens(buildReviewSystemPrompt(settings));
+  const translateSystem = estimateTokens(buildTranslateSystemPrompt(settings, project));
+  const reviewSystem = estimateTokens(buildPolishSystemPrompt(settings, project));
   const glossary = settings.glossary.length > 0 ? compileGlossary(settings.glossary) : undefined;
   const sizes = glossary && glossary.entries.length > 0 ? entrySizes(glossary) : undefined;
   // stamp[p] === batch number marks entry p as already counted for the current batch.
@@ -121,9 +123,13 @@ export function estimateCost(project: Project, settings: ProjectSettings, opts: 
   let outputTokens = 0;
   for (const chapter of project.chapters) {
     const todo = chapter.segments.filter((s) => (s.status === 'pending' || s.status === 'error') && editable(s));
+    const translatePosition = neighboursInOrder(chapter);
     for (const batch of makeBatches(todo, MAX_BATCH_TOKENS, byTokens, maxSegments)) {
       batchNo++;
       const message: CharCount = { chars: MESSAGE_ENVELOPE + batch.length - 1, cjk: 0 };
+      const context = translateContextChars(translatePosition(batch));
+      message.chars += context.chars;
+      message.cjk += context.cjk;
       let entries = 0;
       for (const s of batch) {
         const facts = factsOf(s);
@@ -145,8 +151,10 @@ export function estimateCost(project: Project, settings: ProjectSettings, opts: 
     }
     if (!settings.twoPass) continue;
     const review = chapter.segments.filter((s) => s.status !== 'reviewed' && editable(s));
+    const reviewPosition = neighboursInOrder(chapter);
     for (const batch of makeBatches(review, MAX_BATCH_TOKENS, byTokens, maxSegments)) {
       batchNo++;
+      const context = polishContextTokens(reviewPosition(batch));
       let draft = 0;
       let source = 0;
       let glossaryTokens = 0;
@@ -161,7 +169,7 @@ export function estimateCost(project: Project, settings: ProjectSettings, opts: 
           glossaryTokens += sizes.reviewTokens[p] as number;
         }
       }
-      inputTokens += reviewSystem + source + draft + glossaryTokens;
+      inputTokens += reviewSystem + source + draft + glossaryTokens + context;
       outputTokens += draft + batch.length * ANSWER_OVERHEAD;
     }
   }

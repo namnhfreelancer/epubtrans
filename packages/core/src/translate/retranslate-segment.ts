@@ -1,9 +1,11 @@
 import type { ChatProvider, Project, ProjectSettings, Segment } from '../types';
-import { runBatch } from './batch-runner';
+import { type BatchContext, runBatch } from './batch-runner';
+import { neighbourLookup } from './read-only-context';
 import { validateSettings } from './translate-project';
 
 /**
- * Translates one segment again regardless of its status (and reviews it when `twoPass`).
+ * Translates one segment again regardless of its status (and polishes it when `twoPass`), with the chapter title and
+ * neighbouring passages as read-only context.
  * The project segment is only replaced on success, so a failed attempt keeps the old translation; a successful one
  * clears `userEdited` (this is an explicit user request, unlike the automatic runs that skip edited segments).
  */
@@ -18,7 +20,16 @@ export async function retranslateSegment(
   const segment = project.chapters.flatMap((c) => c.segments).find((s) => s.id === segmentId);
   if (!segment) throw new Error(`Unknown segment: ${segmentId}`);
   const draft: Segment = { id: segment.id, sourceHtml: segment.sourceHtml, sourceText: segment.sourceText, status: 'pending' };
-  const ctx = { provider, settings, signal: signal ?? new AbortController().signal, usage: { input: 0, output: 0 }, commit: () => {}, clientErrors: 0 };
+  const ctx: BatchContext = {
+    provider,
+    settings,
+    book: project,
+    neighbours: neighbourLookup(project.chapters),
+    signal: signal ?? new AbortController().signal,
+    usage: { input: 0, output: 0 },
+    commit: () => {},
+    clientErrors: 0,
+  };
   await runBatch([draft], 'translate', ctx);
   // The reason alone: callers add their own "Retranslation failed" context.
   if (draft.status === 'error') throw new Error(draft.error ?? 'unknown error');

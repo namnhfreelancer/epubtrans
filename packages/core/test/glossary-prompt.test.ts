@@ -2,27 +2,33 @@ import { describe, expect, it } from 'vitest';
 import { estimateCost, type GlossaryEntry, retranslateSegment, selectGlossaryEntries, translateProject } from '../src';
 import {
   batchGlossary,
-  buildReviewSystemPrompt,
+  buildPolishSystemPrompt,
   buildTranslateSystemPrompt,
   buildTranslateUserMessage,
   formatGlossaryEntry,
 } from '../src/translate/prompt-protocol';
+import { draftOf, neighbourLookup, plainText, polishContextOf, translateContextOf } from '../src/translate/read-only-context';
 import { estimateTokens } from '../src/translate/token-estimate';
 import { makeBatches } from '../src/translate/translate-project';
 import type { Project } from '../src/types';
 import { answerAll, makeProject, mockProvider, segment } from './test-helpers';
 
-/** Input tokens of `translateProject` computed the slow way: every request built and filtered like the real run. */
+/**
+ * Input tokens of `translateProject` computed the slow way: every request built and filtered like the real run, with
+ * its read-only context (the source stands in for polish-context drafts that do not exist yet).
+ */
 function exactInputTokens(project: Project): number {
   const { settings } = project;
+  const neighbours = neighbourLookup(project.chapters);
   let input = 0;
   for (const chapter of project.chapters) {
     for (const batch of makeBatches(chapter.segments.filter((s) => s.status === 'pending' || s.status === 'error')))
       input +=
-        estimateTokens(buildTranslateSystemPrompt(settings)) +
-        estimateTokens(buildTranslateUserMessage(batch, batchGlossary(settings.glossary, batch, 'translate')));
+        estimateTokens(buildTranslateSystemPrompt(settings, project)) +
+        estimateTokens(buildTranslateUserMessage(batch, batchGlossary(settings.glossary, batch, 'translate'), translateContextOf(neighbours(batch))));
     for (const batch of makeBatches(chapter.segments.filter((s) => s.status !== 'reviewed'))) {
-      input += estimateTokens(buildReviewSystemPrompt(settings));
+      input += estimateTokens(buildPolishSystemPrompt(settings, project));
+      input += estimateTokens(JSON.stringify(polishContextOf(neighbours(batch), (s) => draftOf(s) ?? plainText(s.sourceText))));
       for (const s of batch)
         input += estimateTokens(s.sourceHtml) + 12 + Math.ceil(estimateTokens(s.translationHtml ?? s.sourceHtml) * (s.translationHtml ? 1 : 1.3));
       input += batchGlossary(settings.glossary, batch, 'review').reduce((n, g) => n + estimateTokens(formatGlossaryEntry(g)) + 2, 0);
