@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.2.0](https://github.com/namnhfreelancer/epubtrans/compare/v3.1.0...v3.2.0) (2026-11-01)
+
+
+### Features
+
+* **cli:** add --polish as the name of the natural-style second pass ([a8e87e1](https://github.com/namnhfreelancer/epubtrans/commit/a8e87e196af1940ef6893a6fc495cea6abae5e6b))
+* **core:** meaning-first translation prompt, read-only context and a polish pass ([3ac330b](https://github.com/namnhfreelancer/epubtrans/commit/3ac330b18ab765f4af0448440247c546db89ac60))
+* natural, meaning-first translation prompts and an optional polish pass ([16e252d](https://github.com/namnhfreelancer/epubtrans/commit/16e252d492b126d7890448198c18ab5845c7de8b))
+* **web:** label the second pass "Polish for natural style" ([e6b1ded](https://github.com/namnhfreelancer/epubtrans/commit/e6b1ded88455c957b2ef8b0b6d8ac7570cfb9795))
+
+
+### Bug Fixes
+
+* **core:** correct the Vietnamese craft rules and never split surrogate pairs in capped context ([4cbf875](https://github.com/namnhfreelancer/epubtrans/commit/4cbf87508d059f2a129d7f3245f64bd7a697a5f5))
+* **core:** size the cost estimate as an upper bound of what a run sends ([58c90a5](https://github.com/namnhfreelancer/epubtrans/commit/58c90a5d15df15ceaa62b2bd69dac412c25fdad7))
+
 ## [3.1.0](https://github.com/namnhfreelancer/epubtrans/compare/v3.0.0...v3.1.0) (2026-10-31)
 
 
