@@ -88,8 +88,11 @@ export const vi: Record<MessageKey, string> = {
   'setup.options': 'Tùy chọn',
   'setup.concurrency': 'Số yêu cầu song song',
   'setup.concurrencyHint': '1–16. Giảm xuống nếu nhà cung cấp giới hạn tốc độ.',
-  'setup.twoPass': 'Dịch hai lượt (rà soát từng đoạn)',
-  'setup.twoPassHint': 'Chất lượng tốt hơn, chi phí khoảng gấp đôi.',
+  'setup.twoPass': 'Trau chuốt văn phong cho tự nhiên',
+  'setup.twoPassHint':
+    'Thêm một lượt để biên tập viên bản ngữ viết lại từng bản nháp cho tự nhiên, đọc trôi chảy. Nên bật cho sách văn học; chi phí khoảng gấp đôi.',
+  'setup.polishRecommended':
+    'Với tiểu thuyết và sách văn học, nên bật “Trau chuốt văn phong cho tự nhiên” trong phần Tùy chọn: một lượt biên tập giúp bản dịch đọc tự nhiên như văn của người bản ngữ (chi phí khoảng gấp đôi).',
   'setup.provider': 'Nhà cung cấp: {provider} · Mô hình: {model}',
   'setup.noModel': 'chưa chọn mô hình',
   'setup.changeProvider': 'Thay đổi trong Cài đặt',
@@ -137,7 +140,7 @@ export const vi: Record<MessageKey, string> = {
   'run.retryFailed': 'Dịch lại các đoạn lỗi',
   'run.progress': '{done} / {total} đoạn',
   'run.phase.translate': 'Đang dịch',
-  'run.phase.review': 'Đang rà soát',
+  'run.phase.review': 'Đang trau chuốt',
   'run.eta': 'còn khoảng {time}',
   'run.errors': '{n} đoạn bị lỗi',
   'run.done': 'Đã dịch xong.',
@@ -187,7 +190,7 @@ export const vi: Record<MessageKey, string> = {
 
   'status.pending': 'Chờ dịch',
   'status.translated': 'Đã dịch',
-  'status.reviewed': 'Đã rà soát',
+  'status.reviewed': 'Đã trau chuốt',
   'status.error': 'Lỗi',
 
   'export.title': 'Xuất EPUB',

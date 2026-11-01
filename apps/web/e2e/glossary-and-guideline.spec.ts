@@ -50,6 +50,22 @@ test('generation shows its phases, extends the preset with sections and fills a 
   await expect(page.locator('#guideline')).toHaveValue(/Prioritize a natural, immersive reading experience[\s\S]*## Book-specific guideline/);
 });
 
+test('the second pass is labelled "Polish for natural style" and recommended with the fiction preset', async ({ page }) => {
+  await installMockProvider(page);
+  await configureMockProvider(page);
+  await importBook(page, FIXTURES.epub);
+  await openFirstBook(page);
+  const toggle = page.getByTestId('polish-toggle');
+  const hint = page.getByTestId('polish-recommended-hint');
+  await expect(page.getByLabel('Polish for natural style')).toBeVisible();
+  await expect(toggle).not.toBeChecked();
+  await expect(hint).toHaveCount(0);
+  await page.locator('#guideline-preset').selectOption('fiction');
+  await expect(hint).toContainText('turn on “Polish for natural style”');
+  await toggle.check();
+  await expect(hint).toHaveCount(0);
+});
+
 test('glossary table handles hundreds of entries: search, type filter, paging, edits persist', async ({ page }) => {
   await installMockProvider(page);
   await configureMockProvider(page);

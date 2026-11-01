@@ -64,6 +64,14 @@ describe('WebMCP tool definitions', () => {
     for (const tool of definitions()) for (const name of Object.keys(tool.inputSchema.properties)) expect(name).not.toMatch(/key|secret|base|endpoint/i);
   });
 
+  it('describes twoPass as the polish-for-natural-style pass', () => {
+    const settingsTool = definitions().find((t) => t.name === 'update_book_settings');
+    const twoPass = settingsTool?.inputSchema.properties.twoPass;
+    expect(twoPass?.type).toBe('boolean');
+    expect(twoPass?.description).toMatch(/^Polish for natural style: .*native editor.*twice the cost; recommended for literature/);
+    expect(settingsTool?.description).toContain('the polish pass (twoPass)');
+  });
+
   it('derives the export modes from core, so new modes appear automatically', () => {
     const exportTool = definitions().find((t) => t.name === 'export_epub');
     const mode = exportTool?.inputSchema.properties.mode;

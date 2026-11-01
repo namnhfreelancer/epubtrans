@@ -87,8 +87,10 @@ export const en = {
   'setup.options': 'Options',
   'setup.concurrency': 'Parallel requests',
   'setup.concurrencyHint': '1–16. Lower it if the provider rate-limits you.',
-  'setup.twoPass': 'Two-pass translation (review every segment)',
-  'setup.twoPassHint': 'Better quality, roughly twice the cost.',
+  'setup.twoPass': 'Polish for natural style',
+  'setup.twoPassHint': 'A second pass in which a native editor rewrites every draft so it reads naturally. Recommended for literature; roughly twice the cost.',
+  'setup.polishRecommended':
+    'For fiction and other literature, turn on “Polish for natural style” in Options: a native-editor pass that makes the translation read naturally (roughly twice the cost).',
   'setup.provider': 'Provider: {provider} · Model: {model}',
   'setup.noModel': 'no model selected',
   'setup.changeProvider': 'Change in Settings',
@@ -136,7 +138,7 @@ export const en = {
   'run.retryFailed': 'Retry failed segments',
   'run.progress': '{done} / {total} segments',
   'run.phase.translate': 'Translating',
-  'run.phase.review': 'Reviewing',
+  'run.phase.review': 'Polishing',
   'run.eta': 'about {time} left',
   'run.errors': '{n} segments failed',
   'run.done': 'Translation complete.',
@@ -186,7 +188,7 @@ export const en = {
 
   'status.pending': 'Pending',
   'status.translated': 'Translated',
-  'status.reviewed': 'Reviewed',
+  'status.reviewed': 'Polished',
   'status.error': 'Error',
 
   'export.title': 'Export EPUB',
