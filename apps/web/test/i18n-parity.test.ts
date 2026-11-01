@@ -26,6 +26,18 @@ describe('i18n dictionaries', () => {
   });
 });
 
+describe('polish toggle labels', () => {
+  it('name the second pass "Polish for natural style" in every locale', () => {
+    expect(en['setup.twoPass']).toBe('Polish for natural style');
+    expect(vi['setup.twoPass']).toBe('Trau chuốt văn phong cho tự nhiên');
+    for (const messages of [en, vi]) {
+      expect(messages['setup.polishRecommended']).toContain(`“${messages['setup.twoPass']}”`);
+      expect(messages['setup.polishRecommended']).toContain(messages['setup.options']);
+    }
+    expect(en['setup.twoPassHint']).toMatch(/Recommended for literature; roughly twice the cost/);
+  });
+});
+
 describe('formatMessage', () => {
   it('replaces known placeholders and keeps unknown ones visible', () => {
     expect(formatMessage('{done} / {total} and {missing}', { done: 3, total: 10 })).toBe('3 / 10 and {missing}');

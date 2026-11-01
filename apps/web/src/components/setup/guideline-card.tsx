@@ -1,4 +1,12 @@
-import { composeGuideline, DEFAULT_GLOSSARY_CAP, GUIDELINE_PRESETS, type GuidelinePresetId, type Project, splitGuideline } from '@epubtrans/core';
+import {
+  composeGuideline,
+  DEFAULT_GLOSSARY_CAP,
+  GUIDELINE_PRESETS,
+  type GuidelinePresetId,
+  getGuidelinePreset,
+  type Project,
+  splitGuideline,
+} from '@epubtrans/core';
 import { useRef, useState } from 'react';
 import { useI18n } from '../../i18n/i18n-context';
 import { guidelineSections } from '../../lib/glossary-view';
@@ -27,7 +35,10 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const save = (patch: Parameters<typeof updateSettings>[1]) =>
     updateSettings(project, patch).catch((err: unknown) => pushNotice('error', t('common.saveFailed', { message: errorText(err) })));
-  const { generated } = splitGuideline(project.settings.guideline);
+  const { base, generated } = splitGuideline(project.settings.guideline);
+  // Literature gains most from the polish pass: recommend it while the fiction preset is picked or in use.
+  const fiction = presetId === 'fiction' || base.startsWith(getGuidelinePreset('fiction').guideline);
+  const recommendPolish = fiction && !project.settings.twoPass;
   const sections = guidelineSections(project.settings.guideline);
 
   const applyPreset = () => {
@@ -116,6 +127,11 @@ export function GuidelineCard({ project, provider }: { project: Project; provide
             />
           </div>
         </div>
+        {recommendPolish && (
+          <p data-testid="polish-recommended-hint" className="text-xs text-teal-800 dark:text-teal-300">
+            {t('setup.polishRecommended')}
+          </p>
+        )}
         <p className="text-xs text-stone-500 dark:text-stone-400">
           {t('guide.extendsHint')} {t('guide.maxEntriesHint')}
         </p>

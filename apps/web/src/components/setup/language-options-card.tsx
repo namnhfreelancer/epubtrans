@@ -30,7 +30,7 @@ function parseIntegerField(input: string, min: number, max: number): number | un
   return Number.isInteger(n) && n >= min && n <= max ? n : null;
 }
 
-/** Language pair, concurrency, two-pass toggle, request tuning and the provider/model used for this book. */
+/** Language pair, concurrency, the polish-for-natural-style toggle, request tuning and the provider/model used for this book. */
 export function LanguageOptionsCard({ project, active }: { project: Project; active: ActiveProvider }) {
   const { t, locale } = useI18n();
   const [detected, setDetected] = useState<string>();
@@ -116,6 +116,7 @@ export function LanguageOptionsCard({ project, active }: { project: Project; act
         <label className="flex items-start gap-2 self-center text-sm">
           <input
             type="checkbox"
+            data-testid="polish-toggle"
             className="mt-0.5 h-4 w-4 accent-teal-700"
             checked={settings.twoPass}
             onChange={(e) => void save({ twoPass: e.target.checked })}

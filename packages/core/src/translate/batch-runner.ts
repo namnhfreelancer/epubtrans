@@ -6,21 +6,31 @@ import { isIdenticalTranslation } from './identical-translation';
 import { validateTranslationMarkup } from './markup-validation';
 import {
   batchGlossary,
-  buildReviewSystemPrompt,
-  buildReviewUserMessage,
+  buildPolishSystemPrompt,
+  buildPolishUserMessage,
   buildTranslateSystemPrompt,
   buildTranslateUserMessage,
+  type PromptBook,
   parseSegmentsAnswer,
 } from './prompt-protocol';
+import { type NeighbourLookup, polishContextOf, translateContextOf } from './read-only-context';
 import { withRetry } from './retry-with-backoff';
 import { estimateTokens } from './token-estimate';
 import { addUsage } from './usage-cost';
 
+/** `review` is the optional second pass, which polishes the drafts for natural style (setting `twoPass`). */
 export type BatchKind = 'translate' | 'review';
 
 export interface BatchContext {
   provider: ChatProvider;
   settings: ProjectSettings;
+  /** Title and author, part of the (cache-stable) system prompt. */
+  book: PromptBook;
+  /**
+   * Where a batch sits in the book, for the read-only context of the user message (chapter title, neighbouring
+   * passages). Looked up again for every split or retried sub-batch, so a lone retried segment keeps its context.
+   */
+  neighbours: NeighbourLookup;
   signal: AbortSignal;
   usage: TokenUsage;
   /**
@@ -88,12 +98,16 @@ export async function runBatch(batch: Segment[], kind: BatchKind, ctx: BatchCont
   const glossary = batchGlossary(ctx.settings.glossary, segments, kind);
   const prepared = new Map(segments.map((s) => [s, toWire(s, kind)]));
   const wire = segments.map((s) => (prepared.get(s) as WireSegment).wire);
+  const neighbours = ctx.neighbours(segments);
   try {
     const res = await withRetry(
       () =>
         ctx.provider.chat({
-          system: kind === 'translate' ? buildTranslateSystemPrompt(ctx.settings) : buildReviewSystemPrompt(ctx.settings),
-          user: kind === 'translate' ? buildTranslateUserMessage(wire, glossary) : buildReviewUserMessage(wire, glossary),
+          system: kind === 'translate' ? buildTranslateSystemPrompt(ctx.settings, ctx.book) : buildPolishSystemPrompt(ctx.settings, ctx.book),
+          user:
+            kind === 'translate'
+              ? buildTranslateUserMessage(wire, glossary, translateContextOf(neighbours))
+              : buildPolishUserMessage(wire, glossary, polishContextOf(neighbours)),
           maxTokens: outputBudget(wire),
           signal: ctx.signal,
         }),
@@ -162,7 +176,7 @@ function current(segments: Segment[], ctx: BatchContext): Segment[] {
   });
 }
 
-/** A failed review keeps the draft translation; a failed translation marks the segment as error. */
+/** A failed polish keeps the draft translation; a failed translation marks the segment as error. */
 function fail(segment: Segment, kind: BatchKind, reason: string, ctx: BatchContext): void {
   if (ctx.isSuperseded?.(segment)) {
     ctx.commit(segment, true);
@@ -174,7 +188,7 @@ function fail(segment: Segment, kind: BatchKind, reason: string, ctx: BatchConte
     segment.status = 'error';
     segment.error = safe;
   } else {
-    segment.error = `review failed: ${safe}`;
+    segment.error = `polish failed: ${safe}`;
   }
   ctx.commit(segment, false);
 }

@@ -175,7 +175,7 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
       name: 'start_translation',
       title: 'Start the full translation',
       description:
-        'Starts or resumes the full paid translation of a book with the configured provider and model. The user sees the cost estimate and must approve it in the page. If the provider, model, two-pass mode or remaining work changes before the run starts, nothing starts and the call must be repeated. Returns at once; poll get_book_status for progress.',
+        'Starts or resumes the full paid translation of a book with the configured provider and model. The user sees the cost estimate and must approve it in the page. If the provider, model, polish pass (twoPass) or remaining work changes before the run starts, nothing starts and the call must be repeated. Returns at once; poll get_book_status for progress.',
       inputSchema: objectSchema({ bookId: BOOK_ID }, ['bookId']),
       annotations: { consequentialHint: true },
       run: async (args, signal) => {
@@ -214,15 +214,18 @@ export function translationTools(ctx: ToolContext): ToolSpec[] {
         // A sample or run may have started (here or in another tab) while the dialog was open.
         const busyAfter = await busyReason(project.id);
         if (busyAfter) return ok({ started: false, reason: busyAfter === 'job-running' ? 'already-running' : busyAfter });
-        // Other tool calls, or a Settings tab, may have changed the provider, model, key, two-pass mode or the book
+        // Other tool calls, or a Settings tab, may have changed the provider, model, key, polish pass or the book
         // while the estimate loaded or the dialog was open: never bill something other than what the user approved.
         const latest = await findBook(project.id);
         if (isFailure(latest)) return latest;
         if (!sameRunTerms(confirmed, runTerms(latest, currentProviderState()))) {
-          return Object.assign(fail('The provider, model, API key, two-pass mode or remaining work changed after the user confirmed; nothing was started.'), {
-            started: false,
-            reason: SETTINGS_CHANGED,
-          });
+          return Object.assign(
+            fail('The provider, model, API key, polish pass (twoPass) or remaining work changed after the user confirmed; nothing was started.'),
+            {
+              started: false,
+              reason: SETTINGS_CHANGED,
+            },
+          );
         }
         // Started with the confirmed provider snapshot; the job lock decides if another tab won meanwhile.
         const outcome = await startTranslation(latest, provider, t);

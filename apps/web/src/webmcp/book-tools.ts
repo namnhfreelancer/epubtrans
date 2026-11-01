@@ -41,14 +41,14 @@ function applyStylePreset(settings: ProjectSettings, id: ExportStylePresetId, ct
   return { applied: ctx.confirm(ctx.t('webmcp.agentAsks', { question })) };
 }
 
-/** Book tools: read the status, change the language pair, two-pass mode and guideline preset. */
+/** Book tools: read the status, change the language pair, the polish pass (`twoPass`) and guideline preset. */
 export function bookTools(ctx: ToolContext): ToolSpec[] {
   return [
     {
       name: 'get_book_status',
       title: 'Get book status',
       description:
-        'Returns one book’s settings and progress: languages, two-pass mode, segment counts, remaining work, the translation job (status, phase, progress, token usage), sample and guide generation status, glossary size, Word Wise hints state (enabled, level, glossed words, job status), the configured provider and model, and the cost estimate of the remaining work. Poll it to follow a running translation.',
+        'Returns one book’s settings and progress: languages, whether the polish pass is on (twoPass), segment counts, remaining work, the translation job (status, phase, progress, token usage), sample and guide generation status, glossary size, Word Wise hints state (enabled, level, glossed words, job status), the configured provider and model, and the cost estimate of the remaining work. Poll it to follow a running translation.',
       inputSchema: objectSchema({ bookId: BOOK_ID }, ['bookId']),
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       run: async (args, signal) => {
@@ -117,13 +117,17 @@ export function bookTools(ctx: ToolContext): ToolSpec[] {
       name: 'update_book_settings',
       title: 'Update book settings',
       description:
-        'Changes a book’s languages (BCP 47 tags; source also accepts auto), two-pass review, guideline preset or export style preset. A translated book keeps its target language unless resetTranslations is true and the user approves (all segments go back to pending). A guideline preset replaces only the base guideline, keeping the generated block, and is not applied while generation runs (see notApplied). Replacing custom guideline text or a custom style needs the user’s approval.',
+        'Changes a book’s languages (BCP 47 tags; source also accepts auto), the polish pass (twoPass), guideline preset or export style preset. A translated book keeps its target language unless resetTranslations is true and the user approves (all segments go back to pending). A guideline preset replaces only the base guideline, keeping the generated block, and is not applied while generation runs (see notApplied). Replacing custom guideline text or a custom style needs the user’s approval.',
       inputSchema: objectSchema(
         {
           bookId: BOOK_ID,
           targetLang: { type: 'string', description: 'Target language as a BCP 47 tag, e.g. vi, fr, zh-Hans.', maxLength: 35 },
           sourceLang: { type: 'string', description: 'Source language as a BCP 47 tag, or auto to detect it.', maxLength: 35 },
-          twoPass: { type: 'boolean', description: 'Review every draft in a second pass: better quality, about twice the cost.' },
+          twoPass: {
+            type: 'boolean',
+            description:
+              'Polish for natural style: a second pass in which a native editor rewrites every draft. About twice the cost; recommended for literature.',
+          },
           guidelinePreset: { type: 'string', enum: PRESET_IDS, description: 'Base style guideline to apply.' },
           resetTranslations: {
             type: 'boolean',

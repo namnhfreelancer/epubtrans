@@ -194,7 +194,8 @@ describe('models, presets and errors', () => {
     expect(version.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
     const help = createTestIo();
     expect(await run(['translate', '--help'], help)).toBe(0);
-    expect(help.stdout).toContain('--two-pass');
+    expect(help.stdout).toContain('--polish, --two-pass');
+    expect(help.stdout).toContain('polishes every translation for natural style');
   });
 
   test('usage errors exit with 2 and a hint', async () => {

@@ -47,7 +47,7 @@ function describeEstimate(project: Project, settings: ProjectSettings, todo: num
   const cost =
     estimate.usd !== undefined ? `about ${formatUsd(estimate.usd)}` : 'cost unknown (pass --price-in and --price-out, USD per 1M tokens, for a cost estimate)';
   return [
-    `Segments to translate: ${todo}${settings.twoPass ? ' (+ review pass)' : ''}`,
+    `Segments to translate: ${todo}${settings.twoPass ? ' (+ polish pass)' : ''}`,
     ...(withGuide ? ['Plus a few extra requests to generate the style guideline and glossary (not included in the estimate)'] : []),
     `Model: ${settings.model} via ${settings.baseURL}`,
     `Estimated usage: ~${formatTokens(estimate.inputTokens)} input / ~${formatTokens(estimate.outputTokens)} output tokens, ${cost}`,

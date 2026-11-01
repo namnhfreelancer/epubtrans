@@ -1,5 +1,6 @@
 import type { Chapter, ChatProvider, Project, ProjectSettings, Segment, TokenUsage, TranslateOptions, TranslationPhase } from '../types';
 import { type BatchContext, type BatchKind, runBatch } from './batch-runner';
+import { neighbourLookup } from './read-only-context';
 import { abortError } from './retry-with-backoff';
 import { estimateTokens } from './token-estimate';
 
@@ -72,14 +73,30 @@ const revisionOf = (s: Segment) => `${s.status}\u0000${s.userEdited === true}\u0
 
 /**
  * Translates every segment that is 'pending' or 'error' (finished segments are skipped, which makes
- * runs resumable), then — when `settings.twoPass` — reviews every 'translated' segment. Segments the user
+ * runs resumable), then — when `settings.twoPass` — polishes every 'translated' segment for natural style
+ * (the `review` phase; polished segments get the status 'reviewed'). Segments the user
  * edited by hand (`userEdited`) are skipped in both passes unless `opts.overwriteUserEdited` is set.
  * Segments are mutated in place and reported through `onSegment` for persistence. A segment changed by
  * someone else during the run (manual edit, retranslation) is left as is and not reported.
  * Rejects on abort or on a fatal provider error (bad key, unknown model); other failures mark segments as 'error'.
  */
 export async function translateProject(project: Project, provider: ChatProvider, settings: ProjectSettings, opts: TranslateOptions = {}): Promise<void> {
+  return translateWithContext(project, provider, settings, opts, project.chapters);
+}
+
+/**
+ * `translateProject` whose read-only neighbouring context comes from `contextChapters`: a sample translates a view
+ * holding copies of a few segments, while the passages around them live in the full book.
+ */
+export async function translateWithContext(
+  project: Project,
+  provider: ChatProvider,
+  settings: ProjectSettings,
+  opts: TranslateOptions,
+  contextChapters: readonly Chapter[],
+): Promise<void> {
   validateSettings(settings);
+  const neighbours = neighbourLookup(contextChapters);
   const controller = new AbortController();
   const onAbort = () => controller.abort(opts.signal?.reason);
   if (opts.signal?.aborted) throw abortError(opts.signal);
@@ -113,6 +130,8 @@ export async function translateProject(project: Project, provider: ChatProvider,
     const ctx: BatchContext = {
       provider,
       settings,
+      book: project,
+      neighbours,
       signal: controller.signal,
       usage,
       clientErrors: 0,

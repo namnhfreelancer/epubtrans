@@ -49,7 +49,8 @@ const styleOptions = (saved: boolean) => `  --style-file <path>      Export styl
   --no-attribution         ${saved ? 'Turn a saved --attribution off again (saved in the project)' : 'No attribution page in this export, even when the project has it on'}`;
 
 const RUN_OPTIONS = `  --concurrency <n>        Parallel requests, 1-16 (default 3)
-  --two-pass               Add a review pass over every translation
+  --polish, --two-pass     Second pass that polishes every translation for natural style, as a native editor would
+                           (about twice the cost; recommended for literature). Saved in the project
   --price-in <usd>         USD per 1M input tokens, for the cost estimate
   --price-out <usd>        USD per 1M output tokens
   --cached-ratio <r>       Price of cached input tokens as a fraction of --price-in, 0-2 (default: the provider's
@@ -118,7 +119,8 @@ Options
                            the project; entries already in the project are kept
 ${PROVIDER_OPTIONS}
   --concurrency <n>        Parallel requests, 1-16 (default 3)
-  --two-pass               Add a review pass over every translation
+  --polish, --two-pass     Second pass that polishes every translation for natural style, as a native editor would
+                           (about twice the cost; recommended for literature). Saved in the project
   --price-in <usd>         USD per 1M input tokens, for the cost estimate
   --price-out <usd>        USD per 1M output tokens
   --cached-ratio <r>       Price of cached input tokens as a fraction of --price-in, 0-2 (default: the provider's

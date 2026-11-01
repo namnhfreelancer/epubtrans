@@ -68,7 +68,7 @@ export function parseLanguage(value: string, flag: string): string {
   throw new UsageError(`${flag} must be a language code such as "en", "vi" or "pt-BR", got "${value}"`);
 }
 
-/** Applies run-time flags (model, concurrency, review pass, prices) over the project's settings. */
+/** Applies run-time flags (model, concurrency, polish pass, prices) over the project's settings. */
 export function applyRunFlags(settings: ProjectSettings, flags: RunFlagValues, selection: ProviderSelection): ProjectSettings {
   const { concurrency, 'price-in': priceIn, 'price-out': priceOut } = flags;
   if (concurrency !== undefined && (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY)) {
@@ -93,7 +93,7 @@ export function applyRunFlags(settings: ProjectSettings, flags: RunFlagValues, s
     baseURL: selection.baseURL,
     model: flags.model?.trim() || settings.model,
     concurrency: concurrency ?? settings.concurrency,
-    twoPass: flags['two-pass'] === true ? true : settings.twoPass,
+    twoPass: flags.polish === true || flags['two-pass'] === true ? true : settings.twoPass,
     ...(priceIn !== undefined ? { priceInPerM: priceIn } : {}),
     ...(priceOut !== undefined ? { priceOutPerM: priceOut } : {}),
     ...(cachedRatio !== undefined ? { cachedInputRatio: cachedRatio } : {}),

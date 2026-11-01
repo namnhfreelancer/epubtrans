@@ -173,11 +173,11 @@ describe('translateProject', () => {
     expect(project.chapters[0]?.segments[2]?.error).toBeUndefined();
   });
 
-  it('runs the review pass when twoPass is enabled', async () => {
+  it('runs the polish pass when twoPass is enabled', async () => {
     const project = makeProject([[segment('a', 'Hello <em>there</em>.'), { ...segment('b', 'Old.', 'translated'), translationHtml: 'Cũ.' }]]);
     project.settings.twoPass = true;
     const provider = mockProvider((req) => {
-      if (!req.system.includes('translation editor')) return answerAll(req);
+      if (!req.system.includes('literary editor')) return answerAll(req);
       const input = JSON.parse(req.user) as { segments: { id: string; source: string; draft: string }[] };
       return { text: JSON.stringify({ segments: input.segments.map((s) => ({ id: s.id, html: `${s.draft} ✓` })) }) };
     });
@@ -188,8 +188,10 @@ describe('translateProject', () => {
     expect(a?.translationHtml).toBe(`${fakeTranslate('Hello <em>there</em>.')} ✓`);
     expect(b?.translationHtml).toBe('Cũ. ✓');
     expect([...phases]).toEqual(['translate', 'review']);
-    const review = provider.calls.find((c) => c.system.includes('translation editor'));
-    expect(JSON.parse(review?.user ?? '{}').segments[0]).toMatchObject({ id: 'a', source: 'Hello <em>there</em>.' });
+    const review = provider.calls.find((c) => c.system.includes('literary editor'));
+    const polish = JSON.parse(review?.user ?? '{}');
+    expect(polish.segments[0]).toMatchObject({ id: 'a', source: 'Hello <em>there</em>.' });
+    expect(polish.chapter).toBe('Chapter 0');
   });
 
   it('rejects with an AbortError when aborted', async () => {
@@ -251,7 +253,8 @@ describe('segments edited by hand', () => {
   });
 
   it('are left out of the estimate unless the caller asks to overwrite them', () => {
-    const project = makeProject([[edited('a', 'error'), segment('c', 'Plain.')]]);
+    // The edited segment comes last, so it is not read-only context of the other one's request either.
+    const project = makeProject([[segment('c', 'Plain.'), edited('a', 'error')]]);
     const skipping = estimateCost(project, project.settings);
     const overwriting = estimateCost(project, project.settings, { overwriteUserEdited: true });
     expect(overwriting.inputTokens).toBeGreaterThan(skipping.inputTokens);

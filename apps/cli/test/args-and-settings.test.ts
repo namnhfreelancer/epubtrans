@@ -79,9 +79,19 @@ describe('settings helpers', () => {
     const next = applyRunFlags(base, { concurrency: 8, 'two-pass': true, 'price-in': 1, 'price-out': 2 }, selection);
     expect(next).toMatchObject({ model: 'm1', concurrency: 8, twoPass: true, priceInPerM: 1, priceOutPerM: 2, providerId: 'anthropic' });
     expect(applyRunFlags(base, { model: ' m2 ' }, selection).model).toBe('m2');
+    expect(applyRunFlags(base, {}, selection).twoPass).toBe(false);
     expect(() => applyRunFlags(base, { concurrency: 0 }, selection)).toThrow('--concurrency');
     expect(() => applyRunFlags(base, { concurrency: 2.5 }, selection)).toThrow('--concurrency');
     expect(() => applyRunFlags(base, { 'price-out': -1 }, selection)).toThrow('negative');
+  });
+
+  test('--polish is an alias of --two-pass: both turn the polish pass on, neither turns a saved one off', () => {
+    const base = createDefaultSettings({ model: 'm1' });
+    const selection = selectProvider({ provider: 'anthropic' });
+    expect(parseArgs(['book.epub', '--polish'], TRANSLATE_FLAGS).flags).toEqual({ polish: true });
+    expect(applyRunFlags(base, parseArgs(['--polish'], RUN_FLAGS).flags, selection).twoPass).toBe(true);
+    expect(applyRunFlags(base, parseArgs(['--two-pass'], RUN_FLAGS).flags, selection).twoPass).toBe(true);
+    expect(applyRunFlags({ ...base, twoPass: true }, {}, selection).twoPass).toBe(true);
   });
 
   test('validates export modes and language codes', () => {

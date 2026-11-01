@@ -93,7 +93,8 @@ describe('start_translation starts only what the user confirmed', () => {
 
   it('shows the cost of the confirmed settings even when two-pass mode is switched off during the price lookup', async () => {
     const dialogFor = async (id: string, twoPass: boolean) => {
-      const project = makeProject(id);
+      // One title for all three books: the title is part of the system prompt, so it counts in the estimate.
+      const project = { ...makeProject(id), title: 'Snapshot book' };
       project.settings = { ...project.settings, twoPass };
       await addProject(project);
       tools.confirmAnswers.push(false);
@@ -104,7 +105,7 @@ describe('start_translation starts only what the user confirmed', () => {
     const singlePassDialog = await dialogFor('snapshot-single-pass', false);
     expect(twoPassDialog).not.toBe(singlePassDialog);
 
-    const project = makeProject('snapshot-race');
+    const project = { ...makeProject('snapshot-race'), title: 'Snapshot book' };
     project.settings = { ...project.settings, twoPass: true };
     await addProject(project);
     const confirmsBefore = tools.confirms.length;
